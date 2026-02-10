@@ -21,7 +21,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   String? _resultadoManual;
 
   // --- CÉREBRO AGRONÔMICO: Faixas ideais por cultura ---
-  // Estrutura: 'Nome': {'ph_min', 'ph_max', 'v_ideal' (Saturação)}
   final Map<String, Map<String, double>> _referenciaCulturas = {
     'Alface': {'ph_min': 6.0, 'ph_max': 6.8, 'v_ideal': 70},
     'Tomate': {'ph_min': 5.5, 'ph_max': 6.8, 'v_ideal': 80},
@@ -46,7 +45,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
 
-    // Se veio uma cultura específica do canteiro, usamos ela
     if (widget.culturaAtual != null &&
         _referenciaCulturas.containsKey(widget.culturaAtual)) {
       _culturaSelecionada = widget.culturaAtual!;
@@ -77,7 +75,8 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     final user = FirebaseAuth.instance.currentUser;
 
     try {
-      Map<String, dynamic> dados = {
+      // 1. Preparar dados da Análise Técnica
+      Map<String, dynamic> dadosAnalise = {
         'uid_usuario': user?.uid,
         'data': FieldValue.serverTimestamp(),
         'metodo': _tabController.index == 0 ? 'manual' : 'laboratorial',
@@ -85,37 +84,71 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
         'cultura_referencia': _culturaSelecionada,
       };
 
+      String resumoHistorico = "";
+      String? obsAlerta;
+
       if (_tabController.index == 0) {
         if (_resultadoManual == null)
           throw Exception("Selecione um tipo de solo.");
-        dados['textura_estimada'] = _resultadoManual;
-        dados['precisao'] = 'baixa';
+        dadosAnalise['textura_estimada'] = _resultadoManual;
+        dadosAnalise['precisao'] = 'baixa';
+        resumoHistorico = "Textura Manual: $_resultadoManual";
       } else {
         if (!_formKey.currentState!.validate())
           throw Exception("Verifique campos obrigatórios.");
 
-        dados['ph'] = _parseValue(_phController);
-        dados['v_percent'] = _parseValue(_vPercentController);
-        dados['mo'] = _parseValue(_moController);
-        dados['fosforo'] = _parseValue(_fosforoController);
+        double ph = _parseValue(_phController);
+        double v = _parseValue(_vPercentController);
+
+        dadosAnalise['ph'] = ph;
+        dadosAnalise['v_percent'] = v;
+        dadosAnalise['mo'] = _parseValue(_moController);
+        dadosAnalise['fosforo'] = _parseValue(_fosforoController);
 
         double k = _parseValue(_potassioController);
         double ca = _parseValue(_calcioController);
         double mg = _parseValue(_magnesioController);
 
-        dados['potassio'] = k;
-        dados['calcio'] = ca;
-        dados['magnesio'] = mg;
-        dados['soma_bases_calc'] = ca + mg + (k / 391);
-        dados['precisao'] = 'alta';
+        dadosAnalise['potassio'] = k;
+        dadosAnalise['calcio'] = ca;
+        dadosAnalise['magnesio'] = mg;
+        dadosAnalise['soma_bases_calc'] = ca + mg + (k / 391);
+        dadosAnalise['precisao'] = 'alta';
+
+        resumoHistorico = "Análise Lab: pH $ph | V% $v%";
+
+        // Gera alerta automático para o histórico
+        if (v < 50)
+          obsAlerta = "Fertilidade muito baixa. Calagem urgente.";
+        else if (ph < 5.5)
+          obsAlerta = "Acidez elevada para a maioria das culturas.";
       }
 
-      await FirebaseFirestore.instance.collection('analises_solo').add(dados);
+      // 2. SALVAR NA COLEÇÃO TÉCNICA (Para gráficos futuros)
+      await FirebaseFirestore.instance
+          .collection('analises_solo')
+          .add(dadosAnalise);
+
+      // 3. SALVAR NO HISTÓRICO DO CANTEIRO (Para aparecer na TelaDetalhesCanteiro)
+      if (widget.canteiroIdOrigem != null) {
+        await FirebaseFirestore.instance.collection('historico_manejo').add({
+          'canteiro_id': widget.canteiroIdOrigem,
+          'uid_usuario': user?.uid,
+          'data': FieldValue.serverTimestamp(),
+          'tipo_manejo': 'Análise de Solo',
+          'produto':
+              _tabController.index == 0 ? 'Teste Físico' : 'Laudo Químico',
+          'detalhes': resumoHistorico,
+          'observacao_extra': obsAlerta,
+          'quantidade_g': 0,
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: const Text('✅ Diagnóstico registrado!'),
+              content:
+                  const Text('✅ Diagnóstico salvo e vinculado ao canteiro!'),
               backgroundColor: Colors.green.shade700),
         );
         Navigator.pop(context);
@@ -124,8 +157,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text('Erro: ${e.toString().replaceAll("Exception: ", "")}'),
+              content: Text('Erro: ${e.toString()}'),
               backgroundColor: Colors.red),
         );
       }
@@ -163,7 +195,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     );
   }
 
-  // --- ABA 1: MANUAL (Visual mantido, foco na simplicidade) ---
   Widget _buildAbaManual() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -205,7 +236,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     );
   }
 
-  // --- ABA 2: LABORATÓRIO (AQUI ESTÁ A LÓGICA PEDIDA) ---
   Widget _buildAbaLaboratorio() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -214,7 +244,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. SELETOR DE CULTURA PARA CONTEXTO
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
               decoration: BoxDecoration(
@@ -246,8 +275,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
               ),
             ),
             const SizedBox(height: 20),
-
-            // 2. CAMPOS INTELIGENTES COM MONITORAMENTO
             _InputComMonitoramento(
               controller: _phController,
               label: 'pH (H2O)',
@@ -260,9 +287,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
               ajudaTexto:
                   'O pH mede a acidez. Solos muito ácidos (pH baixo) "prendem" os nutrientes, e a planta passa fome mesmo com adubo.',
             ),
-
             const SizedBox(height: 20),
-
             _InputComMonitoramento(
               controller: _vPercentController,
               label: 'V% (Saturação)',
@@ -275,10 +300,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
               ajudaTexto:
                   'Indica quanto do solo está ocupado por nutrientes bons (Ca, Mg, K). Se estiver baixo, precisa de calcário (Calagem).',
             ),
-
             const SizedBox(height: 20),
-
-            // M.O. e Nutrientes (Sem alerta crítico de cultura por enquanto, mas com Help)
             _InputSimplesComAjuda(
                 controller: _moController,
                 label: 'Matéria Orgânica',
@@ -318,7 +340,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
                       ajudaTexto:
                           'Essencial para a fotossíntese (cor verde).')),
             ]),
-
             const SizedBox(height: 30),
             SizedBox(
               width: double.infinity,
@@ -342,14 +363,13 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   }
 }
 
-// --- O CORAÇÃO DO SISTEMA: INPUT COM MONITORAMENTO E AJUDA ---
 class _InputComMonitoramento extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final String unidade;
   final String cultura;
-  final Map<String, double> referencias; // Mapa com ph_min, ph_max, etc.
-  final String tipoDado; // 'ph' ou 'v'
+  final Map<String, double> referencias;
+  final String tipoDado;
   final bool obrigatorio;
   final String ajudaTitulo;
   final String ajudaTexto;
@@ -392,7 +412,7 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
 
     double valor = double.tryParse(texto) ?? 0.0;
     String novoAlerta = '';
-    Color novaCor = Colors.green; // Assume bom até provar contrário
+    Color novaCor = Colors.green;
 
     if (widget.tipoDado == 'ph') {
       double min = widget.referencias['ph_min']!;
@@ -407,13 +427,11 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
             '⚠️ Muito Alcalino para ${widget.cultura}! Nutrientes ficam indisponíveis. Ideal: $min - $max.';
         novaCor = Colors.orange;
       } else {
-        // Está na faixa!
         novoAlerta = '✅ Excelente para ${widget.cultura}.';
         novaCor = Colors.green;
       }
     } else if (widget.tipoDado == 'v') {
       double ideal = widget.referencias['v_ideal']!;
-      // Tolerância de 10% para baixo
       if (valor < (ideal - 10)) {
         novoAlerta =
             '⚠️ Fertilidade Baixa para ${widget.cultura}. Necessário Calagem para atingir $ideal%.';
@@ -570,7 +588,6 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
   }
 }
 
-// --- INPUT SIMPLES APENAS COM AJUDA (SEM VALIDAÇÃO CRÍTICA) ---
 class _InputSimplesComAjuda extends StatelessWidget {
   final TextEditingController controller;
   final String label;
@@ -633,7 +650,6 @@ class _InputSimplesComAjuda extends StatelessWidget {
   }
 }
 
-// Widget auxiliar para opção manual (mantido igual para economizar espaço visual)
 class _OpcaoManual extends StatelessWidget {
   final String titulo;
   final String descricao;
