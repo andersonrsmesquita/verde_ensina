@@ -17,11 +17,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   final _compController = TextEditingController();
   final _largController = TextEditingController();
 
-  // --- BASE TÉCNICA: ADICIONADA CATEGORIA 'cat' ---
+  // --- BASE TÉCNICA: CONSÓRCIO + CICLO (REF: PDF PÁG 14-15) ---
   final Map<String, Map<String, dynamic>> _guiaCompleto = {
-    // FRUTOS
     'Abobrinha italiana': {
-      'cat': 'Frutos',
       'par': 'Milho, Feijão',
       'evitar': 'Batata',
       'ciclo': 55,
@@ -29,7 +27,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       'ePlanta': 0.7
     },
     'Abobrinha brasileira': {
-      'cat': 'Frutos',
       'par': 'Milho, Feijão',
       'evitar': 'Batata',
       'ciclo': 60,
@@ -37,121 +34,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       'ePlanta': 2.0
     },
     'Abóboras e morangas': {
-      'cat': 'Frutos',
       'par': 'Milho, Feijão',
       'evitar': 'Batata',
       'ciclo': 120,
       'eLinha': 3.0,
       'ePlanta': 2.0
     },
-    'Tomate': {
-      'cat': 'Frutos',
-      'par': 'Manjericão, Alho',
-      'evitar': 'Batata',
-      'ciclo': 110,
-      'eLinha': 1.0,
-      'ePlanta': 0.3
-    },
-    'Pepino': {
-      'cat': 'Frutos',
-      'par': 'Feijão, Milho',
-      'evitar': 'Tomate',
-      'ciclo': 60,
-      'eLinha': 1.0,
-      'ePlanta': 0.5
-    },
-    'Pimenta': {
-      'cat': 'Frutos',
-      'par': 'Manjericão, Tomate',
-      'evitar': 'Feijão',
-      'ciclo': 100,
-      'eLinha': 1.0,
-      'ePlanta': 0.5
-    },
-    'Pimentão': {
-      'cat': 'Frutos',
-      'par': 'Manjericão, Cebola',
-      'evitar': 'Feijão',
-      'ciclo': 100,
-      'eLinha': 1.0,
-      'ePlanta': 0.5
-    },
-    'Quiabo': {
-      'cat': 'Frutos',
-      'par': 'Pimentão, Tomate',
-      'evitar': 'Nenhum',
-      'ciclo': 80,
-      'eLinha': 1.0,
-      'ePlanta': 0.3
-    },
-    'Jiló': {
-      'cat': 'Frutos',
-      'par': 'Berinjela, Pimentão',
-      'evitar': 'Nenhum',
-      'ciclo': 100,
-      'eLinha': 1.2,
-      'ePlanta': 1.0
-    },
-    'Berinjela': {
-      'cat': 'Frutos',
-      'par': 'Feijão, Alho',
-      'evitar': 'Nenhum',
-      'ciclo': 110,
-      'eLinha': 1.0,
-      'ePlanta': 0.8
-    },
-    'Melancia': {
-      'cat': 'Frutos',
-      'par': 'Milho',
-      'evitar': 'Nenhum',
-      'ciclo': 90,
-      'eLinha': 3.0,
-      'ePlanta': 2.0
-    },
-    'Melão': {
-      'cat': 'Frutos',
-      'par': 'Milho',
-      'evitar': 'Nenhum',
-      'ciclo': 90,
-      'eLinha': 2.0,
-      'ePlanta': 1.5
-    },
-    'Morango': {
-      'cat': 'Frutos',
-      'par': 'Cebola, Alho',
-      'evitar': 'Couve',
-      'ciclo': 80,
-      'eLinha': 0.35,
-      'ePlanta': 0.35
-    },
-    'Chuchu': {
-      'cat': 'Frutos',
-      'par': 'Abóbora, Milho',
-      'evitar': 'Nenhum',
-      'ciclo': 120,
-      'eLinha': 5.0,
-      'ePlanta': 5.0
-    },
-    'Ervilha': {
-      'cat': 'Frutos',
-      'par': 'Cenoura, Milho',
-      'evitar': 'Alho, Cebola',
-      'ciclo': 80,
-      'eLinha': 1.0,
-      'ePlanta': 0.5
-    }, // Tecnicamente leguminosa, mas tratado como fruto verde na horta doméstica
-
-    // FOLHOSAS E FLORES
-    'Alface': {
-      'cat': 'Folhosas',
-      'par': 'Cenoura, Rabanete',
-      'evitar': 'Salsa, Couve',
-      'ciclo': 60,
-      'eLinha': 0.25,
-      'ePlanta': 0.3
-    },
     'Acelga': {
-      'cat': 'Folhosas',
       'par': 'Alface, Couve',
       'evitar': 'Nenhum',
       'ciclo': 60,
@@ -159,65 +48,27 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       'ePlanta': 0.5
     },
     'Agrião': {
-      'cat': 'Folhosas',
       'par': 'Nenhum',
       'evitar': 'Nenhum',
       'ciclo': 50,
       'eLinha': 0.2,
       'ePlanta': 0.3
     },
-    'Almeirão': {
-      'cat': 'Folhosas',
-      'par': 'Alface, Cenoura',
-      'evitar': 'Nenhum',
-      'ciclo': 70,
-      'eLinha': 0.25,
-      'ePlanta': 0.25
-    },
-    'Brócolis': {
-      'cat': 'Folhosas',
-      'par': 'Beterraba, Cebola',
-      'evitar': 'Morango',
+    'Salsão (Aipo)': {
+      'par': 'Tomate, Feijão',
+      'evitar': 'Milho',
       'ciclo': 100,
-      'eLinha': 0.8,
-      'ePlanta': 0.5
-    },
-    'Chicória': {
-      'cat': 'Folhosas',
-      'par': 'Alface, Rúcula',
-      'evitar': 'Nenhum',
-      'ciclo': 70,
-      'eLinha': 0.3,
-      'ePlanta': 0.3
-    },
-    'Couve de folha': {
-      'cat': 'Folhosas',
-      'par': 'Alecrim, Sálvia',
-      'evitar': 'Morango, Tomate',
-      'ciclo': 80,
-      'eLinha': 0.8,
-      'ePlanta': 0.5
-    },
-    'Repolho': {
-      'cat': 'Folhosas',
-      'par': 'Beterraba, Cebola',
-      'evitar': 'Morango',
-      'ciclo': 100,
-      'eLinha': 0.8,
+      'eLinha': 0.9,
       'ePlanta': 0.4
     },
-    'Rúcula': {
-      'cat': 'Folhosas',
-      'par': 'Alface, Beterraba',
-      'evitar': 'Repolho',
-      'ciclo': 40,
-      'eLinha': 0.2,
-      'ePlanta': 0.1
+    'Alface': {
+      'par': 'Cenoura, Rabanete, Beterraba, Rúcula',
+      'evitar': 'Salsa, Couve',
+      'ciclo': 60,
+      'eLinha': 0.25,
+      'ePlanta': 0.3
     },
-
-    // RAÍZES E TUBÉRCULOS
     'Alho': {
-      'cat': 'Raízes',
       'par': 'Tomate, Cenoura',
       'evitar': 'Feijão',
       'ciclo': 180,
@@ -225,31 +76,48 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       'ePlanta': 0.1
     },
     'Alho poró': {
-      'cat': 'Raízes',
       'par': 'Cenoura, Tomate',
       'evitar': 'Feijão',
       'ciclo': 120,
       'eLinha': 0.4,
       'ePlanta': 0.2
     },
+    'Almeirão': {
+      'par': 'Alface, Cenoura',
+      'evitar': 'Nenhum',
+      'ciclo': 70,
+      'eLinha': 0.25,
+      'ePlanta': 0.25
+    },
     'Batata doce': {
-      'cat': 'Raízes',
       'par': 'Abóbora',
       'evitar': 'Tomate',
       'ciclo': 120,
       'eLinha': 0.9,
       'ePlanta': 0.3
     },
+    'Berinjela': {
+      'par': 'Feijão, Alho',
+      'evitar': 'Nenhum',
+      'ciclo': 110,
+      'eLinha': 1.0,
+      'ePlanta': 0.8
+    },
     'Beterraba': {
-      'cat': 'Raízes',
       'par': 'Cebola, Alface',
       'evitar': 'Milho',
       'ciclo': 70,
       'eLinha': 0.25,
       'ePlanta': 0.1
     },
+    'Brócolis': {
+      'par': 'Beterraba, Cebola',
+      'evitar': 'Morango',
+      'ciclo': 100,
+      'eLinha': 0.8,
+      'ePlanta': 0.5
+    },
     'Cará (Inhame)': {
-      'cat': 'Raízes',
       'par': 'Nenhum',
       'evitar': 'Nenhum',
       'ciclo': 240,
@@ -257,58 +125,148 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       'ePlanta': 0.4
     },
     'Cebola': {
-      'cat': 'Raízes',
       'par': 'Beterraba, Tomate',
       'evitar': 'Feijão',
       'ciclo': 140,
       'eLinha': 0.3,
       'ePlanta': 0.1
     },
-    'Cenoura': {
-      'cat': 'Raízes',
-      'par': 'Alface, Tomate',
-      'evitar': 'Salsa',
-      'ciclo': 100,
-      'eLinha': 0.25,
-      'ePlanta': 0.1
-    },
-    'Mandioca': {
-      'cat': 'Raízes',
-      'par': 'Feijão, Milho',
-      'evitar': 'Nenhum',
-      'ciclo': 300,
-      'eLinha': 3.0,
-      'ePlanta': 2.0
-    },
-
-    // CONDIMENTOS
     'Cebolinha': {
-      'cat': 'Condimentos',
       'par': 'Cenoura, Morango',
       'evitar': 'Feijão',
       'ciclo': 60,
       'eLinha': 0.25,
       'ePlanta': 0.2
     },
+    'Cenoura': {
+      'par': 'Alface, Tomate',
+      'evitar': 'Salsa',
+      'ciclo': 100,
+      'eLinha': 0.25,
+      'ePlanta': 0.1
+    },
+    'Chicória': {
+      'par': 'Alface, Rúcula',
+      'evitar': 'Nenhum',
+      'ciclo': 70,
+      'eLinha': 0.3,
+      'ePlanta': 0.3
+    },
+    'Chuchu': {
+      'par': 'Abóbora, Milho',
+      'evitar': 'Nenhum',
+      'ciclo': 120,
+      'eLinha': 5.0,
+      'ePlanta': 5.0
+    },
     'Coentro': {
-      'cat': 'Condimentos',
       'par': 'Tomate',
       'evitar': 'Cenoura',
       'ciclo': 50,
       'eLinha': 0.2,
       'ePlanta': 0.2
     },
-    'Salsão (Aipo)': {
-      'cat': 'Condimentos',
-      'par': 'Tomate, Feijão',
-      'evitar': 'Milho',
+    'Couve de folha': {
+      'par': 'Alecrim, Sálvia',
+      'evitar': 'Morango, Tomate',
+      'ciclo': 80,
+      'eLinha': 0.8,
+      'ePlanta': 0.5
+    },
+    'Ervilha': {
+      'par': 'Cenoura, Milho',
+      'evitar': 'Alho, Cebola',
+      'ciclo': 80,
+      'eLinha': 1.0,
+      'ePlanta': 0.5
+    },
+    'Jiló': {
+      'par': 'Berinjela, Pimentão',
+      'evitar': 'Nenhum',
       'ciclo': 100,
-      'eLinha': 0.9,
+      'eLinha': 1.2,
+      'ePlanta': 1.0
+    },
+    'Mandioca': {
+      'par': 'Feijão, Milho',
+      'evitar': 'Nenhum',
+      'ciclo': 300,
+      'eLinha': 3.0,
+      'ePlanta': 2.0
+    },
+    'Melancia': {
+      'par': 'Milho',
+      'evitar': 'Nenhum',
+      'ciclo': 90,
+      'eLinha': 3.0,
+      'ePlanta': 2.0
+    },
+    'Melão': {
+      'par': 'Milho',
+      'evitar': 'Nenhum',
+      'ciclo': 90,
+      'eLinha': 2.0,
+      'ePlanta': 1.5
+    },
+    'Morango': {
+      'par': 'Cebola, Alho',
+      'evitar': 'Couve',
+      'ciclo': 80,
+      'eLinha': 0.35,
+      'ePlanta': 0.35
+    },
+    'Pepino': {
+      'par': 'Feijão, Milho',
+      'evitar': 'Tomate',
+      'ciclo': 60,
+      'eLinha': 1.0,
+      'ePlanta': 0.5
+    },
+    'Pimenta': {
+      'par': 'Manjericão, Tomate',
+      'evitar': 'Feijão',
+      'ciclo': 100,
+      'eLinha': 1.0,
+      'ePlanta': 0.5
+    },
+    'Pimentão': {
+      'par': 'Manjericão, Cebola',
+      'evitar': 'Feijão',
+      'ciclo': 100,
+      'eLinha': 1.0,
+      'ePlanta': 0.5
+    },
+    'Quiabo': {
+      'par': 'Pimentão, Tomate',
+      'evitar': 'Nenhum',
+      'ciclo': 80,
+      'eLinha': 1.0,
+      'ePlanta': 0.3
+    },
+    'Repolho': {
+      'par': 'Beterraba, Cebola',
+      'evitar': 'Morango',
+      'ciclo': 100,
+      'eLinha': 0.8,
       'ePlanta': 0.4
+    },
+    'Rúcula': {
+      'par': 'Alface, Beterraba',
+      'evitar': 'Repolho',
+      'ciclo': 40,
+      'eLinha': 0.2,
+      'ePlanta': 0.1
+    },
+    'Tomate': {
+      'par': 'Manjericão, Alho',
+      'evitar': 'Batata',
+      'ciclo': 110,
+      'eLinha': 1.0,
+      'ePlanta': 0.3
     },
   };
 
-  // --- MATRIZ REGIONAL (Mantida) ---
+  // --- MATRIZ REGIONAL DE CULTIVO COMPLETA ---
   final Map<String, Map<String, List<String>>> _calendarioRegional = {
     'Sul': {
       'Janeiro': [
@@ -921,7 +879,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       MaterialPageRoute(
           builder: (_) => TelaCalagem(canteiroIdOrigem: widget.canteiroId)));
 
-  // --- DIÁLOGO DE IRRIGAÇÃO ---
+  // --- MÓDULO DE IRRIGAÇÃO ---
   void _mostrarDialogoIrrigacao() {
     String metodo = 'Gotejamento';
     final tempoController = TextEditingController(text: '30');
@@ -937,120 +895,130 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-            top: 15,
+            top: 20,
             left: 20,
             right: 20),
         child: SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 20),
-              Row(children: const [
-                Icon(Icons.water_drop, color: Colors.blue, size: 28),
-                SizedBox(width: 10),
-                Text('Gestão de Irrigação',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold))
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: const [
+                  Icon(Icons.water_drop, color: Colors.blue, size: 28),
+                  SizedBox(width: 10),
+                  Text('Gestão de Irrigação',
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold))
+                ]),
+                const SizedBox(height: 20),
+                Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.blue.shade100)),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('🌧️ Controle de Chuva',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueAccent)),
+                          const SizedBox(height: 10),
+                          TextField(
+                              controller: chuvaController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'Choveu hoje? (mm)',
+                                  hintText: 'Ex: 15',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.cloud)),
+                              onChanged: (val) {
+                                double chuva = double.tryParse(val) ?? 0;
+                                if (chuva > 10) {
+                                  ScaffoldMessenger.of(context)
+                                      .hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: const Text(
+                                              '🛑 ALERTA: Chuva > 10mm! Recomendado ABORTAR a irrigação.'),
+                                          backgroundColor:
+                                              Colors.red.shade800));
+                                }
+                              }),
+                        ])),
+                const SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                    value: metodo,
+                    decoration: const InputDecoration(
+                        labelText: 'Sistema Utilizado',
+                        border: OutlineInputBorder()),
+                    items: [
+                      'Manual',
+                      'Gotejamento',
+                      'Aspersão',
+                      'Microaspersão'
+                    ]
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
+                    onChanged: (v) => metodo = v!),
+                const SizedBox(height: 15),
+                TextField(
+                    controller: tempoController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Tempo de Rega',
+                        suffixText: 'minutos',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.timer))),
+                const SizedBox(height: 25),
+                SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                        onPressed: () async {
+                          double chuva =
+                              double.tryParse(chuvaController.text) ?? 0;
+                          int tempo = int.tryParse(tempoController.text) ?? 0;
+                          if (chuva > 10) {
+                            showDialog(
+                                context: context,
+                                builder: (c) => AlertDialog(
+                                        title: const Text('Abortar?'),
+                                        content: Text(
+                                            'Choveu ${chuva}mm. Confirmar rega extra?'),
+                                        actions: [
+                                          TextButton(
+                                              onPressed: () => Navigator.pop(c),
+                                              child: const Text('CANCELAR')),
+                                          TextButton(
+                                              onPressed: () {
+                                                Navigator.pop(c);
+                                                _salvarIrrigacao(
+                                                    metodo, tempo, chuva);
+                                              },
+                                              child: const Text('REGISTRAR',
+                                                  style: TextStyle(
+                                                      color: Colors.red)))
+                                        ]));
+                          } else {
+                            _salvarIrrigacao(metodo, tempo, chuva);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12))),
+                        child: const Text('SALVAR DADOS',
+                            style: TextStyle(fontWeight: FontWeight.bold))))
               ]),
-              const SizedBox(height: 20),
-              Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: Colors.blue.shade100)),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('🌧️ Controle de Chuva',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blueAccent)),
-                        const SizedBox(height: 10),
-                        TextField(
-                            controller: chuvaController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                                labelText: 'Choveu hoje? (mm)',
-                                hintText: 'Ex: 15',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.cloud)),
-                            onChanged: (val) {
-                              if ((double.tryParse(val) ?? 0) > 10) {
-                                ScaffoldMessenger.of(context)
-                                    .hideCurrentSnackBar();
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                    content: const Text(
-                                        '🛑 ALERTA: Chuva > 10mm! Recomendado ABORTAR a irrigação.'),
-                                    backgroundColor: Colors.red.shade800));
-                              }
-                            }),
-                      ])),
-              const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                  value: metodo,
-                  decoration: const InputDecoration(
-                      labelText: 'Sistema Utilizado',
-                      border: OutlineInputBorder()),
-                  items: ['Manual', 'Gotejamento', 'Aspersão', 'Microaspersão']
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-                  onChanged: (v) => metodo = v!),
-              const SizedBox(height: 15),
-              TextField(
-                  controller: tempoController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Tempo de Rega',
-                      suffixText: 'minutos',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.timer))),
-              const SizedBox(height: 25),
-              SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                      onPressed: () => _salvarIrrigacao(
-                          metodo,
-                          int.tryParse(tempoController.text) ?? 0,
-                          double.tryParse(chuvaController.text) ?? 0),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12))),
-                      child: const Text('SALVAR DADOS',
-                          style: TextStyle(fontWeight: FontWeight.bold))))
-            ],
-          ),
         ),
       ),
     );
   }
 
   void _salvarIrrigacao(String metodo, int tempo, double chuva) async {
-    if (chuva > 10) {
-      await showDialog(
-          context: context,
-          builder: (c) => AlertDialog(
-                  title: const Text('Confirmar?'),
-                  content:
-                      const Text('Choveu muito. Irrigar pode causar fungos.'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(c),
-                        child: const Text('CANCELAR')),
-                    TextButton(
-                        onPressed: () => Navigator.pop(c),
-                        child: const Text('REGISTRAR',
-                            style: TextStyle(color: Colors.red)))
-                  ]));
-    }
     await FirebaseFirestore.instance.collection('historico_manejo').add({
       'canteiro_id': widget.canteiroId,
       'uid_usuario': FirebaseAuth.instance.currentUser?.uid,
@@ -1063,7 +1031,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (mounted) Navigator.pop(context);
   }
 
-  // --- PLANTIO PROFISSIONAL COM CATEGORIZAÇÃO (NÚCLEO ⚛️) ---
+  // --- PLANTIO PROFISSIONAL (COM MATRIZ COMPLETA E UX PREMIUM) ---
   void _mostrarDialogoPlantio(double cCanteiro, double lCanteiro) {
     List<String> selecionadas = [];
     String regiao = 'Sudeste';
@@ -1077,17 +1045,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          // Filtra recomendadas
-          List<String> recomendadas = _calendarioRegional[regiao]?[mes] ?? [];
+          // CORREÇÃO CIRÚRGICA: Ordenação e criação de listas fora do build
+          List<String> recomendadas =
+              List.from(_calendarioRegional[regiao]?[mes] ?? []);
+          recomendadas.sort();
           List<String> outras =
               todasAsCulturas.where((c) => !recomendadas.contains(c)).toList();
-
-          // Agrupa recomendadas por categoria
-          Map<String, List<String>> porCategoria = {};
-          for (var planta in recomendadas) {
-            String cat = _guiaCompleto[planta]?['cat'] ?? 'Outros';
-            porCategoria.putIfAbsent(cat, () => []).add(planta);
-          }
+          outras.sort();
 
           return Container(
             height: MediaQuery.of(context).size.height * 0.9,
@@ -1097,7 +1061,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                // Header
                 Container(
                     width: 40,
                     height: 4,
@@ -1116,14 +1079,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           icon: const Icon(Icons.close))
                     ]),
                 const Divider(),
-
-                // Filtros
                 Row(children: [
                   Expanded(
                       child: DropdownButtonFormField(
                           value: regiao,
                           decoration: const InputDecoration(
                               labelText: 'Região',
+                              border: OutlineInputBorder(),
                               contentPadding:
                                   EdgeInsets.symmetric(horizontal: 10)),
                           items: _calendarioRegional.keys
@@ -1142,6 +1104,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           value: mes,
                           decoration: const InputDecoration(
                               labelText: 'Mês',
+                              border: OutlineInputBorder(),
                               contentPadding:
                                   EdgeInsets.symmetric(horizontal: 10)),
                           items: [
@@ -1169,8 +1132,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               }))),
                 ]),
                 const SizedBox(height: 10),
-
-                // Lista de Culturas (Categorizada)
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(
@@ -1179,65 +1140,37 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(8),
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(
-                                  color: Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: Text('✅ Recomendadas para $regiao em $mes',
+                              color: Colors.green.shade50,
+                              child: Text('✅ Ideais para $regiao em $mes:',
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Colors.green.shade800,
                                       fontSize: 12))),
-
-                          // Renderiza categorias
-                          if (porCategoria.isEmpty)
-                            const Text(
-                                'Nenhuma recomendação específica para este filtro.',
-                                style: TextStyle(color: Colors.grey)),
-                          ...porCategoria.entries.map((entry) {
-                            return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 5),
-                                      child: Text(entry.key,
-                                          style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.blueGrey))),
-                                  Wrap(
-                                      spacing: 6,
-                                      children: entry.value.map((planta) {
-                                        bool isSel =
-                                            selecionadas.contains(planta);
-                                        return FilterChip(
-                                          label: Text(planta),
-                                          selected: isSel,
-                                          checkmarkColor: Colors.white,
-                                          selectedColor: Colors.green,
-                                          labelStyle: TextStyle(
-                                              color: isSel
-                                                  ? Colors.white
-                                                  : Colors.black,
-                                              fontSize: 11),
-                                          onSelected: (v) => setModalState(() =>
-                                              v
-                                                  ? selecionadas.add(planta)
-                                                  : selecionadas
-                                                      .remove(planta)),
-                                        );
-                                      }).toList()),
-                                  const SizedBox(height: 10),
-                                ]);
-                          }),
-
+                          Wrap(
+                              spacing: 6,
+                              children: recomendadas.map((planta) {
+                                bool isSel = selecionadas.contains(planta);
+                                return FilterChip(
+                                    label: Text(planta),
+                                    selected: isSel,
+                                    checkmarkColor: Colors.white,
+                                    selectedColor: Colors.green,
+                                    labelStyle: TextStyle(
+                                        color:
+                                            isSel ? Colors.white : Colors.black,
+                                        fontSize: 11),
+                                    onSelected: (v) => setModalState(() {
+                                          v
+                                              ? selecionadas.add(planta)
+                                              : selecionadas.remove(planta);
+                                        }));
+                              }).toList()),
                           const SizedBox(height: 15),
                           Theme(
                               data: Theme.of(context)
                                   .copyWith(dividerColor: Colors.transparent),
                               child: ExpansionTile(
-                                title: const Text('⚠️ Outras (Fora de Época)',
+                                title: const Text('⚠️ Outras Culturas (Risco)',
                                     style: TextStyle(
                                         fontSize: 13,
                                         color: Colors.orange,
@@ -1276,8 +1209,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                       }).toList())
                                 ],
                               )),
-
-                          // Resumo
                           if (selecionadas.isNotEmpty) ...[
                             const Divider(),
                             Container(
@@ -1289,7 +1220,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                   const Row(children: [
                                     Icon(Icons.analytics_outlined, size: 16),
                                     SizedBox(width: 5),
-                                    Text('Resumo',
+                                    Text('Previsão do Canteiro',
                                         style: TextStyle(
                                             fontWeight: FontWeight.bold))
                                   ]),
@@ -1323,7 +1254,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             TextField(
                                 controller: obsController,
                                 decoration: const InputDecoration(
-                                    labelText: 'Observação',
+                                    labelText: 'Observação do Plantio',
                                     border: OutlineInputBorder(),
                                     contentPadding:
                                         EdgeInsets.symmetric(horizontal: 10))),
@@ -1331,16 +1262,16 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         ]),
                   ),
                 ),
-
                 if (selecionadas.isNotEmpty)
                   SizedBox(
                       width: double.infinity,
                       height: 45,
                       child: ElevatedButton(
                         onPressed: () async {
-                          String resumo = "Plantio $regiao/$mes:\n";
+                          String resumo = "Plantio ($regiao/$mes):\n";
                           for (var p in selecionadas) {
-                            final info = _guiaCompleto[p]!;
+                            final info = _guiaCompleto[p] ??
+                                {'ciclo': 90, 'eLinha': 0.5, 'ePlanta': 0.5};
                             int m = ((cCanteiro * lCanteiro) /
                                     selecionadas.length /
                                     (info['eLinha'] * info['ePlanta']))
@@ -1364,6 +1295,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             'quantidade_g': 0
                           });
                           Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('✅ Plantio registrado!')));
                         },
                         style: ElevatedButton.styleFrom(
                             backgroundColor:
@@ -1371,7 +1305,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12))),
-                        child: const Text('CONFIRMAR'),
+                        child: const Text('CONFIRMAR PLANTIO'),
                       ))
               ],
             ),
@@ -1454,47 +1388,97 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             ));
   }
 
-  // --- MÉTODOS AUXILIARES ---
-  void _editarItem(String id, String detalheAtual, double qtdAtual,
-      String tipoManejo, String produtoAtual) {
+  // --- EDIÇÃO INTELIGENTE (CORRIGIDA E SEGURA) ---
+  void _editarItem(String id, String detalheAtual, double qtdAtual, String tipo,
+      String produtoAtual) {
     final obsController = TextEditingController(text: detalheAtual);
     final qtdController = TextEditingController(
         text: qtdAtual > 0 ? qtdAtual.toStringAsFixed(0) : '');
-    bool bloqueiaQtd = tipoManejo.contains('Análise') ||
-        tipoManejo == 'Plantio' ||
-        tipoManejo == 'Irrigação';
+    List<String> culturasAtuais =
+        tipo == 'Plantio' ? produtoAtual.split(' + ') : [];
+
+    // Lista segura e ordenada fora do build
+    List<String> todasPlantas = _guiaCompleto.keys.toList()..sort();
+
     showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-                title: const Text('Editar'),
-                content: Column(mainAxisSize: MainAxisSize.min, children: [
-                  TextField(
-                      controller: obsController,
-                      decoration: const InputDecoration(labelText: 'Obs')),
-                  if (!bloqueiaQtd)
-                    TextField(
-                        controller: qtdController,
-                        decoration: const InputDecoration(labelText: 'Qtd'))
-                ]),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancelar')),
-                  ElevatedButton(
-                      onPressed: () {
-                        FirebaseFirestore.instance
-                            .collection('historico_manejo')
-                            .doc(id)
-                            .update({
-                          'detalhes': obsController.text,
-                          if (!bloqueiaQtd)
-                            'quantidade_g':
-                                double.tryParse(qtdController.text) ?? 0
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text('Editar Registro'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (tipo == 'Plantio') ...[
+                const Text('Culturas Selecionadas:',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey)),
+                Wrap(
+                  spacing: 6,
+                  // Aqui usamos uma lógica segura de filtragem para não quebrar a UI com 30 chips
+                  children: todasPlantas
+                      .where((p) =>
+                          culturasAtuais.contains(p) ||
+                          todasPlantas.indexOf(p) < 5)
+                      .map((planta) {
+                    return ChoiceChip(
+                      label: Text(planta, style: const TextStyle(fontSize: 10)),
+                      selected: culturasAtuais.contains(planta),
+                      onSelected: (v) {
+                        setModalState(() {
+                          if (v)
+                            culturasAtuais.add(planta);
+                          else
+                            culturasAtuais.remove(planta);
                         });
-                        Navigator.pop(ctx);
                       },
-                      child: const Text('Salvar'))
-                ]));
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 10),
+              ],
+              TextField(
+                  controller: obsController,
+                  decoration: const InputDecoration(
+                      labelText: 'Observação / Detalhes',
+                      border: OutlineInputBorder()),
+                  maxLines: 3),
+              if (tipo != 'Plantio' && tipo != 'Irrigação') ...[
+                const SizedBox(height: 10),
+                TextField(
+                    controller: qtdController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Quantidade',
+                        suffixText: 'g',
+                        border: OutlineInputBorder()))
+              ]
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CANCELAR')),
+            ElevatedButton(
+                onPressed: () {
+                  FirebaseFirestore.instance
+                      .collection('historico_manejo')
+                      .doc(id)
+                      .update({
+                    'detalhes': obsController.text,
+                    'produto': tipo == 'Plantio'
+                        ? culturasAtuais.join(' + ')
+                        : produtoAtual,
+                    if (tipo != 'Plantio')
+                      'quantidade_g': double.tryParse(qtdController.text) ?? 0
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: const Text('SALVAR'))
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmarExclusaoItem(String id) {
@@ -1512,6 +1496,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         .delete();
                     if (mounted) Navigator.pop(ctx);
                   },
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white),
                   child: const Text('Sim'))
             ]));
   }
@@ -1527,7 +1514,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 content: Column(mainAxisSize: MainAxisSize.min, children: [
                   TextField(
                       controller: _nomeController,
-                      decoration: const InputDecoration(labelText: 'Nome')),
+                      decoration: const InputDecoration(
+                          labelText: 'Nome', hintText: 'Ex: Canteiro 1')),
                   Row(children: [
                     Expanded(
                         child: TextField(
@@ -1556,7 +1544,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             .collection('canteiros')
                             .doc(widget.canteiroId)
                             .update({
-                          'nome': _nomeController.text,
+                          'nome': _nomeController.text.isEmpty
+                              ? 'Canteiro 1'
+                              : _nomeController.text,
                           'comprimento': c,
                           'largura': l,
                           'area_m2': c * l
@@ -1602,6 +1592,71 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     return '${d.day}/${d.month} ${d.hour}:${d.minute}';
   }
 
+  // --- DASHBOARD DE CUIDADOS ---
+  Widget _buildDashboard(Map<String, dynamic> dados, double area) {
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('historico_manejo')
+            .where('canteiro_id', isEqualTo: widget.canteiroId)
+            .where('tipo_manejo', isEqualTo: 'Plantio')
+            .orderBy('data', descending: true)
+            .limit(1)
+            .snapshots(),
+        builder: (context, snapshot) {
+          String dicas = "Canteiro livre para plantio.";
+          String colheita = "-";
+          if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+            var ultimo =
+                snapshot.data!.docs.first.data() as Map<String, dynamic>;
+            dicas =
+                "💧 Irrigar conforme chuva.\n💩 Adubo: ${(area * 3).toStringAsFixed(1)}kg esterco (3kg/m²).";
+            if (ultimo['data_colheita_prevista'] != null) {
+              DateTime d =
+                  (ultimo['data_colheita_prevista'] as Timestamp).toDate();
+              colheita = "${d.day}/${d.month}/${d.year}";
+            }
+          }
+          return Container(
+            margin: const EdgeInsets.all(15),
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 5)
+                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${area.toStringAsFixed(1)} m²',
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text('Área Total',
+                      style: TextStyle(color: Colors.grey, fontSize: 10))
+                ]),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text(colheita,
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green)),
+                  const Text('Previsão Colheita',
+                      style: TextStyle(color: Colors.grey, fontSize: 10))
+                ]),
+              ]),
+              const Divider(height: 20),
+              const Text('PLANEJAMENTO DE CUIDADOS:',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueGrey)),
+              Text(dicas, style: const TextStyle(fontSize: 12, height: 1.4)),
+            ]),
+          );
+        });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -1615,11 +1670,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               body: Center(child: CircularProgressIndicator()));
         final dados = snapshot.data!.data() as Map<String, dynamic>;
         final bool ativo = dados['ativo'] ?? true;
+        final double comp = (dados['comprimento'] ?? 0).toDouble();
+        final double larg = (dados['largura'] ?? 0).toDouble();
+
         return Scaffold(
           backgroundColor: Colors.grey[100],
           appBar: AppBar(
-              title: Text(dados['nome'],
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(dados['nome']),
               backgroundColor:
                   ativo ? Theme.of(context).colorScheme.primary : Colors.grey,
               foregroundColor: Colors.white,
@@ -1642,27 +1699,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               ]),
           floatingActionButton: ativo
               ? FloatingActionButton.extended(
-                  onPressed: () => _mostrarOpcoesManejo(
-                      (dados['comprimento'] ?? 0).toDouble(),
-                      (dados['largura'] ?? 0).toDouble()),
+                  onPressed: () => _mostrarOpcoesManejo(comp, larg),
                   label: const Text('NOVO MANEJO'),
                   icon: const Icon(Icons.add))
               : null,
           body: Column(children: [
-            Container(
-                padding: const EdgeInsets.all(20),
-                color: Colors.white,
-                child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _InfoBox(
-                          label: 'Área',
-                          valor:
-                              '${(dados['area_m2'] ?? 0).toStringAsFixed(2)} m²'),
-                      _InfoBox(
-                          label: 'Dimensões',
-                          valor: '${dados['comprimento']}x${dados['largura']}m')
-                    ])),
+            _buildDashboard(dados, (dados['area_m2'] ?? 0).toDouble()),
             Expanded(
                 child: StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
@@ -1686,42 +1728,53 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
-                                    leading: CircleAvatar(
-                                        backgroundColor:
-                                            e['tipo_manejo'] == 'Irrigação'
-                                                ? Colors.blue.shade100
-                                                : Colors.green.shade100,
-                                        child: Icon(
-                                            e['tipo_manejo'] == 'Irrigação'
-                                                ? Icons.water_drop
-                                                : Icons.agriculture,
-                                            color: Colors.black54)),
-                                    title: Text(e['produto'] ?? ''),
-                                    subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(e['detalhes'] ?? ''),
-                                          Text(_formatarData(e['data']),
+                                  leading: CircleAvatar(
+                                      backgroundColor:
+                                          e['tipo_manejo'] == 'Irrigação'
+                                              ? Colors.blue.shade100
+                                              : Colors.green.shade100,
+                                      child: Icon(
+                                          e['tipo_manejo'] == 'Irrigação'
+                                              ? Icons.water_drop
+                                              : Icons.agriculture,
+                                          color: Colors.black54)),
+                                  title: Text(e['produto'] ?? ''),
+                                  subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(e['detalhes'] ?? ''),
+                                        Text(_formatarData(e['data']),
+                                            style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey)),
+                                        if (e['observacao_extra'] != null)
+                                          Text('Obs: ${e['observacao_extra']}',
                                               style: const TextStyle(
                                                   fontSize: 11,
-                                                  color: Colors.grey)),
-                                          if (e['observacao_extra'] != null)
-                                            Text(
-                                                'Obs: ${e['observacao_extra']}',
-                                                style: const TextStyle(
-                                                    fontSize: 11,
-                                                    fontStyle:
-                                                        FontStyle.italic))
-                                        ]),
-                                    trailing: IconButton(
-                                        icon: const Icon(Icons.edit, size: 20),
-                                        onPressed: () => _editarItem(
-                                            list[i].id,
-                                            e['detalhes'],
-                                            (e['quantidade_g'] ?? 0).toDouble(),
-                                            e['tipo_manejo'],
-                                            e['produto'] ?? ''))));
+                                                  fontStyle: FontStyle.italic))
+                                      ]),
+                                  trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                            icon: const Icon(Icons.edit,
+                                                size: 20),
+                                            onPressed: () => _editarItem(
+                                                list[i].id,
+                                                e['detalhes'],
+                                                (e['quantidade_g'] ?? 0)
+                                                    .toDouble(),
+                                                e['tipo_manejo'],
+                                                e['produto'] ?? '')),
+                                        IconButton(
+                                            icon: const Icon(Icons.delete,
+                                                size: 20, color: Colors.red),
+                                            onPressed: () =>
+                                                _confirmarExclusaoItem(
+                                                    list[i].id)),
+                                      ]),
+                                ));
                           });
                     }))
           ]),
@@ -1731,7 +1784,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 }
 
-// --- WIDGETS DE DESIGN (GRID MENU & INFO BOX) ---
+// --- WIDGETS DE DESIGN ---
 class _CardMenu extends StatelessWidget {
   final IconData icon;
   final Color color;
