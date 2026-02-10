@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "435119148789",
+    "project_id": "verde-ensina",
+    "storage_bucket": "verde-ensina.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435119148789:android:74691578a4ef1c6f7e7fbc",
+        "android_client_info": {
+          "package_name": "com.example.verde_ensina"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAuouB0KXdHzePWsfmnBHsvlmkIHzBqz-s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
