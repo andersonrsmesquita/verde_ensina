@@ -7,6 +7,7 @@ import '../canteiros/tela_canteiros.dart';
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
 import '../planejamento/tela_planejamento_consumo.dart';
+import '../adubacao/tela_adubacao_organo15.dart'; // <--- NOVO IMPORT
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -180,11 +181,18 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.storefront,
                     cor: Colors.purple,
                     onTap: () {}),
+                // ATUALIZAÇÃO: Atalho direto para Adubação
                 _CardMenuGrande(
-                    titulo: 'Receitas',
-                    icone: Icons.restaurant_menu,
+                    titulo: 'Adubação',
+                    subtitulo: 'Calculadora',
+                    icone: Icons.eco,
                     cor: Colors.orange,
-                    onTap: () {}),
+                    onTap: () {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const TelaAdubacaoOrgano15()));
+                    }),
                 _CardMenuGrande(
                     titulo: 'Configurações',
                     icone: Icons.settings,
@@ -250,18 +258,19 @@ class _AbaJornadaTrilha extends StatelessWidget {
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
                           Navigator.pop(ctx);
-                          if (acao == 'diagnostico')
+                          if (acao == 'diagnostico') {
                             Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                     builder: (_) => TelaDiagnostico(
                                         canteiroIdOrigem: doc.id)));
-                          else if (acao == 'calagem')
+                          } else if (acao == 'calagem') {
                             Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                     builder: (_) =>
                                         TelaCalagem(canteiroIdOrigem: doc.id)));
+                          }
                         },
                       );
                     }).toList(),
@@ -358,14 +367,22 @@ class _AbaJornadaTrilha extends StatelessWidget {
               icone: Icons.landscape,
               corIcone: Colors.blueGrey,
               onTap: () => _iniciarAcaoComCanteiro(context, 'calagem')),
-          const _TimelineItem(
+
+          // ATUALIZAÇÃO: Fase 4 Desbloqueada
+          _TimelineItem(
               fase: 4,
               titulo: 'Adubação',
-              descricao: 'Nutrição (Em breve).',
+              descricao: 'Nutrição Organo15.', // Texto atualizado
               icone: Icons.eco,
               corIcone: Colors.orange,
-              bloqueado: true,
-              onTap: null),
+              bloqueado: false, // Desbloqueado!
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const TelaAdubacaoOrgano15()));
+              }),
+
           const _TimelineItem(
               fase: 5,
               titulo: 'Colheita',

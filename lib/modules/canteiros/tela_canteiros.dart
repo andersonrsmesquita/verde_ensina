@@ -13,26 +13,23 @@ class TelaCanteiros extends StatefulWidget {
 class _TelaCanteirosState extends State<TelaCanteiros> {
   final user = FirebaseAuth.instance.currentUser;
 
-  // --- FORMULÁRIO DE CADASTRO (DESIGN MANTIDO, LÓGICA EXPANDIDA) ---
+  // --- FORMULÁRIO DE CADASTRO SIMPLIFICADO ---
   void _mostrarFormulario(BuildContext context) {
     final nomeController = TextEditingController();
     final compController = TextEditingController();
     final largController = TextEditingController();
-    final volumeController = TextEditingController(); // Novo: Para Vasos
+    final volumeController = TextEditingController();
 
     // Estado local do modal para alternar entre Vaso/Canteiro
     String tipoLocal = 'Canteiro';
-    String texturaSolo = 'Média'; // Padrão seguro
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
+      isScrollControlled: true, // Para o teclado não cobrir
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => StatefulBuilder(
-          // StatefulBuilder para atualizar o modal dinamicamente
-          builder: (context, setModalState) {
+      builder: (ctx) => StatefulBuilder(builder: (context, setModalState) {
         return Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom + 20,
@@ -48,7 +45,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 children: const [
                   Icon(Icons.add_circle_outline, color: Colors.green, size: 28),
                   SizedBox(width: 10),
-                  Text('Novo Local de Cultivo', // Texto mais genérico
+                  Text('Novo Local de Cultivo',
                       style:
                           TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                 ],
@@ -133,21 +130,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               suffixText: 'm',
                               border: OutlineInputBorder()))),
                 ]),
-                const SizedBox(height: 15),
-                // Textura do Solo (Novo e Crucial)
-                DropdownButtonFormField<String>(
-                  value: texturaSolo,
-                  decoration: const InputDecoration(
-                    labelText: 'Textura do Solo',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.terrain),
-                    helperText: 'Faça o teste da minhoquinha se tiver dúvida.',
-                  ),
-                  items: ['Arenosa', 'Média', 'Argilosa']
-                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                      .toList(),
-                  onChanged: (v) => setModalState(() => texturaSolo = v!),
-                ),
+                // REMOVIDO: Campo de Textura do Solo
               ] else ...[
                 // Volume do Vaso
                 TextField(
@@ -158,7 +141,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     labelText: 'Volume do Vaso (Litros)',
                     suffixText: 'L',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.local_drink), // Ícone de volume
+                    prefixIcon: Icon(Icons.local_drink),
                     helperText: 'Ex: Baldes comuns têm ~12 Litros.',
                   ),
                 ),
@@ -172,7 +155,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   onPressed: () async {
                     final nome = nomeController.text;
 
-                    // Lógica de Salvamento Adaptada
+                    // Lógica de Salvamento
                     double areaOuVolume = 0;
                     double comp = 0;
                     double larg = 0;
@@ -197,13 +180,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           .add({
                         'uid_usuario': user?.uid,
                         'nome': nome,
-                        'tipo': tipoLocal, // Salva o tipo
-                        'textura_solo': tipoLocal == 'Canteiro'
-                            ? texturaSolo
-                            : null, // Salva textura se for chão
+                        'tipo': tipoLocal,
+                        // removido: 'textura_solo'
                         'comprimento': comp,
                         'largura': larg,
-                        'area_m2': areaOuVolume, // Salva o valor (m2 ou Litros)
+                        'area_m2': areaOuVolume, // Salva m2 ou Litros
                         'ativo': true,
                         'status': 'livre',
                         'data_criacao': FieldValue.serverTimestamp(),
@@ -229,7 +210,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
   }
 
-  // Helper para cor do ícone e badge baseado no status (MANTIDO)
+  // Helper para cor do ícone e badge baseado no status
   Color _getCorStatus(String? status) {
     switch (status) {
       case 'ocupado':
@@ -258,8 +239,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text('Meus Locais',
-            style: TextStyle(
-                fontWeight: FontWeight.bold)), // Título levemente ajustado
+            style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
@@ -270,7 +250,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
-        label: const Text('NOVO LOCAL'), // Botão ajustado
+        label: const Text('NOVO LOCAL'),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -327,7 +307,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               final nome = dados['nome'] ?? 'Sem Nome';
               final area =
                   (dados['area_m2'] ?? 0).toDouble(); // Pode ser m2 ou Litros
-              final tipo = dados['tipo'] ?? 'Canteiro'; // Campo novo
+              final tipo = dados['tipo'] ?? 'Canteiro';
               final bool ativo = dados['ativo'] ?? true;
               final String status = dados['status'] ?? 'livre';
 

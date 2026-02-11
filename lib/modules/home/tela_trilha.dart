@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+// Imports das telas
 import '../canteiros/tela_canteiros.dart';
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
 import '../planejamento/tela_planejamento_consumo.dart';
+import '../adubacao/tela_adubacao_organo15.dart'; // <--- IMPORTANTE: Importe a nova tela aqui
 
 class TelaTrilha extends StatefulWidget {
   const TelaTrilha({super.key});
@@ -16,7 +19,7 @@ class TelaTrilha extends StatefulWidget {
 class _TelaTrilhaState extends State<TelaTrilha> {
   final user = FirebaseAuth.instance.currentUser;
 
-  // --- LÓGICA DE ATALHO INTELIGENTE (MANTIDA) ---
+  // --- LÓGICA DE ATALHO INTELIGENTE ---
   void _iniciarAcaoComCanteiro(BuildContext context, String acao) {
     showModalBottomSheet(
       context: context,
@@ -151,6 +154,8 @@ class _TelaTrilhaState extends State<TelaTrilha> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading:
+            false, // Remove a seta de voltar se for aba principal
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -240,14 +245,23 @@ class _TelaTrilhaState extends State<TelaTrilha> {
               color: Colors.brown,
               onTap: () => _iniciarAcaoComCanteiro(context, 'calagem'),
             ),
+
+            // --- ATUALIZAÇÃO AQUI: FASE 4 DESBLOQUEADA ---
             _TimelineItem(
               step: '5',
-              title: 'Adubação & Plantio',
-              desc: 'Em breve: Receitas de adubo e guia de plantio.',
+              title: 'Adubação Organo15',
+              desc: 'Calculadora de misturas para vasos e canteiros.',
               icon: Icons.eco,
-              color: Colors.teal,
-              isLocked: true,
+              color: Colors.orange,
+              isLocked: false, // Desbloqueado!
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const TelaAdubacaoOrgano15()));
+              },
             ),
+
             _TimelineItem(
               step: '6',
               title: 'Colheita & Venda',
@@ -264,6 +278,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
   }
 }
 
+// Widget Auxiliar (Mantido igual)
 class _TimelineItem extends StatelessWidget {
   final String step;
   final String title;
@@ -379,8 +394,8 @@ class _TimelineItem extends StatelessWidget {
                               const SizedBox(height: 4),
                               Text(desc,
                                   style: TextStyle(
-                                      color: Colors.grey.shade600,
                                       fontSize: 12,
+                                      color: Colors.grey[600],
                                       height: 1.3)),
                             ],
                           ),
