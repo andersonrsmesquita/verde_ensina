@@ -13,11 +13,16 @@ class TelaCanteiros extends StatefulWidget {
 class _TelaCanteirosState extends State<TelaCanteiros> {
   final user = FirebaseAuth.instance.currentUser;
 
-  // --- FORMULÁRIO DE CADASTRO ---
+  // --- FORMULÁRIO DE CADASTRO (DESIGN MANTIDO, LÓGICA EXPANDIDA) ---
   void _mostrarFormulario(BuildContext context) {
     final nomeController = TextEditingController();
     final compController = TextEditingController();
     final largController = TextEditingController();
+    final volumeController = TextEditingController(); // Novo: Para Vasos
+
+    // Estado local do modal para alternar entre Vaso/Canteiro
+    String tipoLocal = 'Canteiro';
+    String texturaSolo = 'Média'; // Padrão seguro
 
     showModalBottomSheet(
       context: context,
@@ -25,107 +30,206 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          top: 25,
-          left: 20,
-          right: 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.add_circle_outline, color: Colors.green, size: 28),
-                SizedBox(width: 10),
-                Text('Novo Canteiro',
-                    style:
-                        TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: nomeController,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Nome (Ex: Horta de Alface)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.label_outline),
+      builder: (ctx) => StatefulBuilder(
+          // StatefulBuilder para atualizar o modal dinamicamente
+          builder: (context, setModalState) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            top: 25,
+            left: 20,
+            right: 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.add_circle_outline, color: Colors.green, size: 28),
+                  SizedBox(width: 10),
+                  Text('Novo Local de Cultivo', // Texto mais genérico
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                ],
               ),
-            ),
-            const SizedBox(height: 15),
-            Row(children: [
-              Expanded(
-                  child: TextField(
-                      controller: compController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: 'Comp. (m)',
-                          suffixText: 'm',
-                          border: OutlineInputBorder()))),
-              const SizedBox(width: 15),
-              Expanded(
-                  child: TextField(
-                      controller: largController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: 'Larg. (m)',
-                          suffixText: 'm',
-                          border: OutlineInputBorder()))),
-            ]),
-            const SizedBox(height: 25),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () async {
-                  final nome = nomeController.text;
-                  final comp = double.tryParse(
-                          compController.text.replaceAll(',', '.')) ??
-                      0;
-                  final larg = double.tryParse(
-                          largController.text.replaceAll(',', '.')) ??
-                      0;
-                  final area = comp * larg;
+              const SizedBox(height: 20),
 
-                  if (nome.isNotEmpty && area > 0) {
-                    await FirebaseFirestore.instance
-                        .collection('canteiros')
-                        .add({
-                      'uid_usuario': user?.uid,
-                      'nome': nome,
-                      'comprimento': comp,
-                      'largura': larg,
-                      'area_m2': area,
-                      'ativo': true,
-                      'status': 'livre', // Status inicial padrão
-                      'data_criacao': FieldValue.serverTimestamp(),
-                    });
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+              // 1. NOME
+              TextField(
+                controller: nomeController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Nome (Ex: Horta 1, Vaso da Varanda)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.label_outline),
                 ),
-                child: const Text('SALVAR CANTEIRO',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            ),
-          ],
-        ),
-      ),
+              const SizedBox(height: 15),
+
+              // 2. TIPO (SELECTOR VISUAL)
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Canteiro / Chão'),
+                      selected: tipoLocal == 'Canteiro',
+                      onSelected: (bool selected) {
+                        setModalState(() => tipoLocal = 'Canteiro');
+                      },
+                      selectedColor: Colors.green.shade100,
+                      labelStyle: TextStyle(
+                          color: tipoLocal == 'Canteiro'
+                              ? Colors.green.shade900
+                              : Colors.black,
+                          fontWeight: tipoLocal == 'Canteiro'
+                              ? FontWeight.bold
+                              : FontWeight.normal),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Vaso / Recipiente'),
+                      selected: tipoLocal == 'Vaso',
+                      onSelected: (bool selected) {
+                        setModalState(() => tipoLocal = 'Vaso');
+                      },
+                      selectedColor: Colors.green.shade100,
+                      labelStyle: TextStyle(
+                          color: tipoLocal == 'Vaso'
+                              ? Colors.green.shade900
+                              : Colors.black,
+                          fontWeight: tipoLocal == 'Vaso'
+                              ? FontWeight.bold
+                              : FontWeight.normal),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 15),
+
+              // 3. CAMPOS DINÂMICOS
+              if (tipoLocal == 'Canteiro') ...[
+                // Dimensões do Canteiro
+                Row(children: [
+                  Expanded(
+                      child: TextField(
+                          controller: compController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                              labelText: 'Comp. (m)',
+                              suffixText: 'm',
+                              border: OutlineInputBorder()))),
+                  const SizedBox(width: 15),
+                  Expanded(
+                      child: TextField(
+                          controller: largController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                              labelText: 'Larg. (m)',
+                              suffixText: 'm',
+                              border: OutlineInputBorder()))),
+                ]),
+                const SizedBox(height: 15),
+                // Textura do Solo (Novo e Crucial)
+                DropdownButtonFormField<String>(
+                  value: texturaSolo,
+                  decoration: const InputDecoration(
+                    labelText: 'Textura do Solo',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.terrain),
+                    helperText: 'Faça o teste da minhoquinha se tiver dúvida.',
+                  ),
+                  items: ['Arenosa', 'Média', 'Argilosa']
+                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                      .toList(),
+                  onChanged: (v) => setModalState(() => texturaSolo = v!),
+                ),
+              ] else ...[
+                // Volume do Vaso
+                TextField(
+                  controller: volumeController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Volume do Vaso (Litros)',
+                    suffixText: 'L',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.local_drink), // Ícone de volume
+                    helperText: 'Ex: Baldes comuns têm ~12 Litros.',
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 25),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final nome = nomeController.text;
+
+                    // Lógica de Salvamento Adaptada
+                    double areaOuVolume = 0;
+                    double comp = 0;
+                    double larg = 0;
+
+                    if (tipoLocal == 'Canteiro') {
+                      comp = double.tryParse(
+                              compController.text.replaceAll(',', '.')) ??
+                          0;
+                      larg = double.tryParse(
+                              largController.text.replaceAll(',', '.')) ??
+                          0;
+                      areaOuVolume = comp * larg; // Área em m2
+                    } else {
+                      areaOuVolume = double.tryParse(
+                              volumeController.text.replaceAll(',', '.')) ??
+                          0; // Volume em Litros
+                    }
+
+                    if (nome.isNotEmpty && areaOuVolume > 0) {
+                      await FirebaseFirestore.instance
+                          .collection('canteiros')
+                          .add({
+                        'uid_usuario': user?.uid,
+                        'nome': nome,
+                        'tipo': tipoLocal, // Salva o tipo
+                        'textura_solo': tipoLocal == 'Canteiro'
+                            ? texturaSolo
+                            : null, // Salva textura se for chão
+                        'comprimento': comp,
+                        'largura': larg,
+                        'area_m2': areaOuVolume, // Salva o valor (m2 ou Litros)
+                        'ativo': true,
+                        'status': 'livre',
+                        'data_criacao': FieldValue.serverTimestamp(),
+                      });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('SALVAR LOCAL',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
-  // Helper para cor do ícone e badge baseado no status
+  // Helper para cor do ícone e badge baseado no status (MANTIDO)
   Color _getCorStatus(String? status) {
     switch (status) {
       case 'ocupado':
@@ -153,8 +257,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Meus Canteiros',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Meus Locais',
+            style: TextStyle(
+                fontWeight: FontWeight.bold)), // Título levemente ajustado
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
@@ -165,7 +270,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
-        label: const Text('NOVO CANTEIRO'),
+        label: const Text('NOVO LOCAL'), // Botão ajustado
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -181,7 +286,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             return const Center(
                 child: Padding(
                     padding: EdgeInsets.all(20),
-                    child: Text('Erro de índice. Verifique o console.')));
+                    child: Text('Erro ao carregar.')));
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -203,7 +308,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           color: Colors.grey,
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 5),
-                  const Text('Comece criando seu primeiro canteiro.',
+                  const Text('Adicione seu primeiro vaso ou canteiro.',
                       style: TextStyle(color: Colors.grey)),
                 ],
               ),
@@ -220,14 +325,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               final dados = doc.data() as Map<String, dynamic>;
               final id = doc.id;
               final nome = dados['nome'] ?? 'Sem Nome';
-              final area = dados['area_m2'] ?? 0;
+              final area =
+                  (dados['area_m2'] ?? 0).toDouble(); // Pode ser m2 ou Litros
+              final tipo = dados['tipo'] ?? 'Canteiro'; // Campo novo
               final bool ativo = dados['ativo'] ?? true;
               final String status = dados['status'] ?? 'livre';
 
-              // Se tivermos o campo percentual no futuro, usamos ele.
-              // Por enquanto, se estiver ocupado, assumimos 100% para visualização
               final double percentualUso = (status == 'ocupado') ? 1.0 : 0.0;
-
               Color corStatus = _getCorStatus(status);
 
               return Card(
@@ -239,17 +343,16 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   borderRadius: BorderRadius.circular(16),
                   onTap: () {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TelaDetalhesCanteiro(canteiroId: id),
-                      ),
-                    );
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                TelaDetalhesCanteiro(canteiroId: id)));
                   },
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        // Ícone com cor do status
+                        // Ícone muda dependendo se é Vaso ou Canteiro
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -258,12 +361,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 : Colors.grey.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Icon(Icons.grid_on,
-                              color: ativo ? corStatus : Colors.grey, size: 28),
+                          child: Icon(
+                              tipo == 'Vaso'
+                                  ? Icons.local_florist
+                                  : Icons.grid_on, // Ícone Inteligente
+                              color: ativo ? corStatus : Colors.grey,
+                              size: 28),
                         ),
                         const SizedBox(width: 15),
 
-                        // Informações
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,8 +390,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                                   ? null
                                                   : TextDecoration
                                                       .lineThrough))),
-
-                                  // Badge de Status
                                   if (ativo)
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -307,10 +411,18 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               ),
                               const SizedBox(height: 4),
                               Row(children: [
-                                Icon(Icons.aspect_ratio,
-                                    size: 14, color: Colors.grey[600]),
+                                Icon(
+                                    tipo == 'Vaso'
+                                        ? Icons.water_drop
+                                        : Icons.aspect_ratio,
+                                    size: 14,
+                                    color: Colors.grey[600]),
                                 const SizedBox(width: 4),
-                                Text('${area.toStringAsFixed(2)} m²',
+                                // Mostra unidade correta (Litros ou m²)
+                                Text(
+                                    tipo == 'Vaso'
+                                        ? '${area.toStringAsFixed(1)} Litros'
+                                        : '${area.toStringAsFixed(2)} m²',
                                     style: TextStyle(
                                         color: Colors.grey[600], fontSize: 13)),
                                 if (!ativo) ...[
@@ -329,8 +441,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                               color: Colors.white)))
                                 ]
                               ]),
-
-                              // Barra de Progresso (Visual)
                               if (ativo && status == 'ocupado') ...[
                                 const SizedBox(height: 8),
                                 ClipRRect(

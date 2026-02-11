@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class TelaDiagnostico extends StatefulWidget {
   final String? canteiroIdOrigem;
-  // Se já soubermos a cultura do canteiro, passamos aqui. Se não, o usuário escolhe.
   final String? culturaAtual;
 
   const TelaDiagnostico({super.key, this.canteiroIdOrigem, this.culturaAtual});
@@ -18,18 +17,21 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   late TabController _tabController;
   final _formKey = GlobalKey<FormState>();
   bool _salvando = false;
-  String? _resultadoManual;
 
-  // --- CÉREBRO AGRONÔMICO: Faixas ideais por cultura ---
+  // Diagnóstico Manual
+  String? _texturaEstimada;
+  String? _sintomaVisual;
+
+  // --- CÉREBRO AGRONÔMICO ---
   final Map<String, Map<String, double>> _referenciaCulturas = {
     'Alface': {'ph_min': 6.0, 'ph_max': 6.8, 'v_ideal': 70},
     'Tomate': {'ph_min': 5.5, 'ph_max': 6.8, 'v_ideal': 80},
     'Morango': {'ph_min': 5.5, 'ph_max': 6.5, 'v_ideal': 75},
     'Cenoura': {'ph_min': 5.5, 'ph_max': 6.5, 'v_ideal': 60},
-    'Geral (Horta)': {'ph_min': 5.5, 'ph_max': 6.5, 'v_ideal': 70}, // Fallback
+    'Geral (Horta)': {'ph_min': 5.5, 'ph_max': 6.5, 'v_ideal': 70},
   };
 
-  String _culturaSelecionada = 'Geral (Horta)'; // Padrão
+  String _culturaSelecionada = 'Geral (Horta)';
 
   // Controladores
   final _phController = TextEditingController();
@@ -44,7 +46,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-
     if (widget.culturaAtual != null &&
         _referenciaCulturas.containsKey(widget.culturaAtual)) {
       _culturaSelecionada = widget.culturaAtual!;
@@ -75,7 +76,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     final user = FirebaseAuth.instance.currentUser;
 
     try {
-      // 1. Preparar dados da Análise Técnica
       Map<String, dynamic> dadosAnalise = {
         'uid_usuario': user?.uid,
         'data': FieldValue.serverTimestamp(),
@@ -88,11 +88,16 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       String? obsAlerta;
 
       if (_tabController.index == 0) {
-        if (_resultadoManual == null)
+        if (_texturaEstimada == null)
           throw Exception("Selecione um tipo de solo.");
-        dadosAnalise['textura_estimada'] = _resultadoManual;
+
+        dadosAnalise['textura_estimada'] = _texturaEstimada;
+        dadosAnalise['sintoma_visual'] = _sintomaVisual;
         dadosAnalise['precisao'] = 'baixa';
-        resumoHistorico = "Textura Manual: $_resultadoManual";
+
+        resumoHistorico = "Análise Visual: Solo $_texturaEstimada.";
+        if (_sintomaVisual != null)
+          resumoHistorico += " Sintoma: $_sintomaVisual";
       } else {
         if (!_formKey.currentState!.validate())
           throw Exception("Verifique campos obrigatórios.");
@@ -104,40 +109,31 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
         dadosAnalise['v_percent'] = v;
         dadosAnalise['mo'] = _parseValue(_moController);
         dadosAnalise['fosforo'] = _parseValue(_fosforoController);
-
-        double k = _parseValue(_potassioController);
-        double ca = _parseValue(_calcioController);
-        double mg = _parseValue(_magnesioController);
-
-        dadosAnalise['potassio'] = k;
-        dadosAnalise['calcio'] = ca;
-        dadosAnalise['magnesio'] = mg;
-        dadosAnalise['soma_bases_calc'] = ca + mg + (k / 391);
+        dadosAnalise['potassio'] = _parseValue(_potassioController);
+        dadosAnalise['calcio'] = _parseValue(_calcioController);
+        dadosAnalise['magnesio'] = _parseValue(_magnesioController);
         dadosAnalise['precisao'] = 'alta';
 
-        resumoHistorico = "Análise Lab: pH $ph | V% $v%";
+        resumoHistorico = "Laudo Técnico: pH $ph | V% $v%";
 
-        // Gera alerta automático para o histórico
         if (v < 50)
           obsAlerta = "Fertilidade muito baixa. Calagem urgente.";
-        else if (ph < 5.5)
-          obsAlerta = "Acidez elevada para a maioria das culturas.";
+        else if (ph < 5.5) obsAlerta = "Acidez elevada. Raízes sofrendo.";
       }
 
-      // 2. SALVAR NA COLEÇÃO TÉCNICA (Para gráficos futuros)
       await FirebaseFirestore.instance
           .collection('analises_solo')
           .add(dadosAnalise);
 
-      // 3. SALVAR NO HISTÓRICO DO CANTEIRO (Para aparecer na TelaDetalhesCanteiro)
       if (widget.canteiroIdOrigem != null) {
         await FirebaseFirestore.instance.collection('historico_manejo').add({
           'canteiro_id': widget.canteiroIdOrigem,
           'uid_usuario': user?.uid,
           'data': FieldValue.serverTimestamp(),
           'tipo_manejo': 'Análise de Solo',
-          'produto':
-              _tabController.index == 0 ? 'Teste Físico' : 'Laudo Químico',
+          'produto': _tabController.index == 0
+              ? 'Teste Físico/Visual'
+              : 'Laudo Químico',
           'detalhes': resumoHistorico,
           'observacao_extra': obsAlerta,
           'quantidade_g': 0,
@@ -145,22 +141,16 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  const Text('✅ Diagnóstico salvo e vinculado ao canteiro!'),
-              backgroundColor: Colors.green.shade700),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('✅ Diagnóstico salvo com sucesso!'),
+            backgroundColor: Colors.green));
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Erro: ${e.toString()}'),
-              backgroundColor: Colors.red),
-        );
-      }
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erro: ${e.toString()}'),
+            backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
@@ -169,18 +159,22 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Diagnóstico Inteligente'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
+        title: const Text('Diagnóstico Inteligente',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.green[800],
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          labelColor: Colors.green[800],
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.green,
+          indicatorWeight: 3,
           tabs: const [
-            Tab(text: 'Teste de Mão', icon: Icon(Icons.back_hand)),
+            Tab(text: 'Teste Prático', icon: Icon(Icons.back_hand)),
             Tab(text: 'Laudo Técnico', icon: Icon(Icons.science)),
           ],
         ),
@@ -199,38 +193,86 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _InfoBox(
               icon: Icons.lightbulb,
               cor: Colors.orange,
               texto:
-                  'Sem laudo? Faça o teste da "minhoquinha" com terra úmida para descobrir a textura base.'),
-          const SizedBox(height: 20),
+                  'Sem análise química? Use o "teste da mão" e observe as folhas para um diagnóstico rápido.'),
+          const SizedBox(height: 25),
+          const Text('1. Textura do Solo',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 10),
           _OpcaoManual(
               titulo: 'Arenoso',
-              descricao: 'Esfarela, não molda.',
+              descricao: 'Esfarela na mão, não molda. Drena rápido.',
               valor: 'Arenoso',
-              grupo: _resultadoManual,
-              onChanged: (v) => setState(() => _resultadoManual = v)),
+              grupo: _texturaEstimada,
+              onChanged: (v) => setState(() => _texturaEstimada = v)),
           _OpcaoManual(
               titulo: 'Médio (Franco)',
-              descricao: 'Molda mas quebra.',
+              descricao: 'Molda mas quebra se dobrar. Ideal.',
               valor: 'Médio',
-              grupo: _resultadoManual,
-              onChanged: (v) => setState(() => _resultadoManual = v)),
+              grupo: _texturaEstimada,
+              onChanged: (v) => setState(() => _texturaEstimada = v)),
           _OpcaoManual(
               titulo: 'Argiloso',
-              descricao: 'Molda perfeito (massinha).',
+              descricao: 'Molda perfeito (massinha). Retém água.',
               valor: 'Argiloso',
-              grupo: _resultadoManual,
-              onChanged: (v) => setState(() => _resultadoManual = v)),
-          const SizedBox(height: 20),
+              grupo: _texturaEstimada,
+              onChanged: (v) => setState(() => _texturaEstimada = v)),
+          const SizedBox(height: 25),
+          const Text('2. Sintomas nas Plantas (Opcional)',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 5),
+          DropdownButtonFormField<String>(
+            value: _sintomaVisual,
+            decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 15)),
+            isExpanded: true,
+            hint: const Text('Selecione um sintoma...'),
+            items: const [
+              DropdownMenuItem(
+                  value: 'Sem sintomas', child: Text('🌱 Plantas Saudáveis')),
+              DropdownMenuItem(
+                  value: 'Falta N',
+                  child: Text('🍂 Folhas VELHAS amareladas (Falta N)')),
+              DropdownMenuItem(
+                  value: 'Falta Fe/S',
+                  child: Text('🌿 Folhas NOVAS amareladas (Falta Fe/S)')),
+              DropdownMenuItem(
+                  value: 'Falta P',
+                  child: Text('🟣 Folhas arroxeadas (Falta P)')),
+              DropdownMenuItem(
+                  value: 'Falta K',
+                  child: Text('🔥 Bordas queimadas (Falta K)')),
+            ],
+            onChanged: (v) => setState(() => _sintomaVisual = v),
+          ),
+          const SizedBox(height: 30),
           SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                  onPressed: _salvando ? null : _salvarDados,
-                  child: const Text('SALVAR TEXTURA')))
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _salvando ? null : _salvarDados,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              child: _salvando
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('SALVAR OBSERVAÇÃO',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          )
         ],
       ),
     );
@@ -247,115 +289,105 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
               decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.green.shade200)),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200)),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   isExpanded: true,
                   value: _referenciaCulturas.containsKey(_culturaSelecionada)
                       ? _culturaSelecionada
                       : 'Geral (Horta)',
-                  icon: const Icon(Icons.grass, color: Colors.green),
+                  icon: const Icon(Icons.keyboard_arrow_down,
+                      color: Colors.green),
                   items: _referenciaCulturas.keys.map((String cultura) {
                     return DropdownMenuItem<String>(
-                      value: cultura,
-                      child: Text("Focar na cultura: $cultura",
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade800)),
-                    );
+                        value: cultura,
+                        child: Text("Cultura Alvo: $cultura",
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800)));
                   }).toList(),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      _culturaSelecionada = newValue!;
-                    });
-                  },
+                  onChanged: (v) => setState(() => _culturaSelecionada = v!),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            _InputComMonitoramento(
-              controller: _phController,
-              label: 'pH (H2O)',
-              unidade: '',
-              cultura: _culturaSelecionada,
-              referencias: _referenciaCulturas[_culturaSelecionada]!,
-              tipoDado: 'ph',
-              obrigatorio: true,
-              ajudaTitulo: 'pH do Solo',
-              ajudaTexto:
-                  'O pH mede a acidez. Solos muito ácidos (pH baixo) "prendem" os nutrientes, e a planta passa fome mesmo com adubo.',
-            ),
-            const SizedBox(height: 20),
-            _InputComMonitoramento(
-              controller: _vPercentController,
-              label: 'V% (Saturação)',
-              unidade: '%',
-              cultura: _culturaSelecionada,
-              referencias: _referenciaCulturas[_culturaSelecionada]!,
-              tipoDado: 'v',
-              obrigatorio: true,
-              ajudaTitulo: 'Saturação por Bases (V%)',
-              ajudaTexto:
-                  'Indica quanto do solo está ocupado por nutrientes bons (Ca, Mg, K). Se estiver baixo, precisa de calcário (Calagem).',
-            ),
-            const SizedBox(height: 20),
-            _InputSimplesComAjuda(
-                controller: _moController,
-                label: 'Matéria Orgânica',
-                unidade: 'g/dm³',
-                ajudaTexto:
-                    'A "vida" do solo. Ajuda a reter água e nutrientes. Ideal acima de 20g/dm³.'),
-            const SizedBox(height: 15),
             Row(children: [
               Expanded(
-                  child: _InputSimplesComAjuda(
+                  child: _InputComMonitoramento(
+                      controller: _phController,
+                      label: 'pH (H2O)',
+                      cultura: _culturaSelecionada,
+                      referencias: _referenciaCulturas[_culturaSelecionada]!,
+                      tipoDado: 'ph',
+                      obrigatorio: true,
+                      ajudaTitulo: 'pH do Solo',
+                      ajudaTexto:
+                          'Mede a acidez. pH ideal libera nutrientes. Muito baixo (ácido) trava tudo.')),
+              const SizedBox(width: 15),
+              Expanded(
+                  child: _InputComMonitoramento(
+                      controller: _vPercentController,
+                      label: 'V% (Saturação)',
+                      cultura: _culturaSelecionada,
+                      referencias: _referenciaCulturas[_culturaSelecionada]!,
+                      tipoDado: 'v',
+                      obrigatorio: true,
+                      ajudaTitulo: 'V% - Saturação por Bases',
+                      ajudaTexto:
+                          'É o "nível da bateria" do solo. Indica quanto ele está cheio de nutrientes bons.')),
+            ]),
+            const SizedBox(height: 20),
+            _InputSimples(
+                controller: _moController,
+                label: 'Matéria Orgânica (M.O.)',
+                unidade: 'g/dm³'),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                  child: _InputSimples(
                       controller: _fosforoController,
                       label: 'Fósforo (P)',
-                      unidade: 'mg',
-                      ajudaTexto: 'Energia para raízes e flores.')),
+                      unidade: 'mg/dm³')),
               const SizedBox(width: 15),
               Expanded(
-                  child: _InputSimplesComAjuda(
+                  child: _InputSimples(
                       controller: _potassioController,
                       label: 'Potássio (K)',
-                      unidade: 'mmol',
-                      ajudaTexto: 'Qualidade dos frutos e resistência.')),
+                      unidade: 'mmol')),
             ]),
-            const SizedBox(height: 15),
+            const SizedBox(height: 10),
             Row(children: [
               Expanded(
-                  child: _InputSimplesComAjuda(
+                  child: _InputSimples(
                       controller: _calcioController,
                       label: 'Cálcio (Ca)',
-                      unidade: 'mmol',
-                      ajudaTexto: 'Estrutura das folhas e raízes.')),
+                      unidade: 'mmol')),
               const SizedBox(width: 15),
               Expanded(
-                  child: _InputSimplesComAjuda(
+                  child: _InputSimples(
                       controller: _magnesioController,
                       label: 'Magnésio (Mg)',
-                      unidade: 'mmol',
-                      ajudaTexto:
-                          'Essencial para a fotossíntese (cor verde).')),
+                      unidade: 'mmol')),
             ]),
             const SizedBox(height: 30),
             SizedBox(
               width: double.infinity,
-              height: 50,
               child: ElevatedButton(
                 onPressed: _salvando ? null : _salvarDados,
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white),
+                    backgroundColor: Colors.green[700],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
                 child: _salvando
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('SALVAR DIAGNÓSTICO',
+                    : const Text('ANALISAR E SALVAR',
                         style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
-            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -366,7 +398,6 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
 class _InputComMonitoramento extends StatefulWidget {
   final TextEditingController controller;
   final String label;
-  final String unidade;
   final String cultura;
   final Map<String, double> referencias;
   final String tipoDado;
@@ -374,17 +405,15 @@ class _InputComMonitoramento extends StatefulWidget {
   final String ajudaTitulo;
   final String ajudaTexto;
 
-  const _InputComMonitoramento({
-    required this.controller,
-    required this.label,
-    required this.unidade,
-    required this.cultura,
-    required this.referencias,
-    required this.tipoDado,
-    required this.ajudaTitulo,
-    required this.ajudaTexto,
-    this.obrigatorio = false,
-  });
+  const _InputComMonitoramento(
+      {required this.controller,
+      required this.label,
+      required this.cultura,
+      required this.referencias,
+      required this.tipoDado,
+      required this.ajudaTitulo,
+      required this.ajudaTexto,
+      this.obrigatorio = false});
 
   @override
   State<_InputComMonitoramento> createState() => _InputComMonitoramentoState();
@@ -397,12 +426,12 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_validarEmTempoReal);
+    widget.controller.addListener(_validar);
   }
 
-  void _validarEmTempoReal() {
-    final texto = widget.controller.text.replaceAll(',', '.');
-    if (texto.isEmpty) {
+  void _validar() {
+    final txt = widget.controller.text.replaceAll(',', '.');
+    if (txt.isEmpty) {
       setState(() {
         _alerta = null;
         _corBorda = Colors.grey.shade300;
@@ -410,150 +439,51 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
       return;
     }
 
-    double valor = double.tryParse(texto) ?? 0.0;
+    double val = double.tryParse(txt) ?? 0.0;
     String novoAlerta = '';
     Color novaCor = Colors.green;
 
     if (widget.tipoDado == 'ph') {
-      double min = widget.referencias['ph_min']!;
-      double max = widget.referencias['ph_max']!;
-
-      if (valor < min) {
-        novoAlerta =
-            '⚠️ Muito Ácido para ${widget.cultura}! Pode queimar raízes e travar nutrientes. Ideal: $min - $max.';
+      if (val < widget.referencias['ph_min']!) {
+        novoAlerta = 'Muito Ácido!';
         novaCor = Colors.red;
-      } else if (valor > max) {
-        novoAlerta =
-            '⚠️ Muito Alcalino para ${widget.cultura}! Nutrientes ficam indisponíveis. Ideal: $min - $max.';
+      } else if (val > widget.referencias['ph_max']!) {
+        novoAlerta = 'Muito Alcalino!';
         novaCor = Colors.orange;
-      } else {
-        novoAlerta = '✅ Excelente para ${widget.cultura}.';
-        novaCor = Colors.green;
       }
-    } else if (widget.tipoDado == 'v') {
-      double ideal = widget.referencias['v_ideal']!;
-      if (valor < (ideal - 10)) {
-        novoAlerta =
-            '⚠️ Fertilidade Baixa para ${widget.cultura}. Necessário Calagem para atingir $ideal%.';
+    } else {
+      if (val < (widget.referencias['v_ideal']! - 15)) {
+        novoAlerta = 'Baixa Fertilidade';
         novaCor = Colors.red;
-      } else if (valor > (ideal + 10)) {
-        novoAlerta = '⚠️ Fertilidade acima do necessário. Evite adubar mais.';
-        novaCor = Colors.orange;
-      } else {
-        novoAlerta = '✅ Solo fértil para ${widget.cultura}.';
-        novaCor = Colors.green;
       }
     }
-
     setState(() {
-      _alerta = novoAlerta;
+      _alerta = novoAlerta.isEmpty ? null : novoAlerta;
       _corBorda = novaCor;
     });
   }
 
-  void _mostrarAjuda() {
-    double idealMin = widget.tipoDado == 'ph'
-        ? widget.referencias['ph_min']!
-        : widget.referencias['v_ideal']!;
-    double? idealMax =
-        widget.tipoDado == 'ph' ? widget.referencias['ph_max']! : null;
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(25),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              const Icon(Icons.school, color: Colors.blue, size: 30),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: Text(widget.ajudaTitulo,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold))),
-            ]),
-            const Divider(),
-            Text(widget.ajudaTexto,
-                style: const TextStyle(fontSize: 16, height: 1.5)),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(10)),
-              child: Row(
-                children: [
-                  const Icon(Icons.eco, color: Colors.green),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Para ${widget.cultura}, o recomendado é:\n' +
-                          (widget.tipoDado == 'ph'
-                              ? 'pH entre $idealMin e $idealMax'
-                              : 'V% próximo de ${idealMin.toInt()}%'),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.green),
-                    ),
-                  )
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            RichText(
-              text: TextSpan(
-                  text: widget.label,
-                  style: const TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14),
-                  children: [
-                    if (widget.obrigatorio)
-                      const TextSpan(
-                          text: ' *', style: TextStyle(color: Colors.red)),
-                    if (widget.unidade.isNotEmpty)
-                      TextSpan(
-                          text: ' (${widget.unidade})',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.normal,
-                              color: Colors.grey)),
-                  ]),
-            ),
-            IconButton(
-              icon:
-                  const Icon(Icons.help_outline, size: 20, color: Colors.blue),
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
-              onPressed: _mostrarAjuda,
-            )
-          ],
-        ),
-        const SizedBox(height: 5),
-        TextFormField(
-          controller: widget.controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(widget.label,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        GestureDetector(
+            onTap: () => _mostrarAjuda(context),
+            child: Icon(Icons.help_outline, size: 16, color: Colors.blue[300]))
+      ]),
+      const SizedBox(height: 5),
+      TextFormField(
+        controller: widget.controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+            isDense: true,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none),
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: _corBorda)),
@@ -561,92 +491,65 @@ class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(color: _corBorda, width: 2)),
             suffixIcon: _alerta != null
-                ? Icon(
-                    _corBorda == Colors.green
-                        ? Icons.check_circle
-                        : Icons.warning,
-                    color: _corBorda)
-                : null,
-          ),
-          validator: (v) => (widget.obrigatorio && (v == null || v.isEmpty))
-              ? 'Obrigatório'
-              : null,
-        ),
-        if (_alerta != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 5, left: 5),
+                ? Icon(Icons.circle, color: _corBorda, size: 12)
+                : null),
+      ),
+      if (_alerta != null)
+        Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
             child: Text(_alerta!,
                 style: TextStyle(
-                    color: _corBorda == Colors.green
-                        ? Colors.green.shade700
-                        : _corBorda,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold)),
-          ),
-      ],
-    );
+                    color: _corBorda,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold)))
+    ]);
+  }
+
+  void _mostrarAjuda(BuildContext ctx) {
+    showModalBottomSheet(
+        context: ctx,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (c) => Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(widget.ajudaTitulo,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18)),
+              const SizedBox(height: 10),
+              Text(widget.ajudaTexto)
+            ])));
   }
 }
 
-class _InputSimplesComAjuda extends StatelessWidget {
+class _InputSimples extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String unidade;
-  final String ajudaTexto;
-
-  const _InputSimplesComAjuda(
-      {required this.controller,
-      required this.label,
-      required this.unidade,
-      required this.ajudaTexto});
+  const _InputSimples(
+      {required this.controller, required this.label, required this.unidade});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('$label ($unidade)',
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey)),
-            GestureDetector(
-              onTap: () {
-                showDialog(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                          title: Text(label),
-                          content: Text(ajudaTexto),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(c),
-                                child: const Text('OK'))
-                          ],
-                        ));
-              },
-              child:
-                  const Icon(Icons.help_outline, size: 16, color: Colors.grey),
-            )
-          ],
-        ),
-        const SizedBox(height: 5),
-        TextFormField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('$label ($unidade)',
+          style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+              fontWeight: FontWeight.bold)),
+      const SizedBox(height: 5),
+      TextFormField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: Colors.white,
             isDense: true,
             border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none),
-          ),
-        )
-      ],
-    );
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade300))),
+      )
+    ]);
   }
 }
 
@@ -662,6 +565,7 @@ class _OpcaoManual extends StatelessWidget {
       required this.valor,
       required this.grupo,
       required this.onChanged});
+
   @override
   Widget build(BuildContext context) {
     bool sel = valor == grupo;
@@ -673,11 +577,12 @@ class _OpcaoManual extends StatelessWidget {
         decoration: BoxDecoration(
             color: sel ? Colors.green.shade50 : Colors.white,
             border:
-                Border.all(color: sel ? Colors.green : Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(10)),
+                Border.all(color: sel ? Colors.green : Colors.grey.shade200),
+            borderRadius: BorderRadius.circular(12)),
         child: Row(children: [
-          Icon(Icons.circle, size: 12, color: sel ? Colors.green : Colors.grey),
-          const SizedBox(width: 10),
+          Icon(sel ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: sel ? Colors.green : Colors.grey),
+          const SizedBox(width: 15),
           Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -701,14 +606,19 @@ class _InfoBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: cor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8)),
-        child: Row(children: [
-          Icon(icon, color: cor),
-          const SizedBox(width: 10),
-          Expanded(child: Text(texto, style: const TextStyle(fontSize: 12)))
-        ]));
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+          color: cor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Icon(icon, color: cor),
+        const SizedBox(width: 15),
+        Expanded(
+            child: Text(texto,
+                style: TextStyle(
+                    color: cor.withOpacity(0.8),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13)))
+      ]),
+    );
   }
 }

@@ -10,177 +10,141 @@ class TelaPlanejamentoConsumo extends StatefulWidget {
 }
 
 class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
-  // --- BASE DE DADOS ENRIQUECIDA (COM INFO E BENEFÍCIOS) ---
+  // --- BASE DE DADOS ENRIQUECIDA E CORRIGIDA (Material Mariana Cantoni) ---
+  // Cálculo de espaço baseado em: (Distância Entre Linhas) x (Distância Entre Plantas)
   final Map<String, Map<String, dynamic>> _dadosProdutividade = {
     'Abobrinha italiana': {
-      'yield': 2.0,
+      'yield': 2.0, // kg/planta (estimado)
       'unit': 'kg',
-      'espaco': 0.8,
+      'espaco': 1.0 * 1.0, // Mariana: 1,0 a 1,5 x 0,7 a 1,0 -> Média 1.0m²
       'cat': 'Frutos',
-      'par': ['Milho', 'Feijão'],
-      'evitar': ['Batata'],
       'info': 'Rica em vitaminas do complexo B.'
     },
     'Abóboras': {
-      'yield': 4.0,
+      'yield': 5.0,
       'unit': 'kg',
-      'espaco': 2.0,
+      'espaco': 3.0 * 2.0, // Mariana: 3,0m x 2,0m = 6.0m² (Ocupa muito espaço!)
       'cat': 'Frutos',
-      'par': ['Milho'],
-      'evitar': ['Batata'],
       'info': 'Fonte de betacaroteno e fibras.'
     },
     'Acelga': {
-      'yield': 1.0,
+      'yield': 0.8,
       'unit': 'maço',
-      'espaco': 0.15,
+      'espaco': 0.5 * 0.4, // Mariana: 0,4-0,5 x 0,5 -> 0.2m²
       'cat': 'Folhas',
-      'par': ['Couve'],
-      'evitar': [],
       'info': 'Ajuda no controle da diabetes.'
     },
     'Alface': {
-      'yield': 1.0,
+      'yield': 0.3, // kg (1 pé grande)
       'unit': 'un',
-      'espaco': 0.09,
+      'espaco': 0.25 * 0.25, // Mariana: 0,25 x 0,25 -> 0.0625m²
       'cat': 'Folhas',
-      'par': ['Cenoura', 'Rúcula'],
-      'evitar': ['Salsa'],
       'info': 'Calmante natural e rico em fibras.'
     },
     'Alho': {
-      'yield': 0.05,
+      'yield': 0.04,
       'unit': 'kg',
-      'espaco': 0.02,
+      'espaco': 0.25 * 0.1, // Mariana: 0,25 x 0,10 -> 0.025m²
       'cat': 'Bulbos',
-      'par': ['Tomate'],
-      'evitar': ['Feijão'],
       'info': 'Antibiótico natural e anti-inflamatório.'
     },
     'Batata doce': {
       'yield': 1.0,
       'unit': 'kg',
-      'espaco': 0.3,
+      'espaco': 0.9 * 0.3, // Mariana: 0,8-1,0 x 0,3-0,4 -> ~0.27m²
       'cat': 'Raízes',
-      'par': ['Abóbora'],
-      'evitar': ['Tomate'],
       'info': 'Carboidrato complexo de baixo índice glicêmico.'
     },
     'Berinjela': {
-      'yield': 2.5,
+      'yield': 2.0,
       'unit': 'kg',
-      'espaco': 0.8,
+      'espaco': 1.0 * 0.8, // Mariana: 1,0 x 0,8 -> 0.8m²
       'cat': 'Frutos',
-      'par': ['Feijão'],
-      'evitar': [],
       'info': 'Rica em antioxidantes e saúde do coração.'
     },
     'Beterraba': {
-      'yield': 0.2,
-      'unit': 'un',
-      'espaco': 0.025,
+      'yield': 0.15,
+      'unit': 'un', // 1 unidade média
+      'espaco': 0.25 * 0.1, // Mariana: 0,25 x 0,1 -> 0.025m²
       'cat': 'Raízes',
-      'par': ['Cebola'],
-      'evitar': ['Milho'],
       'info': 'Melhora o fluxo sanguíneo e pressão arterial.'
     },
     'Brócolis': {
-      'yield': 0.6,
+      'yield': 0.5, // 1 cabeça
       'unit': 'un',
-      'espaco': 0.4,
+      'espaco': 0.8 * 0.5, // Mariana: 0,8 x 0,5 -> 0.4m²
       'cat': 'Flores',
-      'par': ['Cebola'],
-      'evitar': ['Morango'],
       'info': 'Alto teor de cálcio e combate radicais livres.'
     },
     'Cebola': {
       'yield': 0.15,
       'unit': 'kg',
-      'espaco': 0.03,
+      'espaco': 0.3 * 0.1, // Mariana: 0,3 x 0,1 -> 0.03m²
       'cat': 'Bulbos',
-      'par': ['Tomate'],
-      'evitar': ['Feijão'],
       'info': 'Melhora a circulação e imunidade.'
     },
     'Cebolinha': {
-      'yield': 0.3,
+      'yield': 0.2,
       'unit': 'maço',
-      'espaco': 0.02,
+      'espaco': 0.25 * 0.1, // Mariana: 0,20-0,25 x 0,10 -> 0.025m²
       'cat': 'Temperos',
-      'par': ['Cenoura'],
-      'evitar': ['Feijão'],
       'info': 'Rica em vitamina A e C.'
     },
     'Cenoura': {
-      'yield': 0.12,
+      'yield': 0.1,
       'unit': 'kg',
-      'espaco': 0.02,
+      'espaco':
+          0.25 * 0.05, // Mariana: 0,25 x 0,05 (adensado na linha) -> 0.0125m²
       'cat': 'Raízes',
-      'par': ['Tomate', 'Ervilha'],
-      'evitar': ['Salsa'],
       'info': 'Essencial para a visão e pele.'
     },
     'Coentro': {
       'yield': 0.2,
       'unit': 'maço',
-      'espaco': 0.02,
+      'espaco': 0.2 * 0.1, // Mariana: 0,20 x 0,10 -> 0.02m²
       'cat': 'Temperos',
-      'par': ['Tomate'],
-      'evitar': ['Cenoura'],
       'info': 'Desintoxicante de metais pesados.'
     },
     'Couve': {
-      'yield': 2.0,
+      'yield': 1.5, // Vários maços por ciclo
       'unit': 'maços',
-      'espaco': 0.4,
+      'espaco': 0.8 * 0.5, // Mariana: 0,8 x 0,5 -> 0.4m²
       'cat': 'Folhas',
-      'par': ['Alecrim'],
-      'evitar': ['Tomate'],
       'info': 'Desintoxicante e rica em ferro.'
     },
     'Mandioca': {
       'yield': 3.0,
       'unit': 'kg',
-      'espaco': 1.0,
+      'espaco': 1.0 * 0.6, // Mariana: 1,0 x 0,6 -> 0.6m²
       'cat': 'Raízes',
-      'par': ['Feijão'],
-      'evitar': [],
       'info': 'Fonte de energia glúten-free.'
     },
     'Pimentão': {
-      'yield': 1.5,
+      'yield': 1.0,
       'unit': 'kg',
-      'espaco': 0.5,
+      'espaco': 1.0 * 0.5, // Mariana: 1,0 x 0,5 -> 0.5m²
       'cat': 'Frutos',
-      'par': ['Cebola'],
-      'evitar': ['Feijão'],
       'info': 'Termogênico e rico em vitamina C.'
     },
     'Quiabo': {
       'yield': 0.8,
       'unit': 'kg',
-      'espaco': 0.4,
+      'espaco': 1.0 * 0.3, // Mariana: 1,0 x 0,3 -> 0.3m²
       'cat': 'Frutos',
-      'par': ['Pimentão'],
-      'evitar': [],
       'info': 'Excelente para digestão e flora intestinal.'
     },
     'Rúcula': {
-      'yield': 1.0,
+      'yield': 0.5,
       'unit': 'maço',
-      'espaco': 0.05,
+      'espaco': 0.2 * 0.05, // Mariana: 0,2 x 0,05 -> 0.01m² (Adensado)
       'cat': 'Folhas',
-      'par': ['Alface'],
-      'evitar': ['Repolho'],
       'info': 'Picante, digestiva e rica em ômega-3.'
     },
     'Tomate': {
-      'yield': 3.5,
+      'yield': 3.0,
       'unit': 'kg',
-      'espaco': 0.6,
+      'espaco': 1.0 * 0.5, // Mariana: 1,0 x 0,5 -> 0.5m² (Tutorado)
       'cat': 'Frutos',
-      'par': ['Manjericão'],
-      'evitar': ['Batata', 'Couve'],
       'info': 'Rico em licopeno, previne câncer.'
     },
   };
@@ -232,8 +196,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         // Atualiza item existente
         _listaDesejos[_editandoIndex!] = novoItem;
         _editandoIndex = null;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Item atualizado!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Item atualizado com sucesso!')));
       } else {
         // Adiciona novo
         _listaDesejos.add(novoItem);
@@ -290,8 +254,9 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   // --- NAVEGAÇÃO PARA O GERADOR INTELIGENTE ---
   void _irParaGerador() {
     if (_listaDesejos.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Adicione itens primeiro!')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Adicione pelo menos um item para planejar!'),
+          backgroundColor: Colors.orange));
       return;
     }
 
@@ -314,16 +279,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
       // Calcula quantas mudas e área
       double mudasCalc = meta / yieldVal;
-      int mudasReais = (mudasCalc * 1.2).ceil(); // +20% margem
+      int mudasReais = (mudasCalc * 1.1).ceil(); // +10% margem de segurança
       double areaNecessaria = mudasReais * espacoVal;
 
       return {
         'planta': nome,
         'mudas': mudasReais,
         'area': areaNecessaria,
-        'evitar': info['evitar'],
-        'par': info['par'],
-        'cat': info['cat']
+        'evitar': info['evitar'] ?? [],
+        'par': info['par'] ?? [],
+        'cat': info['cat'] ?? 'Geral'
       };
     }).toList();
 
@@ -341,10 +306,10 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     List<String> listaCulturasOrdenada = _dadosProdutividade.keys.toList()
       ..sort();
 
-    // Cálculos
+    // Cálculos em tempo real
     double areaTotal = 0;
-    double aguaTotal = 0;
-    double aduboTotal = 0;
+    double aguaTotal = 0; // Estimativa: 4L/m² (Média)
+    double aduboTotal = 0; // Estimativa: 3kg/m² (Média Organo15)
 
     List<Widget> cards = _listaDesejos.asMap().entries.map((entry) {
       int idx = entry.key;
@@ -355,88 +320,113 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       // Recupera dados ou usa Genérico
       Map<String, dynamic> info = _dadosProdutividade[nome] ??
           {
-            'yield': 1.0,
+            'yield': 1.0, // Média genérica
             'unit': 'kg',
-            'espaco': 0.5,
-            'info': 'Cultura personalizada (Cálculo estimado).'
+            'espaco': 0.5, // Média genérica
+            'info': 'Cultura personalizada.'
           };
 
       double yieldVal = (info['yield'] as num).toDouble();
       double espacoVal = (info['espaco'] as num).toDouble();
 
       double plantasExatas = meta / yieldVal;
-      int plantasReais = (plantasExatas * 1.2).ceil(); // +20% margem
+      int plantasReais = (plantasExatas * 1.1).ceil(); // +10% margem
       double areaItem = plantasReais * espacoVal;
 
       areaTotal += areaItem;
 
-      return Card(
-        elevation: 2,
-        margin: const EdgeInsets.only(bottom: 10),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.grey.shade200)),
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.grey.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 4))
+          ],
+          border: Border.all(color: Colors.grey.shade100),
+        ),
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '${plantasReais}x',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.green.shade700),
+              ),
+            ),
+          ),
+          title: Text(
+            nome,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text('${meta.toStringAsFixed(1)} ${info['unit']} desejados',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+              const SizedBox(height: 4),
               Row(
                 children: [
-                  CircleAvatar(
-                    backgroundColor: Colors.green.shade100,
-                    radius: 22,
-                    child: Text('${plantasReais}x',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Colors.green)),
-                  ),
-                  const SizedBox(width: 15),
+                  Icon(Icons.info_outline, size: 14, color: Colors.green[300]),
+                  const SizedBox(width: 4),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(nome,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text(
-                            '${meta.toStringAsFixed(1)} ${info['unit']} desejados',
-                            style: TextStyle(
-                                color: Colors.grey.shade600, fontSize: 12)),
-                      ],
+                    child: Text(
+                      info['info'],
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.green[700]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  // AÇÕES: EDITAR E EXCLUIR
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                    onPressed: () => _iniciarEdicao(idx),
-                    tooltip: 'Editar',
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => _removerItem(idx),
-                    tooltip: 'Excluir',
                   ),
                 ],
               ),
-              const Divider(),
-              Row(
-                children: [
-                  const Icon(Icons.info_outline, size: 16, color: Colors.green),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(info['info'],
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontStyle: FontStyle.italic,
-                            color: Colors.green)),
-                  ),
-                  Text('Ocupa: ${areaItem.toStringAsFixed(2)} m²',
-                      style: const TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.bold)),
-                ],
+              const SizedBox(height: 2),
+              Text(
+                'Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
+                style:
+                    const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
               )
             ],
+          ),
+          trailing: PopupMenuButton(
+            icon: const Icon(Icons.more_vert, color: Colors.grey),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(children: [
+                  Icon(Icons.edit, size: 18, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Editar')
+                ]),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(children: [
+                  Icon(Icons.delete, size: 18, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Remover')
+                ]),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'edit') _iniciarEdicao(idx);
+              if (value == 'delete') _removerItem(idx);
+            },
           ),
         ),
       );
@@ -446,20 +436,29 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     aduboTotal = areaTotal * 3;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA), // Fundo clean
       appBar: AppBar(
-        title: const Text('Calculadora de Autossuficiência'),
-        backgroundColor: Colors.green[700],
-        foregroundColor: Colors.white,
+        title: const Text('Planejamento de Consumo',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.green[800],
+        elevation: 0,
       ),
       body: Column(
         children: [
-          // --- ÁREA DE INPUT (FORMULÁRIO) ---
+          // --- PAINEL DE CONTROLE (INPUT) ---
           Container(
-            padding: const EdgeInsets.all(15),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             decoration: BoxDecoration(
               color: Colors.white,
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(25)),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5))
               ],
             ),
             child: Column(
@@ -471,39 +470,40 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                     Text(
                         _editandoIndex != null
                             ? 'Editando Item...'
-                            : 'O que você quer comer?',
+                            : 'O que vamos plantar?',
                         style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                             color: _editandoIndex != null
                                 ? Colors.blue
-                                : Colors.black87)),
+                                : Colors.grey[800])),
                     if (_editandoIndex != null)
                       TextButton.icon(
                         onPressed: _cancelarEdicao,
                         icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Cancelar Edição'),
+                        label: const Text('Cancelar'),
                         style: TextButton.styleFrom(
                             foregroundColor: Colors.red,
                             padding: EdgeInsets.zero),
                       )
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 15),
                 Row(
                   children: [
                     // Campo de Nome (Dropdown ou Texto)
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: _modoPersonalizado
                           ? TextField(
                               controller: _customNameController,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                   labelText: 'Nome da Cultura',
                                   hintText: 'Ex: Jiló',
-                                  border: OutlineInputBorder(),
-                                  contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 0),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 15, vertical: 15),
                                   isDense: true),
                             )
                           : DropdownButtonFormField<String>(
@@ -518,15 +518,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                               }).toList(),
                               onChanged: (v) =>
                                   setState(() => _culturaSelecionada = v),
-                              decoration: const InputDecoration(
-                                  border: OutlineInputBorder(),
-                                  contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 0),
+                              decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 15, vertical: 15),
                                   isDense: true),
                             ),
                     ),
 
-                    // Botão Toggle (Lista vs Manual)
+                    // Botão Toggle
                     IconButton(
                       onPressed: () {
                         setState(() {
@@ -543,8 +544,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           color: Colors.green),
                     ),
 
-                    const SizedBox(width: 5),
-
                     // Campo Quantidade
                     Expanded(
                       flex: 2,
@@ -553,113 +552,151 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                             labelText: 'Qtd',
-                            // Tenta adivinhar a unidade
                             suffixText: !_modoPersonalizado &&
                                     _culturaSelecionada != null
                                 ? _dadosProdutividade[_culturaSelecionada]![
                                     'unit']
                                 : 'kg/un',
-                            border: const OutlineInputBorder(),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 0),
+                                horizontal: 15, vertical: 15),
                             isDense: true),
                       ),
                     ),
-                    const SizedBox(width: 5),
-
-                    // Botão Salvar
-                    CircleAvatar(
-                      backgroundColor:
-                          _editandoIndex != null ? Colors.blue : Colors.green,
-                      child: IconButton(
-                        onPressed: _salvarItem,
-                        icon: Icon(
-                            _editandoIndex != null ? Icons.save : Icons.add,
-                            color: Colors.white),
-                        tooltip: _editandoIndex != null
-                            ? 'Salvar Alteração'
-                            : 'Adicionar',
-                      ),
-                    )
                   ],
                 ),
+                const SizedBox(height: 15),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _salvarItem,
+                    icon: Icon(
+                        _editandoIndex != null ? Icons.save : Icons.add_circle,
+                        color: Colors.white),
+                    label: Text(
+                        _editandoIndex != null
+                            ? 'SALVAR ALTERAÇÕES'
+                            : 'ADICIONAR À LISTA',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _editandoIndex != null
+                            ? Colors.blue
+                            : Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                  ),
+                )
               ],
             ),
           ),
 
-          // --- LISTA ---
+          // --- LISTA DE DESEJOS ---
           Expanded(
             child: _listaDesejos.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.eco_outlined,
-                            size: 60, color: Colors.green.withOpacity(0.3)),
-                        const SizedBox(height: 10),
-                        const Text('Sua lista está vazia.',
-                            style: TextStyle(color: Colors.grey)),
-                        const Text('Adicione o que deseja plantar.',
-                            style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        Icon(Icons.spa_outlined,
+                            size: 80, color: Colors.grey.withOpacity(0.2)),
+                        const SizedBox(height: 15),
+                        Text('Sua lista está vazia.',
+                            style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 5),
+                        Text('Adicione o que sua família consome.',
+                            style: TextStyle(color: Colors.grey[400])),
                       ],
                     ),
                   )
                 : ListView(
-                    padding: const EdgeInsets.all(15),
+                    padding: const EdgeInsets.all(20),
                     children: [
                       ...cards,
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
 
-                      // --- PAINEL DE TOTAIS ---
+                      // --- PAINEL DE TOTAIS (DASHBOARD) ---
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [
-                              Colors.green.shade800,
-                              Colors.green.shade600
-                            ]),
-                            borderRadius: BorderRadius.circular(15),
+                            gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.green.shade800,
+                                  Colors.green.shade600
+                                ]),
+                            borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                  color: Colors.green.withOpacity(0.4),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6))
+                                  color: Colors.green.withOpacity(0.3),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 8))
                             ]),
                         child: Column(
                           children: [
-                            const Text('NECESSIDADE TOTAL DO SISTEMA',
-                                style: TextStyle(
-                                    color: Colors.white70,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12)),
-                            const SizedBox(height: 15),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.analytics,
+                                    color: Colors.white70, size: 18),
+                                SizedBox(width: 8),
+                                Text('ESTIMATIVA TOTAL DO SISTEMA',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.0,
+                                        fontSize: 12)),
+                              ],
+                            ),
+                            const Divider(color: Colors.white24, height: 25),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 _InfoResumo(
-                                    icon: Icons.aspect_ratio,
+                                    icon: Icons.crop_free,
                                     valor: areaTotal.toStringAsFixed(1),
                                     unidade: 'm²',
-                                    label: 'Área Mínima'),
+                                    label: 'Área Útil'),
+                                Container(
+                                    width: 1,
+                                    height: 40,
+                                    color: Colors.white24),
                                 _InfoResumo(
                                     icon: Icons.water_drop,
                                     valor: aguaTotal.toStringAsFixed(0),
                                     unidade: 'L/dia',
                                     label: 'Água Aprox.'),
+                                Container(
+                                    width: 1,
+                                    height: 40,
+                                    color: Colors.white24),
                                 _InfoResumo(
-                                    icon: Icons.landscape,
+                                    icon: Icons.compost,
                                     valor: aduboTotal.toStringAsFixed(1),
                                     unidade: 'kg',
-                                    label: 'Adubo/Ciclo'),
+                                    label: 'Adubo (Organo15)'),
                               ],
                             ),
                             const SizedBox(height: 15),
-                            const Text(
-                                '⚠️ Cálculo inclui +20% de margem de segurança.',
-                                style: TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 10,
-                                    fontStyle: FontStyle.italic)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                  color: Colors.black12,
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: const Text(
+                                  '💡 Cálculo inclui +10% de margem de segurança.',
+                                  style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      fontStyle: FontStyle.italic)),
+                            ),
                           ],
                         ),
                       )
@@ -668,26 +705,26 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           ),
         ],
       ),
-
-      // BOTÃO DE AÇÃO NO FINAL (GATILHO PARA A INTELIGÊNCIA)
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(color: Colors.white, boxShadow: [
           BoxShadow(
-              color: Colors.black12,
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, -5))
         ]),
         child: ElevatedButton.icon(
-          onPressed: _irParaGerador, // Chama a função que processa os dados
+          onPressed: _irParaGerador,
           icon: const Icon(Icons.auto_awesome),
-          label: const Text('GERAR PLANO DE CANTEIROS'),
+          label: const Text('GERAR PLANO INTELIGENTE'),
           style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue[800],
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 15),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              elevation: 4,
+              shadowColor: Colors.blue.withOpacity(0.4),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12))),
+                  borderRadius: BorderRadius.circular(16))),
         ),
       ),
     );
@@ -710,25 +747,34 @@ class _InfoResumo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, color: Colors.white, size: 28),
-        const SizedBox(height: 5),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+        const SizedBox(height: 8),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
             Text(valor,
                 style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold)),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4, left: 2),
-              child: Text(unidade,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            ),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800)),
+            const SizedBox(width: 2),
+            Text(unidade,
+                style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
         Text(label,
-            style: const TextStyle(color: Colors.white70, fontSize: 10)),
+            style: const TextStyle(color: Colors.white60, fontSize: 10)),
       ],
     );
   }
