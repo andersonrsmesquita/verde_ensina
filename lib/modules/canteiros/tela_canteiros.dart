@@ -1,8 +1,10 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import 'tela_detalhes_canteiro.dart';
 
@@ -17,7 +19,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   User? get _user => FirebaseAuth.instance.currentUser;
 
   /// ativos | arquivados | todos
-  String _filtro = 'ativos';
+  String _filtroAtivo = 'ativos';
+
+  /// todos | livre | ocupado | manutencao
+  String _filtroStatus = 'todos';
+
+  /// recentes | nome_az | nome_za | medida_maior | medida_menor
+  String _ordem = 'recentes';
+
+  final TextEditingController _buscaCtrl = TextEditingController();
+  Timer? _debounce;
+  String _busca = '';
 
   // =========================
   // Helpers seguros
@@ -30,6 +42,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     });
   }
 
+  void _snack(String msg, {Color? cor}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: cor ?? Colors.blueGrey),
+    );
+  }
+
   num _num(dynamic v) {
     if (v == null) return 0;
     if (v is num) return v;
@@ -40,6 +60,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   double _doubleFromController(TextEditingController c) {
     return double.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0.0;
   }
+
+  String _norm(String s) => s.trim().toLowerCase();
 
   // =========================
   // Status helpers
@@ -79,10 +101,59 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     final tipo = (dados['tipo'] ?? 'Canteiro').toString();
     if (tipo == 'Vaso') {
       final vol = _num(dados['volume_l']).toDouble();
-      return '${vol.toStringAsFixed(1)} Litros';
+      return '${vol.toStringAsFixed(1)} L';
     } else {
       final area = _num(dados['area_m2']).toDouble();
       return '${area.toStringAsFixed(2)} m²';
+    }
+  }
+
+  String _labelFinalidade(Map<String, dynamic> dados) {
+    final f = (dados['finalidade'] ?? 'consumo').toString();
+    if (f == 'comercio') return 'Comércio';
+    return 'Consumo';
+  }
+
+  Color _corFinalidade(String f) {
+    return f == 'comercio' ? Colors.blue : Colors.grey;
+  }
+
+  String _tituloFiltroAtivo() {
+    switch (_filtroAtivo) {
+      case 'arquivados':
+        return 'Arquivados';
+      case 'todos':
+        return 'Todos';
+      default:
+        return 'Ativos';
+    }
+  }
+
+  String _tituloFiltroStatus() {
+    switch (_filtroStatus) {
+      case 'livre':
+        return 'Livre';
+      case 'ocupado':
+        return 'Ocupado';
+      case 'manutencao':
+        return 'Manutenção';
+      default:
+        return 'Status: Todos';
+    }
+  }
+
+  String _tituloOrdem() {
+    switch (_ordem) {
+      case 'nome_az':
+        return 'Nome A→Z';
+      case 'nome_za':
+        return 'Nome Z→A';
+      case 'medida_maior':
+        return 'Maior medida';
+      case 'medida_menor':
+        return 'Menor medida';
+      default:
+        return 'Mais recentes';
     }
   }
 
@@ -100,14 +171,125 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     // Segurança: sem user, não consulta nada real
     q = q.where('uid_usuario', isEqualTo: user?.uid ?? '__sem_user__');
 
-    if (_filtro == 'ativos') {
+    if (_filtroAtivo == 'ativos') {
       q = q.where('ativo', isEqualTo: true);
-    } else if (_filtro == 'arquivados') {
+    } else if (_filtroAtivo == 'arquivados') {
       q = q.where('ativo', isEqualTo: false);
     }
 
-    // ⚠️ precisa de índice composto quando existe filtro 'ativo'
+    if (_filtroStatus != 'todos') {
+      q = q.where('status', isEqualTo: _filtroStatus);
+    }
+
+    // Busca melhor: server-side por prefixo (nome_lower)
+    // Quando busca ativa, ordena por nome_lower (obrigatório pro startAt/endAt).
+    if (_busca.trim().isNotEmpty) {
+      final term = _norm(_busca);
+      return q.orderBy('nome_lower').startAt([term]).endAt(['$term\uf8ff']);
+    }
+
+    // Base: mais recentes (a ordenação final pode ser ajustada localmente)
     return q.orderBy('data_criacao', descending: true);
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortLocal(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final list = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+
+    int cmpNum(num a, num b) => a.compareTo(b);
+
+    num medidaOf(Map<String, dynamic> d) {
+      final tipo = (d['tipo'] ?? 'Canteiro').toString();
+      if (tipo == 'Vaso') return _num(d['volume_l']);
+      return _num(d['area_m2']);
+    }
+
+    String nomeLowerOf(Map<String, dynamic> d) =>
+        (d['nome_lower'] ?? (d['nome'] ?? '')).toString().toLowerCase();
+
+    // Se busca ativa, a query já vem ordenada por nome_lower. Mesmo assim, respeita ordem escolhida
+    // (sem brigar com o Firestore).
+    switch (_ordem) {
+      case 'nome_az':
+        list.sort(
+          (a, b) => nomeLowerOf(a.data()).compareTo(nomeLowerOf(b.data())),
+        );
+        break;
+      case 'nome_za':
+        list.sort(
+          (a, b) => nomeLowerOf(b.data()).compareTo(nomeLowerOf(a.data())),
+        );
+        break;
+      case 'medida_maior':
+        list.sort((a, b) => cmpNum(medidaOf(b.data()), medidaOf(a.data())));
+        break;
+      case 'medida_menor':
+        list.sort((a, b) => cmpNum(medidaOf(a.data()), medidaOf(b.data())));
+        break;
+      default:
+        // recentes: já vem do Firestore (data_criacao desc). Mantém.
+        break;
+    }
+
+    return list;
+  }
+
+  // =========================
+  // MIGRAÇÃO LEVE (DEV)
+  // =========================
+
+  Future<void> _migrarCamposBasicosDev() async {
+    final user = _user;
+    if (user == null) return;
+
+    final db = FirebaseFirestore.instance;
+    final q = await db
+        .collection('canteiros')
+        .where('uid_usuario', isEqualTo: user.uid)
+        .get();
+
+    int count = 0;
+    final batch = db.batch();
+
+    for (final doc in q.docs) {
+      final d = doc.data();
+
+      final nome = (d['nome'] ?? '').toString().trim();
+      final nomeLower = (d['nome_lower'] ?? '').toString().trim();
+      final finalidade = (d['finalidade'] ?? '').toString().trim();
+      final status = (d['status'] ?? '').toString().trim();
+
+      final updates = <String, dynamic>{};
+
+      if (nome.isNotEmpty && nomeLower.isEmpty) {
+        updates['nome_lower'] = nome.toLowerCase();
+      }
+
+      if (finalidade.isEmpty) {
+        updates['finalidade'] = 'consumo';
+      }
+
+      if (status.isEmpty) {
+        updates['status'] = 'livre';
+      }
+
+      if (updates.isNotEmpty) {
+        updates['data_atualizacao'] = FieldValue.serverTimestamp();
+        batch.update(doc.reference, updates);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+      _snack(
+        'Migração DEV OK: $count documentos ajustados.',
+        cor: Colors.blueGrey,
+      );
+    } else {
+      _snack('Nada pra migrar. Tá tudo certo já. ✅', cor: Colors.green);
+    }
   }
 
   // =========================
@@ -119,13 +301,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   }) async {
     final user = _user;
     if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Você precisa estar logado.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _snack('Você precisa estar logado.', cor: Colors.red);
       return;
     }
 
@@ -158,6 +334,20 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     String tipoLocal = (dados['tipo'] ?? 'Canteiro').toString();
     if (tipoLocal != 'Canteiro' && tipoLocal != 'Vaso') tipoLocal = 'Canteiro';
 
+    // ✅ Finalidade
+    String finalidade = (dados['finalidade'] ?? 'consumo').toString().trim();
+    if (finalidade != 'consumo' && finalidade != 'comercio') {
+      finalidade = 'consumo';
+    }
+
+    // ✅ Status
+    String status = (dados['status'] ?? 'livre').toString().trim();
+    if (status != 'livre' && status != 'ocupado' && status != 'manutencao') {
+      status = 'livre';
+    }
+
+    bool ativo = (dados['ativo'] ?? true) == true;
+
     final formKey = GlobalKey<FormState>();
     bool salvando = false;
 
@@ -169,7 +359,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         builder: (sheetCtx) => StatefulBuilder(
           builder: (context, setModalState) {
             void closeSheet() {
-              // ✅ fecha o BOTTOM SHEET pelo contexto dele (sem risco de pop errado)
               if (Navigator.of(sheetCtx).canPop()) Navigator.of(sheetCtx).pop();
             }
 
@@ -196,26 +385,31 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   areaM2 = comp * larg;
                 } else {
                   volumeL = _doubleFromController(volumeController);
-                  areaM2 = 0; // ✅ profissional: area_m2 é área, não volume
+                  areaM2 = 0;
                 }
 
                 final payload = <String, dynamic>{
                   'uid_usuario': user.uid,
                   'nome': nome,
+                  'nome_lower': nome
+                      .toLowerCase(), // ✅ essencial pra busca melhor
                   'tipo': tipoLocal,
                   'comprimento': comp,
                   'largura': larg,
                   'area_m2': areaM2,
                   'volume_l': (tipoLocal == 'Vaso') ? volumeL : 0,
-                  'ativo': (dados['ativo'] ?? true) == true,
-                  'status': (dados['status'] ?? 'livre').toString(),
+                  'ativo': ativo,
+                  'status': status,
+                  'finalidade': finalidade,
                   'data_atualizacao': FieldValue.serverTimestamp(),
                 };
 
                 if (!editando) {
                   payload['data_criacao'] = FieldValue.serverTimestamp();
-                  payload['status'] = 'livre';
                   payload['ativo'] = true;
+                  payload['status'] = 'livre';
+                  payload['finalidade'] = finalidade;
+
                   await FirebaseFirestore.instance
                       .collection('canteiros')
                       .add(payload);
@@ -229,7 +423,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 closeSheet();
 
                 _runNextFrame(() {
-                  if (!mounted) return;
                   ScaffoldMessenger.of(parentContext).showSnackBar(
                     SnackBar(
                       content: Text(
@@ -241,7 +434,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 });
               } catch (e) {
                 _runNextFrame(() {
-                  if (!mounted) return;
                   ScaffoldMessenger.of(parentContext).showSnackBar(
                     SnackBar(
                       content: Text('Erro ao salvar: $e'),
@@ -251,6 +443,82 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 });
               } finally {
                 if (sheetCtx.mounted) setModalState(() => salvando = false);
+              }
+            }
+
+            Widget chipFinalidade(String key, String label, IconData icon) {
+              final selected = finalidade == key;
+              final color = key == 'comercio' ? Colors.blue : Colors.grey;
+              return Expanded(
+                child: ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 16,
+                        color: selected ? Colors.white : color,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(label),
+                    ],
+                  ),
+                  selected: selected,
+                  onSelected: (_) => setModalState(() => finalidade = key),
+                  selectedColor: color,
+                  backgroundColor: Colors.grey.shade200,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : Colors.black87,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              );
+            }
+
+            Widget chipStatus(
+              String key,
+              String label,
+              IconData icon,
+              Color cor,
+            ) {
+              final selected = status == key;
+              return Expanded(
+                child: ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 16,
+                        color: selected ? Colors.white : cor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(label),
+                    ],
+                  ),
+                  selected: selected,
+                  onSelected: (_) => setModalState(() => status = key),
+                  selectedColor: cor,
+                  backgroundColor: Colors.grey.shade200,
+                  labelStyle: TextStyle(
+                    color: selected ? Colors.white : Colors.black87,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              );
+            }
+
+            String previewMedida() {
+              if (tipoLocal == 'Vaso') {
+                final vol = _doubleFromController(volumeController);
+                if (vol <= 0) return '—';
+                return '${vol.toStringAsFixed(1)} L';
+              } else {
+                final c = _doubleFromController(compController);
+                final l = _doubleFromController(largController);
+                final a = c * l;
+                if (a <= 0) return '—';
+                return '${a.toStringAsFixed(2)} m²';
               }
             }
 
@@ -296,6 +564,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         ],
                       ),
                       const SizedBox(height: 12),
+
                       TextFormField(
                         controller: nomeController,
                         textCapitalization: TextCapitalization.sentences,
@@ -311,7 +580,74 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 15),
+
+                      const SizedBox(height: 14),
+
+                      // Finalidade
+                      const Text(
+                        'Finalidade do cultivo',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          chipFinalidade(
+                            'consumo',
+                            'Consumo',
+                            Icons.restaurant,
+                          ),
+                          const SizedBox(width: 10),
+                          chipFinalidade(
+                            'comercio',
+                            'Comércio',
+                            Icons.storefront,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        finalidade == 'comercio'
+                            ? 'Ativa módulos de mercado/financeiro e receita.'
+                            : 'Foca em consumo: sem obrigar preço de venda.',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Status
+                      const Text(
+                        'Status do local',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          chipStatus(
+                            'livre',
+                            'Livre',
+                            Icons.check_circle,
+                            Colors.green,
+                          ),
+                          const SizedBox(width: 10),
+                          chipStatus(
+                            'ocupado',
+                            'Ocupado',
+                            Icons.block,
+                            Colors.red,
+                          ),
+                          const SizedBox(width: 10),
+                          chipStatus(
+                            'manutencao',
+                            'Manut.',
+                            Icons.build,
+                            Colors.orange,
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Tipo
                       Row(
                         children: [
                           Expanded(
@@ -335,7 +671,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 15),
+
+                      const SizedBox(height: 12),
+
                       if (tipoLocal == 'Canteiro') ...[
                         Row(
                           children: [
@@ -363,6 +701,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                       ) ??
                                       0;
                                   if (val <= 0) return 'Informe > 0';
+                                  if (val > 1000) return 'Tá grande demais 😅';
                                   return null;
                                 },
                               ),
@@ -392,6 +731,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                       ) ??
                                       0;
                                   if (val <= 0) return 'Informe > 0';
+                                  if (val > 1000) return 'Tá grande demais 😅';
                                   return null;
                                 },
                               ),
@@ -400,7 +740,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Área será calculada automaticamente (Comp. × Larg.).',
+                          'Área calculada: ${previewMedida()} (Comp. × Larg.)',
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 12,
@@ -422,7 +762,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             suffixText: 'L',
                             border: OutlineInputBorder(),
                             prefixIcon: Icon(Icons.local_drink),
-                            helperText: 'Ex: Baldes comuns têm ~12 Litros.',
+                            helperText: 'Ex: Baldes comuns têm ~12 L.',
                           ),
                           validator: (v) {
                             final val =
@@ -431,11 +771,38 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 ) ??
                                 0;
                             if (val <= 0) return 'Informe > 0';
+                            if (val > 5000) return 'Tá virando caixa d’água 😅';
                             return null;
                           },
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Volume informado: ${previewMedida()}',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
                       ],
-                      const SizedBox(height: 18),
+
+                      const SizedBox(height: 12),
+
+                      if (editando) ...[
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Ativo'),
+                          subtitle: Text(
+                            ativo
+                                ? 'Aparece nos Ativos.'
+                                : 'Vai pros Arquivados.',
+                          ),
+                          value: ativo,
+                          onChanged: (v) => setModalState(() => ativo = v),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+
+                      const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
                         height: 50,
@@ -470,6 +837,20 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 ),
                         ),
                       ),
+
+                      if (kDebugMode) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: salvando
+                                ? null
+                                : _migrarCamposBasicosDev,
+                            icon: const Icon(Icons.build),
+                            label: const Text('Migrar campos básicos (DEV)'),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -491,6 +872,50 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       'ativo': !ativoAtual,
       'data_atualizacao': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<void> _toggleAtivoComUndo({
+    required String id,
+    required bool ativoAtual,
+    required String nome,
+  }) async {
+    try {
+      await _toggleAtivo(id, ativoAtual);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ativoAtual ? '"$nome" arquivado.' : '"$nome" reativado.',
+          ),
+          backgroundColor: Colors.blueGrey,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'DESFAZER',
+            onPressed: () async {
+              try {
+                await FirebaseFirestore.instance
+                    .collection('canteiros')
+                    .doc(id)
+                    .update({
+                      'ativo': ativoAtual,
+                      'data_atualizacao': FieldValue.serverTimestamp(),
+                    });
+              } catch (_) {
+                _snack(
+                  'Não deu pra desfazer. Verifique internet/regras.',
+                  cor: Colors.red,
+                );
+              }
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      _snack('Erro ao arquivar/reativar: $e', cor: Colors.red);
+    }
   }
 
   Future<void> _excluirHard(String id) async {
@@ -526,19 +951,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
     if (ok == true) {
       await _excluirHard(id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Excluído (hard delete).'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _snack('Excluído (hard delete).', cor: Colors.red);
     }
   }
 
-  Widget _chipsFiltro() {
+  Widget _chipsFiltroAtivo() {
     Widget chip(String key, String label, IconData icon) {
-      final selected = _filtro == key;
+      final selected = _filtroAtivo == key;
       return ChoiceChip(
         label: Row(
           mainAxisSize: MainAxisSize.min,
@@ -553,7 +972,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
           ],
         ),
         selected: selected,
-        onSelected: (_) => setState(() => _filtro = key),
+        onSelected: (_) => setState(() => _filtroAtivo = key),
         selectedColor: Theme.of(context).colorScheme.primary,
         backgroundColor: Colors.grey[200],
         labelStyle: TextStyle(
@@ -577,6 +996,249 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
   }
 
+  Widget _chipsFiltroStatus() {
+    Widget chip(String key, String label, IconData icon, Color cor) {
+      final selected = _filtroStatus == key;
+      return ChoiceChip(
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: selected ? Colors.white : cor),
+            const SizedBox(width: 6),
+            Text(label),
+          ],
+        ),
+        selected: selected,
+        onSelected: (_) => setState(() => _filtroStatus = key),
+        selectedColor: cor,
+        backgroundColor: Colors.grey[200],
+        labelStyle: TextStyle(
+          color: selected ? Colors.white : Colors.grey[800],
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          chip('todos', 'Todos', Icons.tune, Colors.blueGrey),
+          const SizedBox(width: 8),
+          chip('livre', 'Livre', Icons.check_circle, Colors.green),
+          const SizedBox(width: 8),
+          chip('ocupado', 'Ocupado', Icons.block, Colors.red),
+          const SizedBox(width: 8),
+          chip('manutencao', 'Manut.', Icons.build, Colors.orange),
+        ],
+      ),
+    );
+  }
+
+  Widget _buscaEOrdem() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _buscaCtrl,
+            onChanged: (v) {
+              _debounce?.cancel();
+              _debounce = Timer(const Duration(milliseconds: 350), () {
+                if (!mounted) return;
+                setState(() => _busca = v);
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Buscar por nome...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _buscaCtrl.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _buscaCtrl.clear();
+                        setState(() => _busca = '');
+                      },
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              isDense: true,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        PopupMenuButton<String>(
+          tooltip: 'Ordenar',
+          onSelected: (v) => setState(() => _ordem = v),
+          itemBuilder: (ctx) => [
+            const PopupMenuItem(
+              value: 'recentes',
+              child: Text('Mais recentes'),
+            ),
+            const PopupMenuItem(value: 'nome_az', child: Text('Nome A→Z')),
+            const PopupMenuItem(value: 'nome_za', child: Text('Nome Z→A')),
+            const PopupMenuItem(
+              value: 'medida_maior',
+              child: Text('Maior medida'),
+            ),
+            const PopupMenuItem(
+              value: 'medida_menor',
+              child: Text('Menor medida'),
+            ),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.sort, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  _tituloOrdem(),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _cardResumo(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    int ativos = 0;
+    int arquivados = 0;
+    int livres = 0;
+    int ocupados = 0;
+    int manut = 0;
+
+    double totalArea = 0;
+    double totalVol = 0;
+
+    for (final d in docs) {
+      final data = d.data();
+      final ativo = (data['ativo'] ?? true) == true;
+      final status = (data['status'] ?? 'livre').toString();
+      final tipo = (data['tipo'] ?? 'Canteiro').toString();
+
+      if (ativo) {
+        ativos++;
+      } else {
+        arquivados++;
+      }
+
+      if (status == 'ocupado') {
+        ocupados++;
+      } else if (status == 'manutencao') {
+        manut++;
+      } else {
+        livres++;
+      }
+
+      if (tipo == 'Vaso') {
+        totalVol += _num(data['volume_l']).toDouble();
+      } else {
+        totalArea += _num(data['area_m2']).toDouble();
+      }
+    }
+
+    return Card(
+      elevation: 1.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Resumo',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                _miniPill(
+                  Icons.check_circle,
+                  'Ativos',
+                  '$ativos',
+                  Colors.green,
+                ),
+                _miniPill(
+                  Icons.archive,
+                  'Arquivados',
+                  '$arquivados',
+                  Colors.blueGrey,
+                ),
+                _miniPill(
+                  Icons.spa,
+                  'Área',
+                  '${totalArea.toStringAsFixed(2)} m²',
+                  Colors.teal,
+                ),
+                _miniPill(
+                  Icons.water_drop,
+                  'Volume',
+                  '${totalVol.toStringAsFixed(1)} L',
+                  Colors.blue,
+                ),
+                _miniPill(Icons.check, 'Livre', '$livres', Colors.green),
+                _miniPill(Icons.block, 'Ocupado', '$ocupados', Colors.red),
+                _miniPill(Icons.build, 'Manut.', '$manut', Colors.orange),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniPill(IconData icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _buscaCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = _user;
@@ -593,19 +1255,26 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _criarOuEditarLocal(),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('NOVO LOCAL'),
-      ),
+      floatingActionButton: user == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _criarOuEditarLocal(),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('NOVO LOCAL'),
+            ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
         child: Column(
           children: [
-            _chipsFiltro(),
+            _buscaEOrdem(),
             const SizedBox(height: 12),
+            _chipsFiltroAtivo(),
+            const SizedBox(height: 10),
+            _chipsFiltroStatus(),
+            const SizedBox(height: 12),
+
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _buildQuery().snapshots(),
@@ -613,31 +1282,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-
-                  if (snapshot.hasError) {
-                    final err = snapshot.error;
-                    if (err is FirebaseException &&
-                        err.code == 'failed-precondition') {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Text(
-                            'Faltando índice no Firestore para essa consulta.\n'
-                            'Crie o índice composto (uid_usuario + ativo + data_criacao) e reinicie o app.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    }
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text('Erro ao carregar.'),
-                      ),
-                    );
-                  }
-
-                  final docs = snapshot.data?.docs ?? [];
 
                   if (user == null) {
                     return const Center(
@@ -647,6 +1291,64 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                       ),
                     );
                   }
+
+                  if (snapshot.hasError) {
+                    final err = snapshot.error;
+
+                    if (err is FirebaseException) {
+                      if (err.code == 'failed-precondition') {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text(
+                              'Tá faltando índice no Firestore pra essa consulta.\n\n'
+                              'Normal quando mistura filtros + ordenação/busca.\n'
+                              'Abra o link do erro no console do Firebase e crie o índice.\n\n'
+                              'Dica comum: (uid_usuario + ativo + status + data_criacao)\n'
+                              'E pra busca: (uid_usuario + ativo + status + nome_lower)',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (err.code == 'permission-denied') {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text(
+                              'Sem permissão. Verifique suas regras do Firestore.\n'
+                              'O usuário deve acessar apenas docs do próprio uid.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (err.code == 'unavailable') {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text(
+                              'Sem conexão com o Firestore agora.\n'
+                              'Confira sua internet e tente de novo.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+                    }
+
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text('Erro ao carregar.'),
+                      ),
+                    );
+                  }
+
+                  final rawDocs = snapshot.data?.docs ?? [];
+                  final docs = _sortLocal(rawDocs);
 
                   if (docs.isEmpty) {
                     return Center(
@@ -667,9 +1369,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                           const SizedBox(height: 18),
                           Text(
-                            _filtro == 'arquivados'
-                                ? 'Nenhum local arquivado.'
-                                : 'Sua horta está vazia.',
+                            'Nada aqui com esses filtros.',
                             style: const TextStyle(
                               fontSize: 18,
                               color: Colors.grey,
@@ -678,10 +1378,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            _filtro == 'arquivados'
-                                ? 'Arquive um local pra ele aparecer aqui.'
-                                : 'Adicione seu primeiro vaso ou canteiro.',
+                            'Ativo: ${_tituloFiltroAtivo()} • ${_tituloFiltroStatus()}',
                             style: const TextStyle(color: Colors.grey),
+                            textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
@@ -689,254 +1388,375 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             icon: const Icon(Icons.add),
                             label: const Text('Cadastrar Local'),
                           ),
+                          if (_busca.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: () {
+                                _buscaCtrl.clear();
+                                setState(() => _busca = '');
+                              },
+                              child: const Text('Limpar busca'),
+                            ),
+                          ],
                         ],
                       ),
                     );
                   }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 90),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final doc = docs[index];
-                      final dados = doc.data();
-                      final id = doc.id;
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      // Stream já atualiza, mas isso dá a sensação "puxar pra atualizar".
+                      await Future.delayed(const Duration(milliseconds: 400));
+                    },
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 90),
+                      itemCount: docs.length + 1,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return _cardResumo(docs);
+                        }
 
-                      final nome = (dados['nome'] ?? 'Sem Nome').toString();
-                      final tipo = (dados['tipo'] ?? 'Canteiro').toString();
-                      final bool ativo = (dados['ativo'] ?? true) == true;
-                      final String status = (dados['status'] ?? 'livre')
-                          .toString();
+                        final doc = docs[index - 1];
+                        final dados = doc.data();
+                        final id = doc.id;
 
-                      final corStatus = _getCorStatus(status);
+                        final nome = (dados['nome'] ?? 'Sem Nome').toString();
+                        final tipo = (dados['tipo'] ?? 'Canteiro').toString();
+                        final bool ativo = (dados['ativo'] ?? true) == true;
+                        final String status = (dados['status'] ?? 'livre')
+                            .toString();
 
-                      return Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    TelaDetalhesCanteiro(canteiroId: id),
-                              ),
-                            );
+                        final String finalidade =
+                            (dados['finalidade'] ?? 'consumo').toString();
+
+                        final corStatus = _getCorStatus(status);
+
+                        return Dismissible(
+                          key: ValueKey(id),
+                          direction: DismissDirection.horizontal,
+                          confirmDismiss: (dir) async {
+                            if (dir == DismissDirection.startToEnd) {
+                              // Swipe direita -> arquivar/reativar com undo
+                              await _toggleAtivoComUndo(
+                                id: id,
+                                ativoAtual: ativo,
+                                nome: nome,
+                              );
+                              return false;
+                            } else if (dir == DismissDirection.endToStart) {
+                              // Swipe esquerda -> editar
+                              _runNextFrame(() async {
+                                await _criarOuEditarLocal(doc: doc);
+                              });
+                              return false;
+                            }
+                            return false;
                           },
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
+                          background: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            alignment: Alignment.centerLeft,
                             child: Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: ativo
-                                        ? corStatus.withOpacity(0.10)
-                                        : Colors.grey.withOpacity(0.10),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    _iconeTipo(tipo),
-                                    color: ativo ? corStatus : Colors.grey,
-                                    size: 28,
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              nome,
-                                              style: TextStyle(
-                                                fontSize: 17,
-                                                fontWeight: FontWeight.bold,
-                                                color: ativo
-                                                    ? Colors.black87
-                                                    : Colors.grey,
-                                                decoration: ativo
-                                                    ? null
-                                                    : TextDecoration
-                                                          .lineThrough,
-                                              ),
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: ativo
-                                                  ? corStatus.withOpacity(0.10)
-                                                  : Colors.grey.shade300,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: ativo
-                                                  ? Border.all(
-                                                      color: corStatus
-                                                          .withOpacity(0.25),
-                                                    )
-                                                  : null,
-                                            ),
-                                            child: Text(
-                                              ativo
-                                                  ? _getTextoStatus(status)
-                                                  : 'ARQUIVADO',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: ativo
-                                                    ? corStatus
-                                                    : Colors.white,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            _iconeMedida(tipo),
-                                            size: 14,
-                                            color: Colors.grey[600],
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _labelMedida(dados),
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                                Icon(
+                                  ativo ? Icons.archive : Icons.unarchive,
+                                  color: Colors.blueGrey,
                                 ),
                                 const SizedBox(width: 10),
-                                PopupMenuButton<String>(
-                                  itemBuilder: (ctx) => [
-                                    PopupMenuItem<String>(
-                                      value: 'detalhes',
-                                      onTap: () {
-                                        _runNextFrame(() {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  TelaDetalhesCanteiro(
-                                                    canteiroId: id,
-                                                  ),
-                                            ),
-                                          );
-                                        });
-                                      },
-                                      child: const Row(
-                                        children: [
-                                          Icon(Icons.open_in_new, size: 18),
-                                          SizedBox(width: 10),
-                                          Text('Abrir detalhes'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem<String>(
-                                      value: 'editar',
-                                      onTap: () {
-                                        _runNextFrame(() async {
-                                          await _criarOuEditarLocal(doc: doc);
-                                        });
-                                      },
-                                      child: const Row(
-                                        children: [
-                                          Icon(Icons.edit, size: 18),
-                                          SizedBox(width: 10),
-                                          Text('Editar'),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuItem<String>(
-                                      value: 'toggle_ativo',
-                                      onTap: () {
-                                        _runNextFrame(() async {
-                                          await _toggleAtivo(id, ativo);
-                                          if (!mounted) return;
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                ativo
-                                                    ? 'Arquivado.'
-                                                    : 'Reativado.',
-                                              ),
-                                              backgroundColor: Colors.blueGrey,
-                                            ),
-                                          );
-                                        });
-                                      },
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            ativo
-                                                ? Icons.archive
-                                                : Icons.unarchive,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Text(ativo ? 'Arquivar' : 'Reativar'),
-                                        ],
-                                      ),
-                                    ),
-                                    if (kDebugMode)
-                                      PopupMenuItem<String>(
-                                        value: 'excluir_hard',
-                                        onTap: () {
-                                          _runNextFrame(() async {
-                                            await _confirmarExcluirHard(
-                                              id,
-                                              nome,
-                                            );
-                                          });
-                                        },
-                                        child: const Row(
-                                          children: [
-                                            Icon(
-                                              Icons.delete,
-                                              size: 18,
-                                              color: Colors.red,
-                                            ),
-                                            SizedBox(width: 10),
-                                            Text(
-                                              'Excluir (DEV)',
-                                              style: TextStyle(
-                                                color: Colors.red,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
-                                  icon: const Icon(
-                                    Icons.more_vert,
-                                    color: Colors.grey,
+                                Text(
+                                  ativo ? 'Arquivar' : 'Reativar',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blueGrey,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      );
-                    },
+                          secondaryBackground: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            alignment: Alignment.centerRight,
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Editar',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                Icon(Icons.edit, color: Colors.green),
+                              ],
+                            ),
+                          ),
+                          child: Card(
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        TelaDetalhesCanteiro(canteiroId: id),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: ativo
+                                            ? corStatus.withOpacity(0.10)
+                                            : Colors.grey.withOpacity(0.10),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        _iconeTipo(tipo),
+                                        color: ativo ? corStatus : Colors.grey,
+                                        size: 28,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  nome,
+                                                  style: TextStyle(
+                                                    fontSize: 17,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: ativo
+                                                        ? Colors.black87
+                                                        : Colors.grey,
+                                                    decoration: ativo
+                                                        ? null
+                                                        : TextDecoration
+                                                              .lineThrough,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: ativo
+                                                      ? corStatus.withOpacity(
+                                                          0.10,
+                                                        )
+                                                      : Colors.grey.shade300,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: ativo
+                                                      ? Border.all(
+                                                          color: corStatus
+                                                              .withOpacity(
+                                                                0.25,
+                                                              ),
+                                                        )
+                                                      : null,
+                                                ),
+                                                child: Text(
+                                                  ativo
+                                                      ? _getTextoStatus(status)
+                                                      : 'ARQUIVADO',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: ativo
+                                                        ? corStatus
+                                                        : Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                _iconeMedida(tipo),
+                                                size: 14,
+                                                color: Colors.grey[600],
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                _labelMedida(dados),
+                                                style: TextStyle(
+                                                  color: Colors.grey[600],
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: _corFinalidade(
+                                                    finalidade,
+                                                  ).withOpacity(0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: _corFinalidade(
+                                                      finalidade,
+                                                    ).withOpacity(0.25),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  _labelFinalidade(dados),
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: _corFinalidade(
+                                                      finalidade,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    PopupMenuButton<String>(
+                                      itemBuilder: (ctx) => [
+                                        PopupMenuItem<String>(
+                                          value: 'detalhes',
+                                          onTap: () {
+                                            _runNextFrame(() {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      TelaDetalhesCanteiro(
+                                                        canteiroId: id,
+                                                      ),
+                                                ),
+                                              );
+                                            });
+                                          },
+                                          child: const Row(
+                                            children: [
+                                              Icon(Icons.open_in_new, size: 18),
+                                              SizedBox(width: 10),
+                                              Text('Abrir detalhes'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'editar',
+                                          onTap: () {
+                                            _runNextFrame(() async {
+                                              await _criarOuEditarLocal(
+                                                doc: doc,
+                                              );
+                                            });
+                                          },
+                                          child: const Row(
+                                            children: [
+                                              Icon(Icons.edit, size: 18),
+                                              SizedBox(width: 10),
+                                              Text('Editar'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem<String>(
+                                          value: 'toggle_ativo',
+                                          onTap: () {
+                                            _runNextFrame(() async {
+                                              await _toggleAtivoComUndo(
+                                                id: id,
+                                                ativoAtual: ativo,
+                                                nome: nome,
+                                              );
+                                            });
+                                          },
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                ativo
+                                                    ? Icons.archive
+                                                    : Icons.unarchive,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Text(
+                                                ativo ? 'Arquivar' : 'Reativar',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (kDebugMode)
+                                          PopupMenuItem<String>(
+                                            value: 'excluir_hard',
+                                            onTap: () {
+                                              _runNextFrame(() async {
+                                                await _confirmarExcluirHard(
+                                                  id,
+                                                  nome,
+                                                );
+                                              });
+                                            },
+                                            child: const Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.delete,
+                                                  size: 18,
+                                                  color: Colors.red,
+                                                ),
+                                                SizedBox(width: 10),
+                                                Text(
+                                                  'Excluir (DEV)',
+                                                  style: TextStyle(
+                                                    color: Colors.red,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                      icon: const Icon(
+                                        Icons.more_vert,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   );
                 },
               ),
