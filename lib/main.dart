@@ -5,6 +5,9 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 
+// ✅ AppMessenger global
+import 'core/ui/app_messenger.dart';
+
 // Imports das telas
 import 'modules/auth/tela_login.dart';
 import 'modules/home/tela_home.dart';
@@ -26,6 +29,9 @@ class VerdeEnsinaApp extends StatelessWidget {
       title: 'Verde Ensina Pro',
       debugShowCheckedModeBanner: false,
 
+      // ✅ SnackBar global (não depende de context)
+      scaffoldMessengerKey: AppMessenger.key,
+
       // Idioma (PT-BR)
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -39,9 +45,9 @@ class VerdeEnsinaApp extends StatelessWidget {
       // Tema Visual
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2E7D32), // Verde Floresta
-          secondary: const Color(0xFF795548), // Marrom Terra
-          surface: const Color(0xFFF1F8E9), // Fundo Suave
+          seedColor: const Color(0xFF2E7D32),
+          secondary: const Color(0xFF795548),
+          surface: const Color(0xFFF1F8E9),
         ),
         useMaterial3: true,
         elevatedButtonTheme: ElevatedButtonThemeData(
@@ -60,7 +66,6 @@ class VerdeEnsinaApp extends StatelessWidget {
         ),
       ),
 
-      // “Porteiro” do app
       home: const AuthGate(),
     );
   }
@@ -74,14 +79,12 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // 1) Carregando…
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // 2) Erro (raro, mas acontece)
         if (snapshot.hasError) {
           return Scaffold(
             body: Center(
@@ -96,12 +99,10 @@ class AuthGate extends StatelessWidget {
           );
         }
 
-        // 3) Logado -> Home
         if (snapshot.hasData) {
           return const TelaHome();
         }
 
-        // 4) Deslogado -> Login
         return const TelaLogin();
       },
     );

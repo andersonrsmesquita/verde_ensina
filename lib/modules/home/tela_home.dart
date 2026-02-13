@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// Imports das suas telas funcionais
-import '../canteiros/tela_canteiros.dart';
-import '../solo/tela_diagnostico.dart';
-import '../calculadoras/tela_calagem.dart';
-import '../planejamento/tela_planejamento_consumo.dart';
-import '../adubacao/tela_adubacao_organo15.dart';
+import 'package:verde_ensina/core/ui/app_messenger.dart';
+
+// Imports das telas funcionais
+import 'package:verde_ensina/modules/canteiros/tela_canteiros.dart';
+import 'package:verde_ensina/modules/solo/tela_diagnostico.dart';
+import 'package:verde_ensina/modules/calculadoras/tela_calagem.dart';
+import 'package:verde_ensina/modules/planejamento/tela_planejamento_consumo.dart';
+import 'package:verde_ensina/modules/adubacao/tela_adubacao_organo15.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -17,18 +19,10 @@ class TelaHome extends StatefulWidget {
 }
 
 class _TelaHomeState extends State<TelaHome> {
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   int _indiceAtual = 0;
 
   void _snack(String msg, {Color? cor}) {
-    _messengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: cor,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    AppMessenger.showSnack(msg, cor: cor);
   }
 
   void _setAba(int index) {
@@ -96,53 +90,50 @@ class _TelaHomeState extends State<TelaHome> {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
 
-    return ScaffoldMessenger(
-      key: _messengerKey,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA),
-        appBar: _buildAppBar(context),
-        body: IndexedStack(
-          index: _indiceAtual,
-          children: [
-            _AbaInicioDashboard(
-              onIrParaJornada: () => _setAba(1),
-              onAviso: (msg) => _snack(msg),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: _buildAppBar(context),
+      body: IndexedStack(
+        index: _indiceAtual,
+        children: [
+          _AbaInicioDashboard(
+            onIrParaJornada: () => _setAba(1),
+            onAviso: (msg) => _snack(msg),
+          ),
+          _AbaJornadaTrilha(onAviso: (msg) => _snack(msg)),
+          _AbaPerfil(onAviso: (msg, {Color? cor}) => _snack(msg, cor: cor)),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -6),
             ),
-            _AbaJornadaTrilha(onAviso: (msg) => _snack(msg)),
-            _AbaPerfil(onAviso: (msg, {Color? cor}) => _snack(msg, cor: cor)),
           ],
         ),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 12,
-                offset: const Offset(0, -6),
-              ),
-            ],
-          ),
-          child: BottomNavigationBar(
-            currentIndex: _indiceAtual,
-            onTap: _setAba,
-            backgroundColor: Colors.white,
-            selectedItemColor: primary,
-            unselectedItemColor: Colors.grey,
-            type: BottomNavigationBarType.fixed,
-            showUnselectedLabels: true,
-            elevation: 0,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_filled),
-                label: 'Início',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Jornada'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person),
-                label: 'Perfil',
-              ),
-            ],
-          ),
+        child: BottomNavigationBar(
+          currentIndex: _indiceAtual,
+          onTap: _setAba,
+          backgroundColor: Colors.white,
+          selectedItemColor: primary,
+          unselectedItemColor: Colors.grey,
+          type: BottomNavigationBarType.fixed,
+          showUnselectedLabels: true,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_filled),
+              label: 'Início',
+            ),
+            BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Jornada'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person),
+              label: 'Perfil',
+            ),
+          ],
         ),
       ),
     );
@@ -187,8 +178,6 @@ class _AbaInicioDashboard extends StatelessWidget {
             style: const TextStyle(fontSize: 14, color: Colors.grey),
           ),
           const SizedBox(height: 18),
-
-          // Card principal (Jornada)
           InkWell(
             onTap: onIrParaJornada,
             borderRadius: BorderRadius.circular(20),
@@ -249,19 +238,14 @@ class _AbaInicioDashboard extends StatelessWidget {
               ),
             ),
           ),
-
           const SizedBox(height: 18),
-
-          // Métricas rápidas (premium)
           if (user != null) _ResumoDashboard(uid: user.uid),
-
           const SizedBox(height: 22),
           const Text(
             'Gestão & Serviços',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-
           LayoutBuilder(
             builder: (context, c) {
               final w = c.maxWidth;
@@ -537,7 +521,6 @@ class _AbaJornadaTrilha extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
       children: [
-        // Header da Trilha
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -581,7 +564,6 @@ class _AbaJornadaTrilha extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 22),
-
         _TimelineItem(
           fase: 0,
           titulo: 'Planejamento',
@@ -716,7 +698,6 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                 style: const TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 12),
-
               TextField(
                 onChanged: (v) =>
                     setState(() => _busca = v.trim().toLowerCase()),
@@ -732,7 +713,6 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                 ),
               ),
               const SizedBox(height: 12),
-
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
                   stream: stream,
@@ -760,9 +740,8 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                                 Expanded(
                                   child: Text(
                                     'Você ainda não tem canteiros ativos. Cadastre um para continuar.',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w600),
                                   ),
                                 ),
                               ],
@@ -785,17 +764,17 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                       );
                     }
 
-                    final docs =
-                        docsAll.where((d) {
-                          final nome = ((d['nome'] ?? 'Canteiro').toString())
-                              .toLowerCase();
-                          if (_busca.isEmpty) return true;
-                          return nome.contains(_busca);
-                        }).toList()..sort((a, b) {
-                          final na = (a['nome'] ?? '').toString().toLowerCase();
-                          final nb = (b['nome'] ?? '').toString().toLowerCase();
-                          return na.compareTo(nb);
-                        });
+                    final docs = docsAll.where((d) {
+                      final nome =
+                          ((d['nome'] ?? 'Canteiro').toString()).toLowerCase();
+                      if (_busca.isEmpty) return true;
+                      return nome.contains(_busca);
+                    }).toList()
+                      ..sort((a, b) {
+                        final na = (a['nome'] ?? '').toString().toLowerCase();
+                        final nb = (b['nome'] ?? '').toString().toLowerCase();
+                        return na.compareTo(nb);
+                      });
 
                     return ListView.separated(
                       controller: controller,
@@ -804,26 +783,22 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                       itemBuilder: (context, index) {
                         final doc = docs[index] as QueryDocumentSnapshot;
                         final nome = (doc['nome'] ?? 'Canteiro').toString();
-                        final area = doc.data() is Map<String, dynamic>
-                            ? (doc.data() as Map<String, dynamic>)['area_m2']
-                            : null;
+                        final area =
+                            (doc.data() as Map<String, dynamic>)['area_m2'];
 
                         double areaM2 = 0;
                         if (area is num) areaM2 = area.toDouble();
                         if (area is String) areaM2 = double.tryParse(area) ?? 0;
 
                         return ListTile(
-                          leading: const Icon(
-                            Icons.grid_on,
-                            color: Colors.green,
-                          ),
+                          leading:
+                              const Icon(Icons.grid_on, color: Colors.green),
                           title: Text(
                             nome,
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          subtitle: Text(
-                            'Área: ${areaM2.toStringAsFixed(2)} m²',
-                          ),
+                          subtitle:
+                              Text('Área: ${areaM2.toStringAsFixed(2)} m²'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => widget.onSelecionar(doc),
                         );
@@ -883,7 +858,7 @@ class _AbaPerfil extends StatelessWidget {
     if (user == null) {
       return ListView(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-        children: [
+        children: const [
           _InfoBox(
             icon: Icons.lock_outline,
             cor: Colors.orange,
@@ -952,9 +927,7 @@ class _AbaPerfil extends StatelessWidget {
             ],
           ),
         ),
-
         const SizedBox(height: 14),
-
         _CardSection(
           title: 'Conta',
           children: [
@@ -970,18 +943,14 @@ class _AbaPerfil extends StatelessWidget {
             ),
           ],
         ),
-
         const SizedBox(height: 14),
-
         _CardSection(
           title: 'Sessão',
           children: [
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text(
-                'Sair do App',
-                style: TextStyle(color: Colors.red),
-              ),
+              title: const Text('Sair do App',
+                  style: TextStyle(color: Colors.red)),
               onTap: () => _confirmarLogout(context),
             ),
           ],
@@ -1017,10 +986,8 @@ class _CardSection extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            child: Text(title,
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
           ...children,
         ],
@@ -1084,9 +1051,7 @@ class _CardMenuGrande extends StatelessWidget {
                 Text(
                   titulo,
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                      fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 if (subtitulo != null) ...[
                   const SizedBox(height: 2),
@@ -1210,18 +1175,15 @@ class _TimelineItem extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: bloqueado
-                                      ? Colors.grey
-                                      : Colors.black87,
+                                  color:
+                                      bloqueado ? Colors.grey : Colors.black87,
                                 ),
                               ),
                               const SizedBox(height: 5),
                               Text(
                                 descricao,
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
+                                    fontSize: 12, color: Colors.grey[600]),
                               ),
                             ],
                           ),

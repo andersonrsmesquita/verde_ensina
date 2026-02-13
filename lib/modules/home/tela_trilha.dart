@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
 
-// Imports das telas
+// Imports das telas (mantive porque você usa as telas também)
 import '../canteiros/tela_canteiros.dart';
-import '../solo/tela_diagnostico.dart';
-import '../calculadoras/tela_calagem.dart';
 import '../planejamento/tela_planejamento_consumo.dart';
 import '../adubacao/tela_adubacao_organo15.dart';
 
@@ -36,20 +35,11 @@ class _TelaTrilhaState extends State<TelaTrilha> {
     String canteiroId,
   ) {
     if (acao == 'diagnostico') {
-      Navigator.of(pageContext).push(
-        MaterialPageRoute(
-          builder: (_) => TelaDiagnostico(canteiroIdOrigem: canteiroId),
-        ),
-      );
+      pageContext.push('/diagnostico/$canteiroId');
       return;
     }
-
     if (acao == 'calagem') {
-      Navigator.of(pageContext).push(
-        MaterialPageRoute(
-          builder: (_) => TelaCalagem(canteiroIdOrigem: canteiroId),
-        ),
-      );
+      pageContext.push('/calagem/$canteiroId');
       return;
     }
   }
@@ -106,9 +96,8 @@ class _TelaTrilhaState extends State<TelaTrilha> {
                       style: TextStyle(color: Colors.grey),
                     ),
                     const SizedBox(height: 16),
-
                     Expanded(
-                      child: StreamBuilder<QuerySnapshot>(
+                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: FirebaseFirestore.instance
                             .collection('canteiros')
                             .where('uid_usuario', isEqualTo: user.uid)
@@ -181,12 +170,8 @@ class _TelaTrilhaState extends State<TelaTrilha> {
                                         child: ElevatedButton(
                                           onPressed: () {
                                             Navigator.pop(sheetContext);
-                                            Navigator.of(pageContext).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    const TelaCanteiros(),
-                                              ),
-                                            );
+                                            // Pode navegar por rota OU abrir tela direto. Premium = rota.
+                                            pageContext.push('/canteiros');
                                           },
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.orange,
@@ -211,14 +196,10 @@ class _TelaTrilhaState extends State<TelaTrilha> {
 
                           final ordenados = [...docs]
                             ..sort((a, b) {
-                              final ma =
-                                  (a.data() as Map<String, dynamic>?) ?? {};
-                              final mb =
-                                  (b.data() as Map<String, dynamic>?) ?? {};
-                              final na = (ma['nome'] ?? '')
+                              final na = (a.data()['nome'] ?? '')
                                   .toString()
                                   .toLowerCase();
-                              final nb = (mb['nome'] ?? '')
+                              final nb = (b.data()['nome'] ?? '')
                                   .toString()
                                   .toLowerCase();
                               return na.compareTo(nb);
@@ -227,12 +208,11 @@ class _TelaTrilhaState extends State<TelaTrilha> {
                           return ListView.separated(
                             controller: controller,
                             itemCount: ordenados.length,
-                            separatorBuilder: (c, i) =>
+                            separatorBuilder: (_, __) =>
                                 const Divider(height: 1),
                             itemBuilder: (ctx2, index) {
                               final doc = ordenados[index];
-                              final dados =
-                                  (doc.data() as Map<String, dynamic>?) ?? {};
+                              final dados = doc.data();
                               final nome = (dados['nome'] ?? 'Sem nome')
                                   .toString();
                               final area = _formatarArea(dados['area_m2']);
@@ -267,10 +247,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
                                   color: Colors.grey,
                                 ),
                                 onTap: () {
-                                  // fecha o bottomsheet com o sheetContext
                                   Navigator.pop(sheetContext);
-
-                                  // navega com o context da página (pageContext)
                                   WidgetsBinding.instance.addPostFrameCallback((
                                     _,
                                   ) {
@@ -376,12 +353,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
             desc: 'Defina o que plantar e calcule o consumo.',
             icon: Icons.edit_note,
             color: Colors.blue,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const TelaPlanejamentoConsumo(),
-              ),
-            ),
+            onTap: () => context.push('/planejamento'),
           ),
           _TimelineItem(
             step: '2',
@@ -389,10 +361,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
             desc: 'Cadastre vasos e canteiros.',
             icon: Icons.grid_view,
             color: Colors.green,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-            ),
+            onTap: () => context.push('/canteiros'),
           ),
           _TimelineItem(
             step: '3',
@@ -417,10 +386,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
             icon: Icons.eco,
             color: Colors.orange,
             isLocked: false,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TelaAdubacaoOrgano15()),
-            ),
+            onTap: () => context.push('/adubacao'),
           ),
           const _TimelineItem(
             step: '6',

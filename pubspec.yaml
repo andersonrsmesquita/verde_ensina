@@ -1,5 +1,5 @@
 name: verde_ensina
-description: "A new Flutter project."
+description: "Verde Ensina - App"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,18 +10,18 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Tradução (Vital)
   flutter_localizations:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
 
-  # --- VERSÕES ATUALIZADAS (PARA CORRIGIR O ERRO C2665/STD::VARIANT) ---
-  # Estas versões corrigem a incompatibilidade com o Visual Studio 2022
+  # Navegação profissional
+  go_router: ^14.0.0
+
+  # Firebase (mantendo suas versões estáveis pro Windows)
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
-  # ---------------------------------------------------------------------
 
 dev_dependencies:
   flutter_test:
