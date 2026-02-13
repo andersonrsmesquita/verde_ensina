@@ -40,9 +40,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   bool _aggInitChecked = false;
 
-  // evita disparar _refreshHistorico em loop a cada build
-  bool _didInitialLoad = false;
-
   static const String _colCanteiros = 'canteiros';
   static const String _colHistorico = 'historico_manejo';
 
@@ -109,6 +106,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         case 'permission-denied':
           return 'Permissão negada (rules do Firestore). Verifique se uid_usuario bate com request.auth.uid e se regras aceitam Timestamp.';
         case 'failed-precondition':
+          // bem comum em queries sem índice também
           return 'Falha de pré-condição (muito comum por índice faltando ou regra). Veja o console.';
         case 'not-found':
           return 'Documento não encontrado (foi apagado/arquivado?).';
@@ -410,7 +408,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     try {
       final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
 
-      // DESC: mais recente primeiro
       final all = await _historicoQuery(_uid!).get();
 
       double totalCusto = 0.0;
@@ -430,12 +427,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         if (r is num) totalReceita += r.toDouble();
       }
 
-      int idxPlantioAtivo = -1;
-      for (int i = 0; i < all.docs.length; i++) {
-        final doc = all.docs[i];
+      for (final doc in all.docs) {
         final d = (doc.data() as Map<String, dynamic>?) ?? {};
         if (d['tipo_manejo'] == 'Plantio' && d['concluido'] == false) {
-          idxPlantioAtivo = i;
           cicloId = doc.id;
           cicloConcluido = false;
           cicloProdutos = (d['produto'] ?? '').toString();
@@ -449,14 +443,15 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         }
       }
 
-      // custo/receita do ciclo = soma do plantio ativo + todos os eventos DEPOIS dele (mais recentes)
-      // como a lista está DESC, isso significa somar docs[0..idxPlantioAtivo]
       double cicloCusto = 0.0;
       double cicloReceita = 0.0;
+      if (!cicloConcluido && cicloId.isNotEmpty) {
+        bool contando = false;
+        for (final doc in all.docs) {
+          if (doc.id == cicloId) contando = true;
+          if (!contando) continue;
 
-      if (!cicloConcluido && idxPlantioAtivo >= 0) {
-        for (int i = 0; i <= idxPlantioAtivo; i++) {
-          final d = (all.docs[i].data() as Map<String, dynamic>?) ?? {};
+          final d = (doc.data() as Map<String, dynamic>?) ?? {};
           final c = d['custo'];
           final r = d['receita'];
           if (c is num) cicloCusto += c.toDouble();
@@ -680,6 +675,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             ((c['agg_ciclo_id'] ?? '').toString().isNotEmpty) &&
             (c['agg_ciclo_concluido'] != true);
 
+        // valores atuais (soma segura, sem increment pra não estourar por tipo zoado)
         final totalCustoAtual = _toDouble(c['agg_total_custo']);
         final cicloCustoAtual = _toDouble(c['agg_ciclo_custo']);
 
@@ -1104,7 +1100,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       tx.set(plantioRef, {
         'canteiro_id': widget.canteiroId,
         'uid_usuario': uid,
-        'data': _nowTs(),
+        'data': _nowTs(), // <= robusto para rules/ordenação
         'tipo_manejo': 'Plantio',
         'produto': produto,
         'detalhes': resumo,
@@ -1121,7 +1117,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         'agg_ciclo_custo': custo,
         'agg_ciclo_receita': 0.0,
         'agg_ciclo_id': plantioRef.id,
-        'agg_ciclo_inicio': _nowTs(),
+        'agg_ciclo_inicio':
+            _nowTs(), // <= evita serverTimestamp chato nas rules
         'agg_ciclo_produtos': produto,
         'agg_ciclo_mapa': qtdPorPlanta,
         'agg_ciclo_concluido': false,
@@ -1406,14 +1403,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
       await _db.runTransaction((tx) async {
         final plantioSnap = await tx.get(plantioRef);
-        if (!plantioSnap.exists) {
+        if (!plantioSnap.exists)
           throw Exception('Plantio ativo não encontrado.');
-        }
 
         final data = (plantioSnap.data() as Map<String, dynamic>?) ?? {};
-        if (data['concluido'] == true) {
+        if (data['concluido'] == true)
           throw Exception('Esse plantio já está concluído.');
-        }
 
         Map<String, int> mapaAtual = _intMapFromAny(data['mapa_plantio']);
         if (mapaAtual.isEmpty) {
@@ -1441,6 +1436,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
         cicloFinalizado = mapaRestante.isEmpty;
 
+        // grava colheita
         tx.set(colheitaRef, {
           'canteiro_id': widget.canteiroId,
           'uid_usuario': uid,
@@ -1457,6 +1453,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             'observacao_extra': observacao,
         });
 
+        // atualiza plantio ativo (saldo)
         tx.update(plantioRef, {
           'mapa_plantio': mapaRestante,
           'produto': novoProduto,
@@ -1465,6 +1462,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             'observacao_extra': 'Ciclo finalizado por colheita total.',
         });
 
+        // lê canteiro pra somar receita com segurança
         final canteiroSnap = await tx.get(canteiroRef);
         if (!canteiroSnap.exists) throw Exception('Canteiro não encontrado.');
 
@@ -1526,115 +1524,109 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx2, setModalState) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx2).viewInsets.bottom + 16,
-            top: 18,
-            left: 18,
-            right: 18,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.bug_report, color: Colors.red, size: 24),
-                    SizedBox(width: 10),
-                    Text(
-                      'Registrar Perda',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: culturaSel,
-                  items: culturas
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setModalState(() {
-                    culturaSel = v ?? culturaSel;
-                  }),
-                  decoration: const InputDecoration(
-                    labelText: 'Cultura',
-                    border: OutlineInputBorder(),
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          top: 18,
+          left: 18,
+          right: 18,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.bug_report, color: Colors.red, size: 24),
+                  SizedBox(width: 10),
+                  Text(
+                    'Registrar Perda',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: culturaSel,
+                items: culturas
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => culturaSel = v ?? culturaSel,
+                decoration: const InputDecoration(
+                  labelText: 'Cultura',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Restante atual: ${mapaPlantioAtual[culturaSel] ?? 0}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Restante atual: ${mapaPlantioAtual[culturaSel] ?? 0}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: qtdCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Qtd perdida',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: qtdCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Qtd perdida',
-                    border: OutlineInputBorder(),
-                  ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: motivoCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo',
+                  hintText: 'Ex: praga, chuva, mela, formiga, queimou no sol…',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: motivoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Motivo',
-                    hintText:
-                        'Ex: praga, chuva, mela, formiga, queimou no sol…',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final qtd = int.tryParse(qtdCtrl.text.trim()) ?? 0;
-                      final max = mapaPlantioAtual[culturaSel] ?? 0;
-                      final motivo = motivoCtrl.text.trim();
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final qtd = int.tryParse(qtdCtrl.text.trim()) ?? 0;
+                    final max = mapaPlantioAtual[culturaSel] ?? 0;
+                    final motivo = motivoCtrl.text.trim();
 
-                      if (qtd <= 0) {
-                        _snack('⚠️ Informe uma quantidade > 0.',
-                            bg: Colors.orange);
-                        return;
-                      }
-                      if (qtd > max) {
-                        _snack('⚠️ Não pode baixar mais que o restante ($max).',
-                            bg: Colors.orange);
-                        return;
-                      }
-                      if (motivo.isEmpty) {
-                        _snack('⚠️ Informe o motivo.', bg: Colors.orange);
-                        return;
-                      }
+                    if (qtd <= 0) {
+                      _snack('⚠️ Informe uma quantidade > 0.',
+                          bg: Colors.orange);
+                      return;
+                    }
+                    if (qtd > max) {
+                      _snack('⚠️ Não pode baixar mais que o restante ($max).',
+                          bg: Colors.orange);
+                      return;
+                    }
+                    if (motivo.isEmpty) {
+                      _snack('⚠️ Informe o motivo.', bg: Colors.orange);
+                      return;
+                    }
 
-                      Navigator.pop(ctx);
-                      await _processarPerdaTransacaoPremium(
-                        idPlantioAtivo: idPlantioAtivo,
-                        cultura: culturaSel,
-                        qtdPerdida: qtd,
-                        motivo: motivo,
-                      );
-                      await _refreshHistorico();
-                    },
-                    icon: const Icon(Icons.warning),
-                    label: const Text('CONFIRMAR PERDA'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
+                    Navigator.pop(ctx);
+                    await _processarPerdaTransacaoPremium(
+                      idPlantioAtivo: idPlantioAtivo,
+                      cultura: culturaSel,
+                      qtdPerdida: qtd,
+                      motivo: motivo,
+                    );
+                    await _refreshHistorico();
+                  },
+                  icon: const Icon(Icons.warning),
+                  label: const Text('CONFIRMAR PERDA'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1668,9 +1660,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         if (!snap.exists) throw Exception('Plantio ativo não encontrado.');
 
         final data = (snap.data() as Map<String, dynamic>?) ?? {};
-        if (data['concluido'] == true) {
+        if (data['concluido'] == true)
           throw Exception('Esse plantio já está concluído.');
-        }
 
         Map<String, int> mapaAtual = _intMapFromAny(data['mapa_plantio']);
         if (mapaAtual.isEmpty) {
@@ -2142,9 +2133,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     _largController.text = _toDouble(d['largura']).toString();
 
     String finalidade = (d['finalidade'] ?? 'consumo').toString();
-    if (finalidade != 'consumo' && finalidade != 'comercio') {
+    if (finalidade != 'consumo' && finalidade != 'comercio')
       finalidade = 'consumo';
-    }
 
     showDialog(
       context: context,
@@ -2288,13 +2278,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     try {
       final db = _db;
 
-      // DEV: apaga tudo do canteiro (sem filtrar por uid)
       while (true) {
-        final snap = await db
+        Query q = db
             .collection(_colHistorico)
-            .where('canteiro_id', isEqualTo: widget.canteiroId)
-            .limit(400)
-            .get();
+            .where('canteiro_id', isEqualTo: widget.canteiroId);
+        if (_uid != null) q = q.where('uid_usuario', isEqualTo: _uid);
+        final snap = await q.limit(400).get();
         if (snap.docs.isEmpty) break;
 
         final batch = db.batch();
@@ -2524,16 +2513,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             : (comp * larg);
 
         String finalidade = (dados['finalidade'] ?? 'consumo').toString();
-        if (finalidade != 'consumo' && finalidade != 'comercio') {
+        if (finalidade != 'consumo' && finalidade != 'comercio')
           finalidade = 'consumo';
-        }
 
-        // dispara refresh 1x (quando tiver uid) e não entra em loop de build
-        if (_isLogado && !_didInitialLoad) {
+        // carrega histórico paginado 1x por tela
+        if (_isLogado && _docs.isEmpty && _loadingFirst) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            setState(() => _didInitialLoad = true);
-            _refreshHistorico();
+            if (mounted) _refreshHistorico();
           });
         }
 
@@ -2727,9 +2713,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           ),
                           trailing: PopupMenuButton<String>(
                             onSelected: (value) {
-                              if (value == 'excluir') {
+                              if (value == 'excluir')
                                 _confirmarExclusaoItem(_docs[i].id);
-                              }
                               if (value == 'editar') {
                                 _mostrarDialogoPerdaOuEditar(
                                   _docs[i].id,
