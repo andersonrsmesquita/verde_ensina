@@ -119,7 +119,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       final vol = _num(dados['volume_l']).toDouble();
       return '${vol.toStringAsFixed(1)} L';
     } else {
-      final area = _num(dados['area_m2']).toDouble();
+      var area = _num(dados['area_m2']).toDouble();
+
+      // fallback: alguns docs antigos só têm largura/comprimento
+      if (area <= 0) {
+        final l = _num(dados['largura'] ?? dados['largura_m']).toDouble();
+        final c =
+            _num(dados['comprimento'] ?? dados['comprimento_m']).toDouble();
+        final calc = l * c;
+        if (calc > 0) area = calc;
+      }
+
       return '${area.toStringAsFixed(2)} m²';
     }
   }
@@ -374,12 +384,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               if (sheetFechando) return;
               sheetFechando = true;
               if (!sheetCtx.mounted) return;
-              // Pop em microtask pra evitar asserts do framework durante dispose
-              Future.microtask(() {
-                if (sheetCtx.mounted && Navigator.of(sheetCtx).canPop()) {
-                  Navigator.of(sheetCtx).pop();
-                }
-              });
+              // Fecha o bottom sheet de forma direta (sem microtask) para evitar
+              // inconsistências de ciclo de vida em algumas builds (Windows).
+              if (Navigator.of(sheetCtx).canPop()) {
+                Navigator.of(sheetCtx).pop();
+              }
             }
 
             Future<void> salvar() async {
@@ -1071,7 +1080,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       if (tipo == 'Vaso') {
         totalVol += _num(data['volume_l']).toDouble();
       } else {
-        totalArea += _num(data['area_m2']).toDouble();
+        var area = _num(data['area_m2']).toDouble();
+        if (area <= 0) {
+          final l = _num(data['largura'] ?? data['largura_m']).toDouble();
+          final c = _num(data['comprimento'] ?? data['comprimento_m']).toDouble();
+          final calc = l * c;
+          if (calc > 0) area = calc;
+        }
+        totalArea += area;
       }
     }
 

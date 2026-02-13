@@ -1140,7 +1140,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final receitaCtrl = TextEditingController(text: '0.00');
     final obsCtrl = TextEditingController();
 
-    final culturas = mapaPlantioAtual.keys.toList()..sort();
+    final culturas = mapaPlantioAtual.keys.toSet().toList()..sort();
     for (final c in culturas) {
       selecionados[c] = false;
       ctrlsQtd[c] = TextEditingController();
@@ -1510,7 +1510,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     required String idPlantioAtivo,
     required Map<String, int> mapaPlantioAtual,
   }) {
-    final culturas = mapaPlantioAtual.keys.toList()..sort();
+    final culturas = mapaPlantioAtual.keys.toSet().toList()..sort();
     if (culturas.isEmpty) {
       _snack('⚠️ Não há culturas ativas para dar baixa.', bg: Colors.orange);
       return;

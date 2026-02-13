@@ -97,16 +97,25 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
       final nome = (data['nome'] ?? 'Canteiro').toString();
       final area = _toDouble(data['area_m2']);
 
-      final largura =
-          data.containsKey('largura_m') ? _toDouble(data['largura_m']) : 0.0;
-      final comp = data.containsKey('comprimento_m')
-          ? _toDouble(data['comprimento_m'])
-          : 0.0;
+      final largura = data.containsKey('largura')
+          ? _toDouble(data['largura'])
+          : (data.containsKey('largura_m') ? _toDouble(data['largura_m']) : 0.0);
+
+      final comp = data.containsKey('comprimento')
+          ? _toDouble(data['comprimento'])
+          : (data.containsKey('comprimento_m')
+              ? _toDouble(data['comprimento_m'])
+              : 0.0);
+
+      // Se não veio área, recalcula pelas dimensões (quando possível)
+      final areaFinal = (area > 0)
+          ? area
+          : ((largura > 0 && comp > 0) ? (largura * comp) : 0.0);
 
       setState(() {
         _canteiroId = id;
         _nomeCanteiro = nome;
-        _areaM2 = area;
+        _areaM2 = areaFinal;
 
         _larguraM = largura > 0 ? largura : null;
         _comprimentoM = comp > 0 ? comp : null;
@@ -345,7 +354,7 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: _culturaSelecionada,
+                  value: (resultadosBusca.contains(_culturaSelecionada) ? _culturaSelecionada : null),
                   decoration: const InputDecoration(
                     labelText: 'Resultado da busca',
                     prefixIcon: Icon(Icons.eco_outlined),
@@ -419,16 +428,21 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                                       .collection('canteiros')
                                       .doc(_canteiroId)
                                       .set({
-                                    'largura_m':
-                                        double.parse(larg.toStringAsFixed(2)),
-                                    'comprimento_m':
-                                        double.parse(comp.toStringAsFixed(2)),
+                                    // dimensões (m)
+                                    'largura': double.parse(larg.toStringAsFixed(2)),
+                                    'comprimento': double.parse(comp.toStringAsFixed(2)),
+                                    // área (m²) para listagens/relatórios
+                                    'area_m2': double.parse((larg * comp).toStringAsFixed(3)),
+                                    // compat: mantém campos antigos caso alguma tela ainda use
+                                    'largura_m': double.parse(larg.toStringAsFixed(2)),
+                                    'comprimento_m': double.parse(comp.toStringAsFixed(2)),
                                     'updatedAt': FieldValue.serverTimestamp(),
                                   }, SetOptions(merge: true));
 
                                   setState(() {
                                     _larguraM = larg;
                                     _comprimentoM = comp;
+                                    _areaM2 = larg * comp;
                                   });
 
                                   _snack('✅ Dimensões salvas no canteiro!',
