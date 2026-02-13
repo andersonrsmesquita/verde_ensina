@@ -1,53 +1,47 @@
 import 'package:flutter/material.dart';
 
 class PageContainer extends StatelessWidget {
-  final String? title;
-  final Widget child;
+  final String title;
   final List<Widget>? actions;
-  final Widget? floatingActionButton;
-  final bool center;
-  final double maxWidth;
-  final EdgeInsetsGeometry padding;
-  final bool safeArea;
+  final Widget child;
+  final bool scroll;
 
   const PageContainer({
     super.key,
-    this.title,
-    required this.child,
+    required this.title,
     this.actions,
-    this.floatingActionButton,
-    this.center = true,
-    this.maxWidth = 980,
-    this.padding = const EdgeInsets.fromLTRB(20, 18, 20, 24),
-    this.safeArea = true,
+    required this.child,
+    this.scroll = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    final body = Container(
-      width: double.infinity,
-      color: scheme.surface,
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Padding(padding: padding, child: child),
-        ),
-      ),
-    );
+    final body = scroll
+        ? SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 950),
+                child: child,
+              ),
+            ),
+          )
+        : Padding(
+            padding: const EdgeInsets.all(16),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 950),
+                child: child,
+              ),
+            ),
+          );
 
     return Scaffold(
-      backgroundColor: scheme.surface,
-      appBar: title == null
-          ? null
-          : AppBar(
-              title: Text(title!),
-              actions: actions,
-            ),
-      floatingActionButton: floatingActionButton,
-      body: safeArea ? SafeArea(child: body) : body,
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+        actions: actions,
+      ),
+      body: body,
     );
   }
 }

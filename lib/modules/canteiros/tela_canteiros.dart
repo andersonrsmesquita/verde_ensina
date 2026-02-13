@@ -31,6 +31,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   Timer? _debounce;
   String _busca = '';
 
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ Faz o suffixIcon (clear) funcionar na hora, sem depender do debounce
+    _buscaCtrl.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
   // =========================
   // Helpers seguros
   // =========================
@@ -46,7 +57,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: cor ?? Colors.blueGrey),
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: cor ?? Colors.blueGrey,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -164,9 +179,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   Query<Map<String, dynamic>> _buildQuery() {
     final user = _user;
 
-    Query<Map<String, dynamic>> q = FirebaseFirestore.instance.collection(
-      'canteiros',
-    );
+    Query<Map<String, dynamic>> q =
+        FirebaseFirestore.instance.collection('canteiros');
 
     // Segurança: sem user, não consulta nada real
     q = q.where('uid_usuario', isEqualTo: user?.uid ?? '__sem_user__');
@@ -181,14 +195,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       q = q.where('status', isEqualTo: _filtroStatus);
     }
 
-    // Busca melhor: server-side por prefixo (nome_lower)
-    // Quando busca ativa, ordena por nome_lower (obrigatório pro startAt/endAt).
+    // Busca server-side por prefixo (nome_lower)
     if (_busca.trim().isNotEmpty) {
       final term = _norm(_busca);
       return q.orderBy('nome_lower').startAt([term]).endAt(['$term\uf8ff']);
     }
 
-    // Base: mais recentes (a ordenação final pode ser ajustada localmente)
     return q.orderBy('data_criacao', descending: true);
   }
 
@@ -208,18 +220,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     String nomeLowerOf(Map<String, dynamic> d) =>
         (d['nome_lower'] ?? (d['nome'] ?? '')).toString().toLowerCase();
 
-    // Se busca ativa, a query já vem ordenada por nome_lower. Mesmo assim, respeita ordem escolhida
-    // (sem brigar com o Firestore).
     switch (_ordem) {
       case 'nome_az':
         list.sort(
-          (a, b) => nomeLowerOf(a.data()).compareTo(nomeLowerOf(b.data())),
-        );
+            (a, b) => nomeLowerOf(a.data()).compareTo(nomeLowerOf(b.data())));
         break;
       case 'nome_za':
         list.sort(
-          (a, b) => nomeLowerOf(b.data()).compareTo(nomeLowerOf(a.data())),
-        );
+            (a, b) => nomeLowerOf(b.data()).compareTo(nomeLowerOf(a.data())));
         break;
       case 'medida_maior':
         list.sort((a, b) => cmpNum(medidaOf(b.data()), medidaOf(a.data())));
@@ -228,7 +236,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         list.sort((a, b) => cmpNum(medidaOf(a.data()), medidaOf(b.data())));
         break;
       default:
-        // recentes: já vem do Firestore (data_criacao desc). Mantém.
         break;
     }
 
@@ -274,6 +281,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         updates['status'] = 'livre';
       }
 
+      // ✅ Compat com planejamento: cria largura_m/comprimento_m se tiver largura/comprimento
+      final larg = _num(d['largura']).toDouble();
+      final comp = _num(d['comprimento']).toDouble();
+      if ((d['largura_m'] == null || _num(d['largura_m']) == 0) && larg > 0) {
+        updates['largura_m'] = larg;
+      }
+      if ((d['comprimento_m'] == null || _num(d['comprimento_m']) == 0) &&
+          comp > 0) {
+        updates['comprimento_m'] = comp;
+      }
+
       if (updates.isNotEmpty) {
         updates['data_atualizacao'] = FieldValue.serverTimestamp();
         batch.update(doc.reference, updates);
@@ -283,10 +301,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
     if (count > 0) {
       await batch.commit();
-      _snack(
-        'Migração DEV OK: $count documentos ajustados.',
-        cor: Colors.blueGrey,
-      );
+      _snack('Migração DEV OK: $count documentos ajustados.',
+          cor: Colors.blueGrey);
     } else {
       _snack('Nada pra migrar. Tá tudo certo já. ✅', cor: Colors.green);
     }
@@ -296,9 +312,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   // CRUD
   // =========================
 
-  Future<void> _criarOuEditarLocal({
-    DocumentSnapshot<Map<String, dynamic>>? doc,
-  }) async {
+  Future<void> _criarOuEditarLocal(
+      {DocumentSnapshot<Map<String, dynamic>>? doc}) async {
     final user = _user;
     if (user == null) {
       _snack('Você precisa estar logado.', cor: Colors.red);
@@ -309,9 +324,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     final dados = doc?.data() ?? <String, dynamic>{};
     final parentContext = context;
 
-    final nomeController = TextEditingController(
-      text: (dados['nome'] ?? '').toString(),
-    );
+    final nomeController =
+        TextEditingController(text: (dados['nome'] ?? '').toString());
 
     final compController = TextEditingController(
       text: _num(dados['comprimento']).toDouble() == 0
@@ -334,17 +348,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     String tipoLocal = (dados['tipo'] ?? 'Canteiro').toString();
     if (tipoLocal != 'Canteiro' && tipoLocal != 'Vaso') tipoLocal = 'Canteiro';
 
-    // ✅ Finalidade
     String finalidade = (dados['finalidade'] ?? 'consumo').toString().trim();
-    if (finalidade != 'consumo' && finalidade != 'comercio') {
+    if (finalidade != 'consumo' && finalidade != 'comercio')
       finalidade = 'consumo';
-    }
 
-    // ✅ Status
     String status = (dados['status'] ?? 'livre').toString().trim();
-    if (status != 'livre' && status != 'ocupado' && status != 'manutencao') {
+    if (status != 'livre' && status != 'ocupado' && status != 'manutencao')
       status = 'livre';
-    }
 
     bool ativo = (dados['ativo'] ?? true) == true;
 
@@ -391,16 +401,25 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 final payload = <String, dynamic>{
                   'uid_usuario': user.uid,
                   'nome': nome,
-                  'nome_lower': nome
-                      .toLowerCase(), // ✅ essencial pra busca melhor
+                  'nome_lower': nome.toLowerCase(),
+
                   'tipo': tipoLocal,
+
+                  // mantém os campos antigos
                   'comprimento': comp,
                   'largura': larg,
+
+                  // ✅ compat com planejamento
+                  'comprimento_m': comp,
+                  'largura_m': larg,
+
                   'area_m2': areaM2,
                   'volume_l': (tipoLocal == 'Vaso') ? volumeL : 0,
+
                   'ativo': ativo,
                   'status': status,
                   'finalidade': finalidade,
+
                   'data_atualizacao': FieldValue.serverTimestamp(),
                 };
 
@@ -408,7 +427,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   payload['data_criacao'] = FieldValue.serverTimestamp();
                   payload['ativo'] = true;
                   payload['status'] = 'livre';
-                  payload['finalidade'] = finalidade;
 
                   await FirebaseFirestore.instance
                       .collection('canteiros')
@@ -426,9 +444,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   ScaffoldMessenger.of(parentContext).showSnackBar(
                     SnackBar(
                       content: Text(
-                        editando ? 'Local atualizado.' : 'Local cadastrado!',
-                      ),
+                          editando ? 'Local atualizado.' : 'Local cadastrado!'),
                       backgroundColor: Colors.green,
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                 });
@@ -438,6 +456,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     SnackBar(
                       content: Text('Erro ao salvar: $e'),
                       backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                 });
@@ -454,11 +473,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   label: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        icon,
-                        size: 16,
-                        color: selected ? Colors.white : color,
-                      ),
+                      Icon(icon,
+                          size: 16, color: selected ? Colors.white : color),
                       const SizedBox(width: 8),
                       Text(label),
                     ],
@@ -476,22 +492,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             }
 
             Widget chipStatus(
-              String key,
-              String label,
-              IconData icon,
-              Color cor,
-            ) {
+                String key, String label, IconData icon, Color cor) {
               final selected = status == key;
               return Expanded(
                 child: ChoiceChip(
                   label: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        icon,
-                        size: 16,
-                        color: selected ? Colors.white : cor,
-                      ),
+                      Icon(icon,
+                          size: 16, color: selected ? Colors.white : cor),
                       const SizedBox(width: 8),
                       Text(label),
                     ],
@@ -525,7 +534,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             return Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
               ),
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).viewInsets.bottom + 20,
@@ -543,28 +552,21 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     children: [
                       Row(
                         children: [
-                          Icon(
-                            editando ? Icons.edit : Icons.add_circle_outline,
-                            color: Colors.green,
-                            size: 28,
-                          ),
+                          Icon(editando ? Icons.edit : Icons.add_circle_outline,
+                              color: Colors.green, size: 28),
                           const SizedBox(width: 10),
                           Text(
                             editando ? 'Editar Local' : 'Novo Local de Cultivo',
                             style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                fontSize: 22, fontWeight: FontWeight.bold),
                           ),
                           const Spacer(),
                           IconButton(
-                            onPressed: closeSheet,
-                            icon: const Icon(Icons.close),
-                          ),
+                              onPressed: closeSheet,
+                              icon: const Icon(Icons.close)),
                         ],
                       ),
                       const SizedBox(height: 12),
-
                       TextFormField(
                         controller: nomeController,
                         textCapitalization: TextCapitalization.sentences,
@@ -580,74 +582,43 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           return null;
                         },
                       ),
-
                       const SizedBox(height: 14),
-
-                      // Finalidade
-                      const Text(
-                        'Finalidade do cultivo',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      const Text('Finalidade do cultivo',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           chipFinalidade(
-                            'consumo',
-                            'Consumo',
-                            Icons.restaurant,
-                          ),
+                              'consumo', 'Consumo', Icons.restaurant),
                           const SizedBox(width: 10),
                           chipFinalidade(
-                            'comercio',
-                            'Comércio',
-                            Icons.storefront,
-                          ),
+                              'comercio', 'Comércio', Icons.storefront),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Text(
                         finalidade == 'comercio'
                             ? 'Ativa módulos de mercado/financeiro e receita.'
-                            : 'Foca em consumo: sem obrigar preço de venda.',
+                            : 'Foco em consumo: sem obrigar preço de venda.',
                         style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
-
                       const SizedBox(height: 14),
-
-                      // Status
-                      const Text(
-                        'Status do local',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      const Text('Status do local',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          chipStatus(
-                            'livre',
-                            'Livre',
-                            Icons.check_circle,
-                            Colors.green,
-                          ),
+                          chipStatus('livre', 'Livre', Icons.check_circle,
+                              Colors.green),
                           const SizedBox(width: 10),
                           chipStatus(
-                            'ocupado',
-                            'Ocupado',
-                            Icons.block,
-                            Colors.red,
-                          ),
+                              'ocupado', 'Ocupado', Icons.block, Colors.red),
                           const SizedBox(width: 10),
-                          chipStatus(
-                            'manutencao',
-                            'Manut.',
-                            Icons.build,
-                            Colors.orange,
-                          ),
+                          chipStatus('manutencao', 'Manut.', Icons.build,
+                              Colors.orange),
                         ],
                       ),
-
                       const SizedBox(height: 14),
-
-                      // Tipo
                       Row(
                         children: [
                           Expanded(
@@ -671,9 +642,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 12),
-
                       if (tipoLocal == 'Canteiro') ...[
                         Row(
                           children: [
@@ -682,12 +651,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 controller: compController,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
+                                        decimal: true),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9\.,]'),
-                                  ),
+                                      RegExp(r'[0-9\.,]')),
                                 ],
                                 decoration: const InputDecoration(
                                   labelText: 'Comp. (m)',
@@ -695,10 +662,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                   border: OutlineInputBorder(),
                                 ),
                                 validator: (v) {
-                                  final val =
-                                      double.tryParse(
-                                        (v ?? '').replaceAll(',', '.'),
-                                      ) ??
+                                  final val = double.tryParse(
+                                          (v ?? '').replaceAll(',', '.')) ??
                                       0;
                                   if (val <= 0) return 'Informe > 0';
                                   if (val > 1000) return 'Tá grande demais 😅';
@@ -712,12 +677,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 controller: largController,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
+                                        decimal: true),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9\.,]'),
-                                  ),
+                                      RegExp(r'[0-9\.,]')),
                                 ],
                                 decoration: const InputDecoration(
                                   labelText: 'Larg. (m)',
@@ -725,10 +688,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                   border: OutlineInputBorder(),
                                 ),
                                 validator: (v) {
-                                  final val =
-                                      double.tryParse(
-                                        (v ?? '').replaceAll(',', '.'),
-                                      ) ??
+                                  final val = double.tryParse(
+                                          (v ?? '').replaceAll(',', '.')) ??
                                       0;
                                   if (val <= 0) return 'Informe > 0';
                                   if (val > 1000) return 'Tá grande demais 😅';
@@ -741,21 +702,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         const SizedBox(height: 8),
                         Text(
                           'Área calculada: ${previewMedida()} (Comp. × Larg.)',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
+                          style:
+                              TextStyle(color: Colors.grey[600], fontSize: 12),
                         ),
                       ] else ...[
                         TextFormField(
                           controller: volumeController,
                           keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
+                              decimal: true),
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9\.,]'),
-                            ),
+                                RegExp(r'[0-9\.,]')),
                           ],
                           decoration: const InputDecoration(
                             labelText: 'Volume do Vaso (Litros)',
@@ -765,10 +722,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             helperText: 'Ex: Baldes comuns têm ~12 L.',
                           ),
                           validator: (v) {
-                            final val =
-                                double.tryParse(
-                                  (v ?? '').replaceAll(',', '.'),
-                                ) ??
+                            final val = double.tryParse(
+                                    (v ?? '').replaceAll(',', '.')) ??
                                 0;
                             if (val <= 0) return 'Informe > 0';
                             if (val > 5000) return 'Tá virando caixa d’água 😅';
@@ -778,30 +733,23 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         const SizedBox(height: 8),
                         Text(
                           'Volume informado: ${previewMedida()}',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
+                          style:
+                              TextStyle(color: Colors.grey[600], fontSize: 12),
                         ),
                       ],
-
                       const SizedBox(height: 12),
-
                       if (editando) ...[
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Ativo'),
-                          subtitle: Text(
-                            ativo
-                                ? 'Aparece nos Ativos.'
-                                : 'Vai pros Arquivados.',
-                          ),
+                          subtitle: Text(ativo
+                              ? 'Aparece nos Ativos.'
+                              : 'Vai pros Arquivados.'),
                           value: ativo,
                           onChanged: (v) => setModalState(() => ativo = v),
                         ),
                         const SizedBox(height: 6),
                       ],
-
                       const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
@@ -809,13 +757,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         child: ElevatedButton(
                           onPressed: salvando ? null : salvar,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(
-                              parentContext,
-                            ).colorScheme.primary,
+                            backgroundColor:
+                                Theme.of(parentContext).colorScheme.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                                borderRadius: BorderRadius.circular(12)),
                           ),
                           child: salvando
                               ? const SizedBox(
@@ -831,21 +777,18 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                       ? 'SALVAR ALTERAÇÕES'
                                       : 'SALVAR LOCAL',
                                   style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold),
                                 ),
                         ),
                       ),
-
                       if (kDebugMode) ...[
                         const SizedBox(height: 10),
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: salvando
-                                ? null
-                                : _migrarCamposBasicosDev,
+                            onPressed:
+                                salvando ? null : _migrarCamposBasicosDev,
                             icon: const Icon(Icons.build),
                             label: const Text('Migrar campos básicos (DEV)'),
                           ),
@@ -887,11 +830,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            ativoAtual ? '"$nome" arquivado.' : '"$nome" reativado.',
-          ),
+          content:
+              Text(ativoAtual ? '"$nome" arquivado.' : '"$nome" reativado.'),
           backgroundColor: Colors.blueGrey,
           duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
           action: SnackBarAction(
             label: 'DESFAZER',
             onPressed: () async {
@@ -900,14 +843,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     .collection('canteiros')
                     .doc(id)
                     .update({
-                      'ativo': ativoAtual,
-                      'data_atualizacao': FieldValue.serverTimestamp(),
-                    });
+                  'ativo': ativoAtual,
+                  'data_atualizacao': FieldValue.serverTimestamp(),
+                });
               } catch (_) {
-                _snack(
-                  'Não deu pra desfazer. Verifique internet/regras.',
-                  cor: Colors.red,
-                );
+                _snack('Não deu pra desfazer. Verifique internet/regras.',
+                    cor: Colors.red);
               }
             },
           ),
@@ -929,20 +870,16 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Excluir de vez?'),
-        content: Text(
-          'Isso apaga "$nome" permanentemente.\n\nSem choro depois. 😅',
-        ),
+        content:
+            Text('Isso apaga "$nome" permanentemente.\n\nSem choro depois. 😅'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
             child: const Text('EXCLUIR'),
           ),
         ],
@@ -955,6 +892,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     }
   }
 
+  // =========================
+  // UI
+  // =========================
+
   Widget _chipsFiltroAtivo() {
     Widget chip(String key, String label, IconData icon) {
       final selected = _filtroAtivo == key;
@@ -962,11 +903,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         label: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? Colors.white : Colors.grey[700],
-            ),
+            Icon(icon,
+                size: 16, color: selected ? Colors.white : Colors.grey[700]),
             const SizedBox(width: 6),
             Text(label),
           ],
@@ -1042,6 +980,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
           child: TextField(
             controller: _buscaCtrl,
             onChanged: (v) {
+              // atualiza o termo com debounce, mas UI já atualiza pelo listener do controller
               _debounce?.cancel();
               _debounce = Timer(const Duration(milliseconds: 350), () {
                 if (!mounted) return;
@@ -1060,9 +999,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         setState(() => _busca = '');
                       },
                     ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               filled: true,
               fillColor: Colors.white,
               isDense: true,
@@ -1073,27 +1011,18 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         PopupMenuButton<String>(
           tooltip: 'Ordenar',
           onSelected: (v) => setState(() => _ordem = v),
-          itemBuilder: (ctx) => [
-            const PopupMenuItem(
-              value: 'recentes',
-              child: Text('Mais recentes'),
-            ),
-            const PopupMenuItem(value: 'nome_az', child: Text('Nome A→Z')),
-            const PopupMenuItem(value: 'nome_za', child: Text('Nome Z→A')),
-            const PopupMenuItem(
-              value: 'medida_maior',
-              child: Text('Maior medida'),
-            ),
-            const PopupMenuItem(
-              value: 'medida_menor',
-              child: Text('Menor medida'),
-            ),
+          itemBuilder: (ctx) => const [
+            PopupMenuItem(value: 'recentes', child: Text('Mais recentes')),
+            PopupMenuItem(value: 'nome_az', child: Text('Nome A→Z')),
+            PopupMenuItem(value: 'nome_za', child: Text('Nome Z→A')),
+            PopupMenuItem(value: 'medida_maior', child: Text('Maior medida')),
+            PopupMenuItem(value: 'medida_menor', child: Text('Menor medida')),
           ],
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Colors.grey.shade300),
             ),
             child: Row(
@@ -1101,10 +1030,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               children: [
                 const Icon(Icons.sort, size: 18),
                 const SizedBox(width: 8),
-                Text(
-                  _tituloOrdem(),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+                Text(_tituloOrdem(),
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -1150,54 +1077,42 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       }
     }
 
-    return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Resumo',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 8,
-              children: [
-                _miniPill(
-                  Icons.check_circle,
-                  'Ativos',
-                  '$ativos',
-                  Colors.green,
-                ),
-                _miniPill(
-                  Icons.archive,
-                  'Arquivados',
-                  '$arquivados',
-                  Colors.blueGrey,
-                ),
-                _miniPill(
-                  Icons.spa,
-                  'Área',
-                  '${totalArea.toStringAsFixed(2)} m²',
-                  Colors.teal,
-                ),
-                _miniPill(
-                  Icons.water_drop,
-                  'Volume',
-                  '${totalVol.toStringAsFixed(1)} L',
-                  Colors.blue,
-                ),
-                _miniPill(Icons.check, 'Livre', '$livres', Colors.green),
-                _miniPill(Icons.block, 'Ocupado', '$ocupados', Colors.red),
-                _miniPill(Icons.build, 'Manut.', '$manut', Colors.orange),
-              ],
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 12,
+              offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Resumo',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              _miniPill(Icons.check_circle, 'Ativos', '$ativos', Colors.green),
+              _miniPill(
+                  Icons.archive, 'Arquivados', '$arquivados', Colors.blueGrey),
+              _miniPill(Icons.spa, 'Área', '${totalArea.toStringAsFixed(2)} m²',
+                  Colors.teal),
+              _miniPill(Icons.water_drop, 'Volume',
+                  '${totalVol.toStringAsFixed(1)} L', Colors.blue),
+              _miniPill(Icons.check, 'Livre', '$livres', Colors.green),
+              _miniPill(Icons.block, 'Ocupado', '$ocupados', Colors.red),
+              _miniPill(Icons.build, 'Manut.', '$manut', Colors.orange),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1215,17 +1130,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
+          Text('$label: ',
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
           Text(
             value,
             style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
+                fontSize: 12, fontWeight: FontWeight.w900, color: color),
           ),
         ],
       ),
@@ -1242,16 +1153,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   @override
   Widget build(BuildContext context) {
     final user = _user;
+    final primary = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text(
-          'Meus Locais',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Meus Locais',
+            style: TextStyle(fontWeight: FontWeight.w900)),
         centerTitle: true,
-        backgroundColor: Theme.of(context).colorScheme.primary,
+        backgroundColor: primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -1259,7 +1169,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
           ? null
           : FloatingActionButton.extended(
               onPressed: () => _criarOuEditarLocal(),
-              backgroundColor: Theme.of(context).colorScheme.primary,
+              backgroundColor: primary,
               foregroundColor: Colors.white,
               icon: const Icon(Icons.add),
               label: const Text('NOVO LOCAL'),
@@ -1268,11 +1178,31 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
         child: Column(
           children: [
-            _buscaEOrdem(),
-            const SizedBox(height: 12),
-            _chipsFiltroAtivo(),
-            const SizedBox(height: 10),
-            _chipsFiltroStatus(),
+            // ✅ bloco premium de filtros
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6)),
+                ],
+              ),
+              child: Column(
+                children: [
+                  _buscaEOrdem(),
+                  const SizedBox(height: 12),
+                  _chipsFiltroAtivo(),
+                  const SizedBox(height: 10),
+                  _chipsFiltroStatus(),
+                ],
+              ),
+            ),
+
             const SizedBox(height: 12),
 
             Expanded(
@@ -1301,8 +1231,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           child: Padding(
                             padding: EdgeInsets.all(20),
                             child: Text(
-                              'Tá faltando índice no Firestore pra essa consulta.\n\n'
-                              'Normal quando mistura filtros + ordenação/busca.\n'
+                              'Tá faltando índice no Firestore.\n\n'
                               'Abra o link do erro no console do Firebase e crie o índice.\n\n'
                               'Dica comum: (uid_usuario + ativo + status + data_criacao)\n'
                               'E pra busca: (uid_usuario + ativo + status + nome_lower)',
@@ -1317,7 +1246,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           child: Padding(
                             padding: EdgeInsets.all(20),
                             child: Text(
-                              'Sem permissão. Verifique suas regras do Firestore.\n'
+                              'Sem permissão. Verifique regras do Firestore.\n'
                               'O usuário deve acessar apenas docs do próprio uid.',
                               textAlign: TextAlign.center,
                             ),
@@ -1330,8 +1259,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           child: Padding(
                             padding: EdgeInsets.all(20),
                             child: Text(
-                              'Sem conexão com o Firestore agora.\n'
-                              'Confira sua internet e tente de novo.',
+                              'Sem conexão agora.\n'
+                              'Confira internet e tente de novo.',
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -1361,20 +1290,16 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               color: Colors.green.shade50,
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(
-                              Icons.spa_outlined,
-                              size: 60,
-                              color: Colors.green.shade300,
-                            ),
+                            child: Icon(Icons.spa_outlined,
+                                size: 60, color: Colors.green.shade300),
                           ),
                           const SizedBox(height: 18),
-                          Text(
+                          const Text(
                             'Nada aqui com esses filtros.',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -1404,18 +1329,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   }
 
                   return RefreshIndicator(
-                    onRefresh: () async {
-                      // Stream já atualiza, mas isso dá a sensação "puxar pra atualizar".
-                      await Future.delayed(const Duration(milliseconds: 400));
-                    },
+                    onRefresh: () async =>
+                        Future.delayed(const Duration(milliseconds: 400)),
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(0, 6, 0, 90),
                       itemCount: docs.length + 1,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        if (index == 0) {
-                          return _cardResumo(docs);
-                        }
+                        if (index == 0) return _cardResumo(docs);
 
                         final doc = docs[index - 1];
                         final dados = doc.data();
@@ -1424,12 +1345,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         final nome = (dados['nome'] ?? 'Sem Nome').toString();
                         final tipo = (dados['tipo'] ?? 'Canteiro').toString();
                         final bool ativo = (dados['ativo'] ?? true) == true;
-                        final String status = (dados['status'] ?? 'livre')
-                            .toString();
-
+                        final String status =
+                            (dados['status'] ?? 'livre').toString();
                         final String finalidade =
                             (dados['finalidade'] ?? 'consumo').toString();
-
                         final corStatus = _getCorStatus(status);
 
                         return Dismissible(
@@ -1437,18 +1356,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           direction: DismissDirection.horizontal,
                           confirmDismiss: (dir) async {
                             if (dir == DismissDirection.startToEnd) {
-                              // Swipe direita -> arquivar/reativar com undo
                               await _toggleAtivoComUndo(
-                                id: id,
-                                ativoAtual: ativo,
-                                nome: nome,
-                              );
+                                  id: id, ativoAtual: ativo, nome: nome);
                               return false;
                             } else if (dir == DismissDirection.endToStart) {
-                              // Swipe esquerda -> editar
-                              _runNextFrame(() async {
-                                await _criarOuEditarLocal(doc: doc);
-                              });
+                              _runNextFrame(
+                                  () async => _criarOuEditarLocal(doc: doc));
                               return false;
                             }
                             return false;
@@ -1462,17 +1375,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             alignment: Alignment.centerLeft,
                             child: Row(
                               children: [
-                                Icon(
-                                  ativo ? Icons.archive : Icons.unarchive,
-                                  color: Colors.blueGrey,
-                                ),
+                                Icon(ativo ? Icons.archive : Icons.unarchive,
+                                    color: Colors.blueGrey),
                                 const SizedBox(width: 10),
                                 Text(
                                   ativo ? 'Arquivar' : 'Reativar',
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blueGrey,
-                                  ),
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blueGrey),
                                 ),
                               ],
                             ),
@@ -1487,269 +1397,207 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                Text(
-                                  'Editar',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                  ),
-                                ),
+                                Text('Editar',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green)),
                                 SizedBox(width: 10),
                                 Icon(Icons.edit, color: Colors.green),
                               ],
                             ),
                           ),
-                          child: Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.03),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
                             ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        TelaDetalhesCanteiro(canteiroId: id),
-                                  ),
-                                );
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: ativo
-                                            ? corStatus.withOpacity(0.10)
-                                            : Colors.grey.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(12),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => TelaDetalhesCanteiro(
+                                            canteiroId: id)),
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: ativo
+                                              ? corStatus.withOpacity(0.10)
+                                              : Colors.grey.withOpacity(0.10),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        child: Icon(
+                                          _iconeTipo(tipo),
+                                          color:
+                                              ativo ? corStatus : Colors.grey,
+                                          size: 28,
+                                        ),
                                       ),
-                                      child: Icon(
-                                        _iconeTipo(tipo),
-                                        color: ativo ? corStatus : Colors.grey,
-                                        size: 28,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  nome,
-                                                  style: TextStyle(
-                                                    fontSize: 17,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: ativo
-                                                        ? Colors.black87
-                                                        : Colors.grey,
-                                                    decoration: ativo
-                                                        ? null
-                                                        : TextDecoration
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    nome,
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      color: ativo
+                                                          ? Colors.black87
+                                                          : Colors.grey,
+                                                      decoration: ativo
+                                                          ? null
+                                                          : TextDecoration
                                                               .lineThrough,
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: ativo
-                                                      ? corStatus.withOpacity(
-                                                          0.10,
-                                                        )
-                                                      : Colors.grey.shade300,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                  border: ativo
-                                                      ? Border.all(
-                                                          color: corStatus
-                                                              .withOpacity(
-                                                                0.25,
-                                                              ),
-                                                        )
-                                                      : null,
-                                                ),
-                                                child: Text(
-                                                  ativo
+                                                _Tag(
+                                                  text: ativo
                                                       ? _getTextoStatus(status)
                                                       : 'ARQUIVADO',
+                                                  color: ativo
+                                                      ? corStatus
+                                                      : Colors.blueGrey,
+                                                  muted: !ativo,
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                Icon(_iconeMedida(tipo),
+                                                    size: 14,
+                                                    color: Colors.grey[600]),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  _labelMedida(dados),
                                                   style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: ativo
-                                                        ? corStatus
-                                                        : Colors.white,
-                                                  ),
+                                                      color: Colors.grey[700],
+                                                      fontSize: 13),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                _iconeMedida(tipo),
-                                                size: 14,
-                                                color: Colors.grey[600],
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                _labelMedida(dados),
-                                                style: TextStyle(
-                                                  color: Colors.grey[600],
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2,
-                                                    ),
-                                                decoration: BoxDecoration(
+                                                const SizedBox(width: 10),
+                                                _Tag(
+                                                  text: _labelFinalidade(dados),
                                                   color: _corFinalidade(
-                                                    finalidade,
-                                                  ).withOpacity(0.12),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                  border: Border.all(
-                                                    color: _corFinalidade(
-                                                      finalidade,
-                                                    ).withOpacity(0.25),
-                                                  ),
+                                                      finalidade),
+                                                  muted: false,
                                                 ),
-                                                child: Text(
-                                                  _labelFinalidade(dados),
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: _corFinalidade(
-                                                      finalidade,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    PopupMenuButton<String>(
-                                      itemBuilder: (ctx) => [
-                                        PopupMenuItem<String>(
-                                          value: 'detalhes',
-                                          onTap: () {
-                                            _runNextFrame(() {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      TelaDetalhesCanteiro(
-                                                        canteiroId: id,
-                                                      ),
-                                                ),
-                                              );
-                                            });
-                                          },
-                                          child: const Row(
-                                            children: [
-                                              Icon(Icons.open_in_new, size: 18),
-                                              SizedBox(width: 10),
-                                              Text('Abrir detalhes'),
-                                            ],
-                                          ),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'editar',
-                                          onTap: () {
-                                            _runNextFrame(() async {
-                                              await _criarOuEditarLocal(
-                                                doc: doc,
-                                              );
-                                            });
-                                          },
-                                          child: const Row(
-                                            children: [
-                                              Icon(Icons.edit, size: 18),
-                                              SizedBox(width: 10),
-                                              Text('Editar'),
-                                            ],
-                                          ),
-                                        ),
-                                        PopupMenuItem<String>(
-                                          value: 'toggle_ativo',
-                                          onTap: () {
-                                            _runNextFrame(() async {
-                                              await _toggleAtivoComUndo(
-                                                id: id,
-                                                ativoAtual: ativo,
-                                                nome: nome,
-                                              );
-                                            });
-                                          },
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                ativo
-                                                    ? Icons.archive
-                                                    : Icons.unarchive,
-                                                size: 18,
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Text(
-                                                ativo ? 'Arquivar' : 'Reativar',
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (kDebugMode)
+                                      const SizedBox(width: 10),
+                                      PopupMenuButton<String>(
+                                        itemBuilder: (ctx) => [
                                           PopupMenuItem<String>(
-                                            value: 'excluir_hard',
+                                            value: 'detalhes',
                                             onTap: () {
-                                              _runNextFrame(() async {
-                                                await _confirmarExcluirHard(
-                                                  id,
-                                                  nome,
+                                              _runNextFrame(() {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        TelaDetalhesCanteiro(
+                                                            canteiroId: id),
+                                                  ),
                                                 );
                                               });
                                             },
                                             child: const Row(
                                               children: [
-                                                Icon(
-                                                  Icons.delete,
-                                                  size: 18,
-                                                  color: Colors.red,
-                                                ),
+                                                Icon(Icons.open_in_new,
+                                                    size: 18),
                                                 SizedBox(width: 10),
-                                                Text(
-                                                  'Excluir (DEV)',
-                                                  style: TextStyle(
-                                                    color: Colors.red,
-                                                  ),
-                                                ),
+                                                Text('Abrir detalhes'),
                                               ],
                                             ),
                                           ),
-                                      ],
-                                      icon: const Icon(
-                                        Icons.more_vert,
-                                        color: Colors.grey,
+                                          PopupMenuItem<String>(
+                                            value: 'editar',
+                                            onTap: () => _runNextFrame(() =>
+                                                _criarOuEditarLocal(doc: doc)),
+                                            child: const Row(
+                                              children: [
+                                                Icon(Icons.edit, size: 18),
+                                                SizedBox(width: 10),
+                                                Text('Editar'),
+                                              ],
+                                            ),
+                                          ),
+                                          PopupMenuItem<String>(
+                                            value: 'toggle_ativo',
+                                            onTap: () =>
+                                                _runNextFrame(() async {
+                                              await _toggleAtivoComUndo(
+                                                id: id,
+                                                ativoAtual: ativo,
+                                                nome: nome,
+                                              );
+                                            }),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                    ativo
+                                                        ? Icons.archive
+                                                        : Icons.unarchive,
+                                                    size: 18),
+                                                const SizedBox(width: 10),
+                                                Text(ativo
+                                                    ? 'Arquivar'
+                                                    : 'Reativar'),
+                                              ],
+                                            ),
+                                          ),
+                                          if (kDebugMode)
+                                            PopupMenuItem<String>(
+                                              value: 'excluir_hard',
+                                              onTap: () => _runNextFrame(() =>
+                                                  _confirmarExcluirHard(
+                                                      id, nome)),
+                                              child: const Row(
+                                                children: [
+                                                  Icon(Icons.delete,
+                                                      size: 18,
+                                                      color: Colors.red),
+                                                  SizedBox(width: 10),
+                                                  Text('Excluir (DEV)',
+                                                      style: TextStyle(
+                                                          color: Colors.red)),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
+                                        icon: const Icon(Icons.more_vert,
+                                            color: Colors.grey),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -1763,6 +1611,34 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Tag extends StatelessWidget {
+  final String text;
+  final Color color;
+  final bool muted;
+
+  const _Tag({required this.text, required this.color, required this.muted});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = muted ? Colors.grey.shade300 : color.withOpacity(0.12);
+    final border = muted ? Colors.grey.shade300 : color.withOpacity(0.25);
+    final fg = muted ? Colors.white : color;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: fg),
       ),
     );
   }

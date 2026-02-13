@@ -5,6 +5,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/logic/base_agronomica.dart';
 
+// Premium UI (global)
+import '../../core/ui/widgets/page_container.dart';
+import '../../core/ui/widgets/section_card.dart';
+import '../../core/ui/widgets/app_button.dart';
+
 class TelaAdubacaoOrgano15 extends StatefulWidget {
   const TelaAdubacaoOrgano15({super.key});
 
@@ -40,7 +45,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
   Map<String, double>? _resultado;
   bool _resultadoEhCanteiro = true;
 
-  // Opções de Dropdown
+  // Opções
   final Map<String, String> _opcoesAdubo = const {
     'bovino': 'Esterco Bovino / Composto',
     'galinha': 'Esterco de Galinha',
@@ -54,7 +59,9 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     super.dispose();
   }
 
-  // ---------- Helpers ----------
+  // =========================
+  // Helpers
+  // =========================
   void _snack(String msg, {Color? cor}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -78,6 +85,73 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
 
   String _nomeAdubo() => _opcoesAdubo[_tipoAdubo] ?? _tipoAdubo;
 
+  // =========================
+  // Sanitizador Firestore (anti “abort()”)
+  // =========================
+  Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
+    final val = _sanitize(map, r'$');
+    return (val as Map).cast<String, dynamic>();
+  }
+
+  dynamic _sanitize(dynamic value, String path) {
+    if (value == null) return null;
+
+    if (value is String || value is bool || value is int) return value;
+
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) {
+        throw ArgumentError(
+            'Firestore: double inválido em $path (NaN/Infinity).');
+      }
+      return value;
+    }
+
+    if (value is num) {
+      final d = value.toDouble();
+      if (d.isNaN || d.isInfinite) {
+        throw ArgumentError('Firestore: num inválido em $path (NaN/Infinity).');
+      }
+      return d;
+    }
+
+    if (value is Timestamp ||
+        value is GeoPoint ||
+        value is FieldValue ||
+        value is DocumentReference) {
+      return value;
+    }
+
+    if (value is DateTime) return Timestamp.fromDate(value);
+    if (value is Enum) return value.name;
+
+    if (value is List) {
+      return value.asMap().entries.map((e) {
+        return _sanitize(e.value, '$path[${e.key}]');
+      }).toList();
+    }
+
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      for (final entry in value.entries) {
+        final k = entry.key;
+        if (k is! String) {
+          throw ArgumentError(
+            'Firestore: chave não-String em $path -> "$k" (${k.runtimeType})',
+          );
+        }
+        out[k] = _sanitize(entry.value, '$path.$k');
+      }
+      return out;
+    }
+
+    throw UnsupportedError(
+      'Firestore: tipo NÃO suportado em $path -> ${value.runtimeType}.',
+    );
+  }
+
+  // =========================
+  // Canteiro
+  // =========================
   Future<void> _carregarCanteiro(String id) async {
     final user = _user;
     if (user == null) return;
@@ -94,6 +168,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
       if (uidDoc.isNotEmpty && uidDoc != user.uid) return;
 
       final nome = (data['nome'] ?? 'Canteiro').toString();
+
       final area = data['area_m2'];
       double areaM2 = 0;
       if (area is num) areaM2 = area.toDouble();
@@ -103,7 +178,6 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
         _canteiroId = id;
         _nomeCanteiro = nome;
         _areaM2 = areaM2;
-        // espelha no input (readonly)
         _inputController.text = areaM2 > 0 ? _fmt(areaM2, dec: 2) : '';
       });
     } catch (e) {
@@ -111,7 +185,9 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     }
   }
 
-  // ---------- Cálculo ----------
+  // =========================
+  // Cálculo
+  // =========================
   void _calcular() {
     FocusScope.of(context).unfocus();
 
@@ -127,10 +203,8 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     Map<String, double> res;
 
     if (_isCanteiro) {
-      final areaM2 = valor;
-
       res = BaseAgronomica.calcularAdubacaoCanteiro(
-        areaM2: areaM2,
+        areaM2: valor,
         isSoloArgiloso: _isSoloArgiloso,
         tipoAduboOrganico: _tipoAdubo,
       );
@@ -142,7 +216,6 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
 
       _mostrarResultado();
     } else {
-      // Vaso
       res = BaseAgronomica.calcularMisturaVaso(
         volumeVasoLitros: valor,
         tipoAdubo: _tipoAdubo,
@@ -157,27 +230,28 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     }
   }
 
-  // ---------- Salvamento Premium ----------
-  Future<void> _salvarNoCadernoDeCampo() async {
+  // =========================
+  // Salvamento
+  // =========================
+  Future<void> _salvarNoCadernoDeCampo(BuildContext sheetContext) async {
     final user = _user;
     if (user == null) {
       _snack('Faça login para salvar.', cor: Colors.red);
       return;
     }
     if (_resultado == null) return;
+    if (_salvando) return;
 
     setState(() => _salvando = true);
 
     try {
       final fs = FirebaseFirestore.instance;
       final batch = fs.batch();
-
       final agora = FieldValue.serverTimestamp();
 
       final modo = _resultadoEhCanteiro ? 'canteiro' : 'vaso';
       final nomeAdubo = _nomeAdubo();
 
-      // Monta itens para histórico (tudo number, sem string)
       final itens = <String, dynamic>{};
       String detalhes = '';
 
@@ -194,6 +268,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
           'gesso_g': gessoG,
           'solo_argiloso': _isSoloArgiloso,
           'tipo_adubo': _tipoAdubo,
+          'area_m2': _toNum(_inputController.text) ?? 0.0,
         });
 
         detalhes =
@@ -210,19 +285,19 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
           'calcario_g': calcarioG,
           'termofosfato_g': termoG,
           'tipo_adubo': _tipoAdubo,
+          'volume_vaso_l': _toNum(_inputController.text) ?? 0.0,
         });
 
         detalhes = 'Mistura (Vaso) | Adubo: $nomeAdubo';
       }
 
-      // Documento do histórico
       final histRef = fs.collection('historico_manejo').doc();
-      batch.set(histRef, {
+
+      final historicoPayload = <String, dynamic>{
         'uid_usuario': user.uid,
         'data': agora,
-        'tipo_manejo': _resultadoEhCanteiro
-            ? 'Adubação Orgânica'
-            : 'Mistura de Substrato',
+        'tipo_manejo':
+            _resultadoEhCanteiro ? 'Adubação Orgânica' : 'Mistura de Substrato',
         'produto': _resultadoEhCanteiro ? 'Organo15' : 'Mistura para Vaso',
         'detalhes': detalhes,
         'modo': modo,
@@ -230,15 +305,19 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
         'concluido': true,
         'createdAt': agora,
         'updatedAt': agora,
+      };
 
-        // Local (canteiro opcional)
-        'canteiro_id': _resultadoEhCanteiro ? _canteiroId : null,
-        'nome_canteiro': (_resultadoEhCanteiro && _nomeCanteiro.isNotEmpty)
-            ? _nomeCanteiro
-            : null,
-      });
+      // Só grava canteiro_* se existir (nada de null no banco)
+      if (_resultadoEhCanteiro && _canteiroId != null) {
+        historicoPayload['canteiro_id'] = _canteiroId;
+        if (_nomeCanteiro.trim().isNotEmpty) {
+          historicoPayload['nome_canteiro'] = _nomeCanteiro.trim();
+        }
+      }
 
-      // Premium: se é canteiro e tem id -> incrementa totais no canteiro (sem ler tudo)
+      batch.set(histRef, _sanitizeMap(historicoPayload));
+
+      // Atualiza canteiro sem sobrescrever mapa (usa dot-notation)
       if (_resultadoEhCanteiro && _canteiroId != null) {
         final aduboG = (_resultado!['adubo_organico'] ?? 0).toDouble();
         final calcarioG = (_resultado!['calcario'] ?? 0).toDouble();
@@ -246,30 +325,36 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
         final gessoG = (_resultado!['gesso'] ?? 0).toDouble();
 
         final canteiroRef = fs.collection('canteiros').doc(_canteiroId);
-        batch.set(canteiroRef, {
+
+        final canteiroPayload = <String, dynamic>{
           'updatedAt': agora,
-          'totais_insumos': {
-            // acumuladores
-            'adubo_organico_g': FieldValue.increment(aduboG),
-            'calcario_g': FieldValue.increment(calcarioG),
-            'termofosfato_g': FieldValue.increment(termoG),
-            'gesso_g': FieldValue.increment(gessoG),
-            'aplicacoes_organo15': FieldValue.increment(1),
-          },
-          'ult_manejo': {
-            'tipo': 'Organo15',
-            'hist_id': histRef.id,
-            'resumo': detalhes,
-            'atualizadoEm': agora,
-          },
-        }, SetOptions(merge: true));
+          'totais_insumos.adubo_organico_g': FieldValue.increment(aduboG),
+          'totais_insumos.calcario_g': FieldValue.increment(calcarioG),
+          'totais_insumos.termofosfato_g': FieldValue.increment(termoG),
+          'totais_insumos.gesso_g': FieldValue.increment(gessoG),
+          'totais_insumos.aplicacoes_organo15': FieldValue.increment(1),
+          'ult_manejo.tipo': 'Organo15',
+          'ult_manejo.hist_id': histRef.id,
+          'ult_manejo.resumo': detalhes,
+          'ult_manejo.atualizadoEm': agora,
+        };
+
+        batch.set(canteiroRef, _sanitizeMap(canteiroPayload),
+            SetOptions(merge: true));
       }
 
       await batch.commit();
 
       if (!mounted) return;
-      _snack('✅ Receita salva no Caderno de Campo!', cor: Colors.green);
-      Navigator.pop(context); // fecha sheet
+
+      // fecha o bottomsheet com o context dele (sem “tela morrendo”)
+      Navigator.of(sheetContext).pop();
+
+      // feedback no page context
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted)
+          _snack('✅ Receita salva no Caderno de Campo!', cor: Colors.green);
+      });
     } catch (e) {
       _snack('Erro ao salvar: $e', cor: Colors.red);
     } finally {
@@ -277,9 +362,13 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     }
   }
 
-  // ---------- BottomSheet Premium ----------
+  // =========================
+  // BottomSheet
+  // =========================
   void _mostrarResultado() {
     if (_resultado == null) return;
+
+    final scheme = Theme.of(context).colorScheme;
 
     showModalBottomSheet(
       context: context,
@@ -288,7 +377,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
@@ -307,12 +396,11 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Icon(
                       _resultadoEhCanteiro ? Icons.eco : Icons.local_florist,
-                      color: const Color(0xFF2E7D32),
+                      color: scheme.primary,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -320,19 +408,17 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         _resultadoEhCanteiro
                             ? 'Receita Organo15 (Canteiro)'
                             : 'Mistura para Vaso',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: Color(0xFF2E7D32),
+                          color: scheme.primary,
                         ),
                       ),
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 10),
                 Divider(color: Colors.grey.shade200),
-
                 if (_resultadoEhCanteiro) ...[
                   if (_canteiroId != null && _nomeCanteiro.isNotEmpty) ...[
                     _InfoLine(title: 'Local', value: _nomeCanteiro),
@@ -359,11 +445,11 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         "${(_resultado!['gesso'] ?? 0).toStringAsFixed(0)} g",
                   ),
                   const SizedBox(height: 12),
-                  _InfoBox(
+                  const _InfoBox(
                     icon: Icons.info_outline,
                     cor: Colors.blue,
                     texto:
-                        'Dica agronômica: se der, aplique o calcário ~30 dias antes do plantio e incorpore nos primeiros 20cm.',
+                        'Dica: se der, aplique o calcário ~30 dias antes do plantio e incorpore nos primeiros 20cm.',
                   ),
                 ] else ...[
                   _ItemResultado(
@@ -387,57 +473,34 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         "${(_resultado!['termofosfato_gramas'] ?? 0).toStringAsFixed(1)} g",
                   ),
                   const SizedBox(height: 12),
-                  _InfoBox(
+                  const _InfoBox(
                     icon: Icons.info_outline,
                     cor: Colors.blue,
                     texto:
                         'Misture tudo numa bacia/lona antes de encher o vaso. Terra e adubo em LITROS (volume).',
                   ),
                 ],
-
                 const SizedBox(height: 16),
-
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
+                      child: AppButton.secondary(
+                        label: 'FECHAR',
+                        icon: Icons.close,
                         onPressed: _salvando
                             ? null
-                            : () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: const Text('FECHAR'),
+                            : () => Navigator.of(sheetContext).pop(),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _salvando ? null : _salvarNoCadernoDeCampo,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D32),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        icon: _salvando
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_alt),
-                        label: Text(
-                          _salvando ? 'SALVANDO...' : 'SALVAR NO CADERNO',
-                        ),
+                      child: AppButton.primary(
+                        label: _salvando ? 'SALVANDO...' : 'SALVAR NO CADERNO',
+                        icon: Icons.save_alt,
+                        loading: _salvando,
+                        onPressed: _salvando
+                            ? null
+                            : () => _salvarNoCadernoDeCampo(sheetContext),
                       ),
                     ),
                   ],
@@ -450,261 +513,227 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     );
   }
 
-  // ---------- UI ----------
+  // =========================
+  // UI
+  // =========================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(
-        title: const Text("Calculadora Organo15"),
-        backgroundColor: const Color(0xFF2E7D32),
-        elevation: 0,
-        foregroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Seletor de modo
-              _SegmentedMode(
-                leftLabel: 'Canteiro (m²)',
-                rightLabel: 'Vaso (Litros)',
-                isLeftSelected: _isCanteiro,
-                onLeft: () {
-                  setState(() {
-                    _isCanteiro = true;
-                    _resultado = null;
-                    // se usar canteiro cadastrado, mantém
-                  });
-                },
-                onRight: () {
-                  setState(() {
-                    _isCanteiro = false;
-                    _resultado = null;
-                    // vaso sempre manual
-                    _usarCanteiroCadastrado = false;
-                    _canteiroId = null;
-                    _nomeCanteiro = '';
-                    _areaM2 = 0;
-                    _inputController.clear();
-                  });
-                },
-              ),
+    final scheme = Theme.of(context).colorScheme;
 
-              const SizedBox(height: 18),
-
-              // Card principal
-              _CardPersonalizado(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Local premium (só canteiro)
-                    if (_isCanteiro) ...[
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.place,
-                            size: 18,
-                            color: Colors.black54,
+    return PageContainer(
+      title: 'Calculadora Organo15',
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            _SegmentedMode(
+              leftLabel: 'Canteiro (m²)',
+              rightLabel: 'Vaso (Litros)',
+              isLeftSelected: _isCanteiro,
+              primary: scheme.primary,
+              onLeft: () {
+                setState(() {
+                  _isCanteiro = true;
+                  _resultado = null;
+                  _usarCanteiroCadastrado = true;
+                  _canteiroId = null;
+                  _nomeCanteiro = '';
+                  _areaM2 = 0;
+                  _inputController.clear();
+                });
+              },
+              onRight: () {
+                setState(() {
+                  _isCanteiro = false;
+                  _resultado = null;
+                  _usarCanteiroCadastrado = false;
+                  _canteiroId = null;
+                  _nomeCanteiro = '';
+                  _areaM2 = 0;
+                  _inputController.clear();
+                });
+              },
+            ),
+            const SizedBox(height: 14),
+            SectionCard(
+              title: 'Configuração',
+              subtitle: 'Defina o local, textura do solo e o adubo disponível',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_isCanteiro) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.place,
+                            size: 18, color: Colors.black54),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Local',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.black87,
                           ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Local',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const Spacer(),
-                          Switch(
-                            value: _usarCanteiroCadastrado,
-                            activeColor: const Color(0xFF2E7D32),
-                            onChanged: (v) {
-                              setState(() {
-                                _usarCanteiroCadastrado = v;
-                                _resultado = null;
-                                _canteiroId = null;
-                                _nomeCanteiro = '';
-                                _areaM2 = 0;
-                                _inputController.clear();
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                      Text(
-                        _usarCanteiroCadastrado
-                            ? 'Usar canteiro cadastrado (puxa área automático)'
-                            : 'Digitar área manualmente',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-
-                      if (_usarCanteiroCadastrado)
-                        _CanteiroPicker(
-                          onSelect: (id) => _carregarCanteiro(id),
-                          selectedId: _canteiroId,
                         ),
-
-                      if (_usarCanteiroCadastrado) const SizedBox(height: 12),
-                      Divider(color: Colors.grey.shade200),
-                      const SizedBox(height: 12),
-                    ],
-
-                    Text(
-                      _isCanteiro ? "Tamanho da Área" : "Volume do Vaso",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    TextFormField(
-                      controller: _inputController,
-                      readOnly: _isCanteiro && _usarCanteiroCadastrado,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-                        LengthLimitingTextInputFormatter(10),
+                        const Spacer(),
+                        Switch(
+                          value: _usarCanteiroCadastrado,
+                          activeColor: scheme.primary,
+                          onChanged: (v) {
+                            setState(() {
+                              _usarCanteiroCadastrado = v;
+                              _resultado = null;
+                              _canteiroId = null;
+                              _nomeCanteiro = '';
+                              _areaM2 = 0;
+                              _inputController.clear();
+                            });
+                          },
+                        ),
                       ],
-                      validator: (v) {
-                        final val = _toNum(v);
-                        if (val == null) return 'Obrigatório';
-                        if (val <= 0) return 'Precisa ser maior que zero';
-                        return null;
-                      },
-                      decoration: InputDecoration(
-                        hintText: _isCanteiro ? "Ex: 5,50" : "Ex: 20",
-                        suffixText: _isCanteiro ? "m²" : "L",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: (_isCanteiro && _usarCanteiroCadastrado)
-                            ? Colors.grey[200]
-                            : Colors.grey[50],
-                      ),
                     ),
-
-                    const SizedBox(height: 16),
-
-                    // Textura (só canteiro)
-                    if (_isCanteiro) ...[
-                      const Text(
-                        "Textura do Solo",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.black87,
-                        ),
+                    Text(
+                      _usarCanteiroCadastrado
+                          ? 'Usar canteiro cadastrado (puxa área automático)'
+                          : 'Digitar área manualmente',
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_usarCanteiroCadastrado)
+                      _CanteiroPicker(
+                        onSelect: (id) => _carregarCanteiro(id),
+                        selectedId: _canteiroId,
                       ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text("Solo Argiloso?"),
-                        subtitle: const Text(
-                          "Ative se a terra forma uma 'minhoquinha' firme.",
-                        ),
-                        value: _isSoloArgiloso,
-                        activeColor: const Color(0xFF2E7D32),
-                        onChanged: (val) => setState(() {
-                          _isSoloArgiloso = val;
-                          _resultado = null;
-                        }),
-                      ),
-                      Divider(color: Colors.grey.shade200),
+                    if (_usarCanteiroCadastrado &&
+                        _canteiroId != null &&
+                        _areaM2 > 0) ...[
                       const SizedBox(height: 10),
+                      _InfoLine(
+                          title: 'Área puxada',
+                          value: '${_fmt(_areaM2, dec: 2)} m²'),
                     ],
+                    const SizedBox(height: 12),
+                    Divider(color: Colors.grey.shade200),
+                    const SizedBox(height: 12),
+                  ],
+                  Text(
+                    _isCanteiro ? 'Tamanho da Área' : 'Volume do Vaso',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _inputController,
+                    readOnly: _isCanteiro && _usarCanteiroCadastrado,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    validator: (v) {
+                      // Se estiver puxando do canteiro, exige seleção
+                      if (_isCanteiro && _usarCanteiroCadastrado) {
+                        if (_canteiroId == null)
+                          return 'Selecione um canteiro primeiro';
+                      }
 
-                    // Adubo
+                      final val = _toNum(v);
+                      if (val == null) return 'Obrigatório';
+                      if (val <= 0) return 'Precisa ser maior que zero';
+                      return null;
+                    },
+                    decoration: InputDecoration(
+                      hintText: _isCanteiro ? 'Ex: 5,50' : 'Ex: 20',
+                      suffixText: _isCanteiro ? 'm²' : 'L',
+                      filled: true,
+                      fillColor: (_isCanteiro && _usarCanteiroCadastrado)
+                          ? Colors.grey.shade200
+                          : Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_isCanteiro) ...[
                     const Text(
-                      "Adubo Disponível",
+                      'Textura do Solo',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
                         color: Colors.black87,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Solo argiloso?'),
+                      subtitle: const Text(
+                          "Ative se a terra forma uma 'minhoquinha' firme."),
+                      value: _isSoloArgiloso,
+                      activeColor: scheme.primary,
+                      onChanged: (val) => setState(() {
+                        _isSoloArgiloso = val;
+                        _resultado = null;
+                      }),
+                    ),
+                    Divider(color: Colors.grey.shade200),
                     const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.grey[50],
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _tipoAdubo,
-                          isExpanded: true,
-                          items: _opcoesAdubo.entries.map((e) {
-                            return DropdownMenuItem(
-                              value: e.key,
-                              child: Text(e.value),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setState(() {
-                            _tipoAdubo = val!;
-                            _resultado = null;
-                          }),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _InfoBox(
-                      icon: Icons.shield_outlined,
-                      cor: Colors.blue,
-                      texto:
-                          'Isso gera uma receita base. O ajuste fino (principalmente calagem) fica perfeito quando você combina com laudo.',
-                    ),
                   ],
-                ),
-              ),
-
-              const SizedBox(height: 22),
-
-              // Botão
-              ElevatedButton(
-                onPressed: _calcular,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E7D32),
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+                  const Text(
+                    'Adubo Disponível',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.black87,
+                    ),
                   ),
-                  elevation: 5,
-                  shadowColor: const Color(0xFF2E7D32).withOpacity(0.4),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text(
-                  "GERAR RECEITA",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: _tipoAdubo,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: _opcoesAdubo.entries
+                        .map((e) => DropdownMenuItem(
+                            value: e.key, child: Text(e.value)))
+                        .toList(),
+                    onChanged: (val) => setState(() {
+                      _tipoAdubo = val ?? 'bovino';
+                      _resultado = null;
+                    }),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  const _InfoBox(
+                    icon: Icons.shield_outlined,
+                    cor: Colors.blue,
+                    texto:
+                        'Isso gera uma receita base. O ajuste fino (principalmente calagem) fica perfeito quando você combina com laudo.',
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            AppButton.primary(
+              label: 'GERAR RECEITA',
+              icon: Icons.auto_awesome,
+              onPressed: _calcular,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// =================== WIDGETS PREMIUM ===================
+// =================== Widgets ===================
 
 class _SegmentedMode extends StatelessWidget {
   final String leftLabel;
@@ -712,6 +741,7 @@ class _SegmentedMode extends StatelessWidget {
   final bool isLeftSelected;
   final VoidCallback onLeft;
   final VoidCallback onRight;
+  final Color primary;
 
   const _SegmentedMode({
     required this.leftLabel,
@@ -719,19 +749,23 @@ class _SegmentedMode extends StatelessWidget {
     required this.isLeftSelected,
     required this.onLeft,
     required this.onRight,
+    required this.primary,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bg = Colors.white;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -741,21 +775,18 @@ class _SegmentedMode extends StatelessWidget {
             child: GestureDetector(
               onTap: onLeft,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 15),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: isLeftSelected
-                      ? const Color(0xFF2E7D32)
-                      : Colors.white,
-                  borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(15),
-                  ),
+                  color: isLeftSelected ? primary : bg,
+                  borderRadius:
+                      const BorderRadius.horizontal(left: Radius.circular(16)),
                 ),
                 child: Text(
                   leftLabel,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isLeftSelected ? Colors.white : Colors.grey,
-                    fontWeight: FontWeight.bold,
+                    color: isLeftSelected ? Colors.white : Colors.black54,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -765,21 +796,18 @@ class _SegmentedMode extends StatelessWidget {
             child: GestureDetector(
               onTap: onRight,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 15),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: !isLeftSelected
-                      ? const Color(0xFF2E7D32)
-                      : Colors.white,
-                  borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(15),
-                  ),
+                  color: !isLeftSelected ? primary : bg,
+                  borderRadius:
+                      const BorderRadius.horizontal(right: Radius.circular(16)),
                 ),
                 child: Text(
                   rightLabel,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: !isLeftSelected ? Colors.white : Colors.grey,
-                    fontWeight: FontWeight.bold,
+                    color: !isLeftSelected ? Colors.white : Colors.black54,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -801,14 +829,14 @@ class _CanteiroPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return _InfoBox(
+      return const _InfoBox(
         icon: Icons.lock_outline,
         cor: Colors.red,
         texto: 'Faça login para selecionar canteiros.',
       );
     }
 
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('canteiros')
           .where('uid_usuario', isEqualTo: user.uid)
@@ -826,69 +854,42 @@ class _CanteiroPicker extends StatelessWidget {
 
         final docs = snap.data!.docs;
         if (docs.isEmpty) {
-          return _InfoBox(
+          return const _InfoBox(
             icon: Icons.warning_amber,
             cor: Colors.orange,
             texto: 'Nenhum canteiro ativo. Crie um primeiro.',
           );
         }
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.grey[50],
+        return DropdownButtonFormField<String>(
+          value: selectedId,
+          isExpanded: true,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: selectedId,
-              isExpanded: true,
-              hint: const Text('Selecione um canteiro'),
-              items: docs.map((d) {
-                final data = (d.data() as Map<String, dynamic>? ?? {});
-                final nome = (data['nome'] ?? 'Canteiro').toString();
-                final area = data['area_m2'];
-                double areaM2 = 0;
-                if (area is num) areaM2 = area.toDouble();
-                if (area is String) areaM2 = double.tryParse(area) ?? 0;
-                return DropdownMenuItem(
-                  value: d.id,
-                  child: Text('$nome (${areaM2.toStringAsFixed(2)} m²)'),
-                );
-              }).toList(),
-              onChanged: (id) {
-                if (id == null) return;
-                onSelect(id);
-              },
-            ),
-          ),
+          hint: const Text('Selecione um canteiro'),
+          items: docs.map((d) {
+            final data = d.data();
+            final nome = (data['nome'] ?? 'Canteiro').toString();
+
+            final area = data['area_m2'];
+            double areaM2 = 0;
+            if (area is num) areaM2 = area.toDouble();
+            if (area is String) areaM2 = double.tryParse(area) ?? 0;
+
+            return DropdownMenuItem(
+              value: d.id,
+              child: Text('$nome (${areaM2.toStringAsFixed(2)} m²)'),
+            );
+          }).toList(),
+          onChanged: (id) {
+            if (id == null) return;
+            onSelect(id);
+          },
         );
       },
-    );
-  }
-}
-
-class _CardPersonalizado extends StatelessWidget {
-  final Widget child;
-  const _CardPersonalizado({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 }

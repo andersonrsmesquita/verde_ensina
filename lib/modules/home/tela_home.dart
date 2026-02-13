@@ -7,6 +7,7 @@ import '../../core/repositories/user_profile_repository.dart';
 
 // Imports das suas telas funcionais
 import '../canteiros/tela_canteiros.dart';
+import '../canteiros/tela_planejamento_canteiro.dart'; // ✅ NOVA TELA
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
 import '../planejamento/tela_planejamento_consumo.dart';
@@ -140,6 +141,39 @@ class _AbaInicioDashboard extends StatelessWidget {
 
   const _AbaInicioDashboard({required this.onIrParaJornada});
 
+  Future<void> _abrirPlanejamentoPorCanteiro(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      AppMessenger.warn('Faça login para selecionar canteiro.');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _SheetSelecionarCanteiro(
+        uid: user.uid,
+        titulo: 'Planejamento por Canteiro',
+        subtitulo: 'Selecione o canteiro para calcular o plantio certinho.',
+        onCadastrar: () {
+          Navigator.pop(ctx);
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TelaCanteiros()));
+        },
+        onSelecionar: (doc) {
+          Navigator.pop(ctx);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) =>
+                    TelaPlanejamentoCanteiro(canteiroIdOrigem: doc.id)),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -166,6 +200,7 @@ class _AbaInicioDashboard extends StatelessWidget {
             style: const TextStyle(fontSize: 14, color: Colors.grey),
           ),
           const SizedBox(height: 18),
+
           InkWell(
             onTap: onIrParaJornada,
             borderRadius: BorderRadius.circular(20),
@@ -173,12 +208,10 @@ class _AbaInicioDashboard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    primary.withOpacity(0.95),
-                    primary.withOpacity(0.75)
-                  ],
-                ),
+                gradient: LinearGradient(colors: [
+                  primary.withOpacity(0.95),
+                  primary.withOpacity(0.75)
+                ]),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
@@ -194,41 +227,74 @@ class _AbaInicioDashboard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Continuar Jornada',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text('Continuar Jornada',
+                            style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold)),
                         SizedBox(height: 6),
-                        Text(
-                          'Acessar Trilha de Plantio',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text('Acessar Trilha de Plantio',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.22),
-                      shape: BoxShape.circle,
-                    ),
+                        color: Colors.white.withOpacity(0.22),
+                        shape: BoxShape.circle),
                     child: const Icon(Icons.arrow_forward, color: Colors.white),
                   ),
                 ],
               ),
             ),
           ),
+
+          const SizedBox(height: 14),
+
+          // ✅ Atalhos premium (bem “app grande”)
+          Row(
+            children: [
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.auto_awesome,
+                  label: 'Planejar\npor canteiro',
+                  color: Colors.blue,
+                  onTap: () => _abrirPlanejamentoPorCanteiro(context),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.grid_on,
+                  label: 'Meus\ncanteiros',
+                  color: Colors.green,
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const TelaCanteiros())),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _QuickAction(
+                  icon: Icons.menu_book,
+                  label: 'Diário\nde manejo',
+                  color: Colors.teal,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TelaDiarioManejo())),
+                ),
+              ),
+            ],
+          ),
+
           const SizedBox(height: 18),
           if (user != null) _ResumoDashboard(uid: user.uid),
           const SizedBox(height: 22),
+
           const Text('Módulos',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
@@ -247,7 +313,7 @@ class _AbaInicioDashboard extends StatelessWidget {
                 children: [
                   _CardMenuGrande(
                     titulo: 'Planejamento',
-                    subtitulo: 'O que plantar?',
+                    subtitulo: 'Geral (consumo)',
                     icone: Icons.calculate,
                     cor: Colors.blue,
                     onTap: () => Navigator.push(
@@ -257,14 +323,21 @@ class _AbaInicioDashboard extends StatelessWidget {
                     ),
                   ),
                   _CardMenuGrande(
+                    titulo: 'Planejar por Canteiro',
+                    subtitulo: 'Linhas e quantidades',
+                    icone: Icons.auto_awesome,
+                    cor: Colors.indigo,
+                    onTap: () => _abrirPlanejamentoPorCanteiro(context),
+                  ),
+                  _CardMenuGrande(
                     titulo: 'Canteiros',
                     subtitulo: 'Minha área',
                     icone: Icons.grid_on,
                     cor: Colors.green,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaCanteiros())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Adubação',
@@ -272,10 +345,9 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.eco,
                     cor: Colors.orange,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const TelaAdubacaoOrgano15()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaAdubacaoOrgano15())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Diário de Manejo',
@@ -283,10 +355,9 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.menu_book,
                     cor: Colors.teal,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const TelaDiarioManejo()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaDiarioManejo())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Dicas & Receitas',
@@ -294,29 +365,25 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.restaurant,
                     cor: Colors.deepOrange,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaConteudo()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaConteudo())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Alertas/Agenda',
                     subtitulo: 'Lembretes',
                     icone: Icons.notifications_active,
                     cor: Colors.amber,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaAlertas()),
-                    ),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const TelaAlertas())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Pragas & Doenças',
                     subtitulo: 'Base de conhecimento',
                     icone: Icons.bug_report,
                     cor: Colors.redAccent,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaPragas()),
-                    ),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const TelaPragas())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Irrigação',
@@ -324,9 +391,9 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.water_drop,
                     cor: Colors.lightBlue,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaIrrigacao()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaIrrigacao())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Financeiro',
@@ -334,19 +401,17 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.attach_money,
                     cor: Colors.indigo,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaFinanceiro()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaFinanceiro())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Mercado',
                     subtitulo: 'Compra/Venda (futuro)',
                     icone: Icons.storefront,
                     cor: Colors.purple,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TelaMercado()),
-                    ),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const TelaMercado())),
                   ),
                   _CardMenuGrande(
                     titulo: 'Configurações',
@@ -354,16 +419,67 @@ class _AbaInicioDashboard extends StatelessWidget {
                     icone: Icons.settings,
                     cor: Colors.grey,
                     onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const TelaConfiguracoes()),
-                    ),
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaConfiguracoes())),
                   ),
                 ],
               );
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14)),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(height: 10),
+            Text(label,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -456,10 +572,9 @@ class _MiniMetricCard extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Row(
@@ -467,9 +582,8 @@ class _MiniMetricCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12)),
             child: Icon(icon, color: color),
           ),
           const SizedBox(width: 10),
@@ -529,7 +643,14 @@ class _AbaJornadaTrilha extends StatelessWidget {
         onSelecionar: (doc) {
           Navigator.pop(ctx);
 
-          if (acao == 'diagnostico') {
+          if (acao == 'planejamento_canteiro') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      TelaPlanejamentoCanteiro(canteiroIdOrigem: doc.id)),
+            );
+          } else if (acao == 'diagnostico') {
             Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -560,10 +681,9 @@ class _AbaJornadaTrilha extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: primary.withOpacity(0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
+                  color: primary.withOpacity(0.25),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6)),
             ],
           ),
           child: const Row(
@@ -591,7 +711,16 @@ class _AbaJornadaTrilha extends StatelessWidget {
         const SizedBox(height: 22),
         _TimelineItem(
           fase: 1,
-          titulo: 'Planejamento',
+          titulo: 'Planejamento (por canteiro)',
+          descricao: 'Quantidade e linhas',
+          icone: Icons.auto_awesome,
+          corIcone: Colors.indigo,
+          onTap: () =>
+              _iniciarAcaoComCanteiro(context, 'planejamento_canteiro'),
+        ),
+        _TimelineItem(
+          fase: 2,
+          titulo: 'Planejamento (geral)',
           descricao: 'O que plantar?',
           icone: Icons.calculate,
           corIcone: Colors.blue,
@@ -601,7 +730,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
                   builder: (_) => const TelaPlanejamentoConsumo())),
         ),
         _TimelineItem(
-          fase: 2,
+          fase: 3,
           titulo: 'Meus Canteiros',
           descricao: 'Organize sua área.',
           icone: Icons.grid_on,
@@ -610,7 +739,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const TelaCanteiros())),
         ),
         _TimelineItem(
-          fase: 3,
+          fase: 4,
           titulo: 'Diagnóstico',
           descricao: 'Analise o solo.',
           icone: Icons.science,
@@ -618,7 +747,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
           onTap: () => _iniciarAcaoComCanteiro(context, 'diagnostico'),
         ),
         _TimelineItem(
-          fase: 4,
+          fase: 5,
           titulo: 'Calagem',
           descricao: 'Corrija a acidez.',
           icone: Icons.landscape,
@@ -626,7 +755,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
           onTap: () => _iniciarAcaoComCanteiro(context, 'calagem'),
         ),
         _TimelineItem(
-          fase: 5,
+          fase: 6,
           titulo: 'Adubação',
           descricao: 'Nutrição Organo15.',
           icone: Icons.eco,
@@ -636,7 +765,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
               MaterialPageRoute(builder: (_) => const TelaAdubacaoOrgano15())),
         ),
         const _TimelineItem(
-          fase: 6,
+          fase: 7,
           titulo: 'Colheita',
           descricao: 'Venda (Em breve).',
           icone: Icons.shopping_basket,
@@ -650,6 +779,9 @@ class _AbaJornadaTrilha extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// SHEET SELECIONAR CANTEIRO (mantive o seu)
+// ============================================================================
 class _SheetSelecionarCanteiro extends StatefulWidget {
   final String uid;
   final String titulo;
@@ -772,9 +904,8 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Fechar'),
-                          ),
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Fechar')),
                         ],
                       );
                     }
@@ -798,13 +929,16 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                       itemBuilder: (context, index) {
                         final doc = docs[index] as QueryDocumentSnapshot;
                         final nome = (doc['nome'] ?? 'Canteiro').toString();
-                        final area = doc.data() is Map<String, dynamic>
-                            ? (doc.data() as Map<String, dynamic>)['area_m2']
-                            : null;
 
+                        final data = doc.data() is Map<String, dynamic>
+                            ? (doc.data() as Map<String, dynamic>)
+                            : {};
+                        final area = data['area_m2'];
                         double areaM2 = 0;
                         if (area is num) areaM2 = area.toDouble();
-                        if (area is String) areaM2 = double.tryParse(area) ?? 0;
+                        if (area is String)
+                          areaM2 =
+                              double.tryParse(area.replaceAll(',', '.')) ?? 0;
 
                         return ListTile(
                           leading:
@@ -831,7 +965,7 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
 }
 
 // ============================================================================
-// PERFIL (versão premium com usuarios/{uid})
+// PERFIL (seu mesmo)
 // ============================================================================
 class AbaPerfilPage extends StatelessWidget {
   const AbaPerfilPage({super.key});
@@ -901,10 +1035,9 @@ class AbaPerfilPage extends StatelessWidget {
                 border: Border.all(color: Colors.grey.shade200),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4)),
                 ],
               ),
               child: Row(
@@ -989,10 +1122,9 @@ class _CardSection extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
@@ -1038,10 +1170,9 @@ class _CardMenuGrande extends StatelessWidget {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4)),
           ],
         ),
         child: Column(
@@ -1166,11 +1297,9 @@ class _TimelineItem extends StatelessWidget {
                                 : corIcone.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: Icon(
-                            icone,
-                            color: bloqueado ? Colors.grey : corIcone,
-                            size: 28,
-                          ),
+                          child: Icon(icone,
+                              color: bloqueado ? Colors.grey : corIcone,
+                              size: 28),
                         ),
                         const SizedBox(width: 14),
                         Expanded(

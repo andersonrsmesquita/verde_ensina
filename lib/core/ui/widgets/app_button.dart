@@ -1,86 +1,103 @@
 import 'package:flutter/material.dart';
 
+enum _BtnKind { primary, secondary }
+
 class AppButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onPressed;
+  final String text;
   final IconData? icon;
+  final VoidCallback? onPressed;
   final bool loading;
-  final bool fullWidth;
+  final _BtnKind kind;
 
-  /// primary: botão principal (verde)
-  final bool primary;
-
-  const AppButton.primary({
+  const AppButton({
     super.key,
-    required this.label,
-    required this.onPressed,
+    required this.text,
     this.icon,
+    this.onPressed,
     this.loading = false,
-    this.fullWidth = true,
-  }) : primary = true;
+    this.kind = _BtnKind.primary,
+  });
 
-  const AppButton.secondary({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.icon,
-    this.loading = false,
-    this.fullWidth = true,
-  }) : primary = false;
+  factory AppButton.primary({
+    Key? key,
+    required String label,
+    IconData? icon,
+    VoidCallback? onPressed,
+    bool loading = false,
+  }) {
+    return AppButton(
+      key: key,
+      text: label,
+      icon: icon,
+      onPressed: onPressed,
+      loading: loading,
+      kind: _BtnKind.primary,
+    );
+  }
+
+  factory AppButton.secondary({
+    Key? key,
+    required String label,
+    IconData? icon,
+    VoidCallback? onPressed,
+    bool loading = false,
+  }) {
+    return AppButton(
+      key: key,
+      text: label,
+      icon: icon,
+      onPressed: onPressed,
+      loading: loading,
+      kind: _BtnKind.secondary,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    final bg = primary ? scheme.primary : Colors.white;
-    final fg = primary ? Colors.white : scheme.primary;
-    final border = primary ? Colors.transparent : scheme.primary.withOpacity(0.35);
-
-    final child = Row(
-      mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (loading) ...[
-          SizedBox(
-            height: 18,
+    final child = loading
+        ? const SizedBox(
             width: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.4,
-              valueColor: AlwaysStoppedAnimation<Color>(fg),
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 18),
+                const SizedBox(width: 8),
+              ],
+              Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          );
+
+    final style = kind == _BtnKind.primary
+        ? ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-          ),
-          const SizedBox(width: 10),
-        ] else if (icon != null) ...[
-          Icon(icon, size: 18, color: fg),
-          const SizedBox(width: 10),
-        ],
-        Text(
-          label,
-          style: TextStyle(
-            color: fg,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.2,
-          ),
-        ),
-      ],
-    );
+          )
+        : OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          );
 
     return SizedBox(
-      width: fullWidth ? double.infinity : null,
-      height: 48,
-      child: ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: bg,
-          foregroundColor: fg,
-          elevation: primary ? 2 : 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: border),
-          ),
-        ),
-        child: child,
-      ),
+      width: double.infinity,
+      child: kind == _BtnKind.primary
+          ? ElevatedButton(
+              onPressed: loading ? null : onPressed,
+              style: style,
+              child: child,
+            )
+          : OutlinedButton(
+              onPressed: loading ? null : onPressed,
+              style: style,
+              child: child,
+            ),
     );
   }
 }

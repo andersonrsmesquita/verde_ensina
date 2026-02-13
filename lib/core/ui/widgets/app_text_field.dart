@@ -1,86 +1,101 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AppTextField extends StatelessWidget {
   final TextEditingController controller;
-  final String label;
+  final String? label;
   final String? hint;
-  final String? helper;
-  final String? errorText;
 
-  final TextInputType keyboardType;
-  final TextInputAction textInputAction;
-  final bool obscureText;
-  final bool enabled;
-  final int maxLines;
-  final int? maxLength;
+  /// Aceita IconData (ex: Icons.person) OU Widget (ex: Icon(Icons.search))
+  final dynamic prefixIcon;
 
-  final IconData? prefixIcon;
-  final Widget? suffix;
-
+  final Widget? suffixIcon;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
   final String? Function(String?)? validator;
-  final void Function(String)? onChanged;
+  final int maxLines;
+  final bool enabled;
+  final bool obscureText;
+  final TextCapitalization textCapitalization;
+  final ValueChanged<String>? onChanged;
 
   const AppTextField({
     super.key,
     required this.controller,
-    required this.label,
+    this.label,
     this.hint,
-    this.helper,
-    this.errorText,
-    this.keyboardType = TextInputType.text,
-    this.textInputAction = TextInputAction.next,
-    this.obscureText = false,
-    this.enabled = true,
-    this.maxLines = 1,
-    this.maxLength,
     this.prefixIcon,
-    this.suffix,
+    this.suffixIcon,
+    this.keyboardType,
+    this.inputFormatters,
     this.validator,
+    this.maxLines = 1,
+    this.enabled = true,
+    this.obscureText = false,
+    this.textCapitalization = TextCapitalization.none,
     this.onChanged,
   });
 
+  factory AppTextField.number({
+    Key? key,
+    required TextEditingController controller,
+    String? label,
+    String? hint,
+    dynamic prefixIcon,
+    Widget? suffixIcon,
+    String? Function(String?)? validator,
+    bool enabled = true,
+    ValueChanged<String>? onChanged,
+  }) {
+    return AppTextField(
+      key: key,
+      controller: controller,
+      label: label,
+      hint: hint,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      validator: validator,
+      enabled: enabled,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+        LengthLimitingTextInputFormatter(12),
+      ],
+      onChanged: onChanged,
+    );
+  }
+
+  InputDecoration _decoration(BuildContext context) {
+    Widget? prefix;
+    if (prefixIcon is IconData) {
+      prefix = Icon(prefixIcon as IconData);
+    } else if (prefixIcon is Widget) {
+      prefix = prefixIcon as Widget;
+    }
+
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: prefix,
+      suffixIcon: suffixIcon,
+      border: const OutlineInputBorder(),
+      isDense: true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return TextFormField(
       controller: controller,
+      decoration: _decoration(context),
       keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      obscureText: obscureText,
-      enabled: enabled,
-      maxLines: maxLines,
-      maxLength: maxLength,
+      inputFormatters: inputFormatters,
       validator: validator,
+      maxLines: maxLines,
+      enabled: enabled,
+      obscureText: obscureText,
+      textCapitalization: textCapitalization,
       onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        helperText: helper,
-        errorText: errorText,
-        filled: true,
-        fillColor: Colors.white,
-        prefixIcon: prefixIcon == null ? null : Icon(prefixIcon),
-        suffixIcon: suffix,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(0.7)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.primary, width: 1.6),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.error, width: 1.2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.error, width: 1.6),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      ),
     );
   }
 }
