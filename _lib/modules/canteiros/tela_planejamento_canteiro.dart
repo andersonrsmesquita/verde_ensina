@@ -189,19 +189,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
 
     final resultadosBusca = buscarCulturas(_buscaCtrl.text);
 
-    // O DropdownButton precisa que o `value` exista exatamente 1x dentro de `items`.
-    // Como aqui os `items` mudam conforme a busca, garantimos que a cultura selecionada
-    // esteja sempre presente (e sem duplicatas), evitando o assert do Flutter.
-    final itensDropdown = <String>[];
-    for (final c in resultadosBusca.take(60)) {
-      if (!itensDropdown.contains(c)) itensDropdown.add(c);
-    }
-    final selecionada = _culturaSelecionada;
-    if (selecionada != null && !itensDropdown.contains(selecionada)) {
-      itensDropdown.insert(0, selecionada);
-    }
-
-
     final info = _infoSelecionada;
 
     final qtdPorArea = (info != null && _areaM2 > 0)
@@ -334,10 +321,8 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                       return ChoiceChip(
                         selected: sel,
                         label: Text(nome),
-                        onSelected: (_) => setState(() {
-                            _culturaSelecionada = nome;
-                            _buscaCtrl.clear();
-                          }),
+                        onSelected: (_) =>
+                            setState(() => _culturaSelecionada = nome),
                       );
                     }).toList(),
                   ),
@@ -365,7 +350,8 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                     labelText: 'Resultado da busca',
                     prefixIcon: Icon(Icons.eco_outlined),
                   ),
-                  items: itensDropdown
+                  items: resultadosBusca
+                      .take(60)
                       .map((n) => DropdownMenuItem(value: n, child: Text(n)))
                       .toList(),
                   onChanged: (v) => setState(() => _culturaSelecionada = v),
