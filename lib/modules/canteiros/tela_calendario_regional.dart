@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../core/ui/widgets/page_container.dart';
-import '../core/ui/widgets/section_card.dart';
 import 'guia_culturas.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaCalendarioRegional extends StatefulWidget {
   const TelaCalendarioRegional({super.key});

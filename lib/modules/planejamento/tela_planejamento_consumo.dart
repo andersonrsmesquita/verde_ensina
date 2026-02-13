@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../canteiros/tela_gerador_canteiros.dart';
+import 'tela_gerador_canteiros.dart';
 
 class TelaPlanejamentoConsumo extends StatefulWidget {
   const TelaPlanejamentoConsumo({super.key});

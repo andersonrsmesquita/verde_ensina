@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
-import '../../core/ui/app_messenger.dart';
-import '../../core/ui/widgets/page_container.dart';
-import '../../core/ui/widgets/section_card.dart';
-import '../../core/ui/widgets/app_button.dart';
-import '../../core/ui/widgets/app_text_field.dart';
 
 class TelaCalagem extends StatefulWidget {
   final String? canteiroIdOrigem;

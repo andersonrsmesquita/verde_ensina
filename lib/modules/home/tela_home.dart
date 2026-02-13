@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../core/ui/app_messenger.dart';
 import '../../core/repositories/user_profile_repository.dart';
 
 // Imports das suas telas funcionais
@@ -20,6 +19,7 @@ import '../configuracoes/tela_configuracoes.dart';
 import '../alertas/tela_alertas.dart';
 import '../pragas/tela_pragas.dart';
 import '../irrigacao/tela_irrigacao.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../core/ui/widgets/page_container.dart';
-import '../core/ui/widgets/section_card.dart';
-import '../core/ui/widgets/app_text_field.dart';
 import 'guia_culturas.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaGuiaCulturas extends StatefulWidget {
   const TelaGuiaCulturas({super.key});

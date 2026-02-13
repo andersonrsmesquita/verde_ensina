@@ -3,12 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:verde_ensina/core/ui/widgets/page_container.dart';
-import 'package:verde_ensina/core/ui/widgets/section_card.dart';
-import 'package:verde_ensina/core/ui/widgets/app_button.dart';
-import 'package:verde_ensina/core/ui/widgets/app_text_field.dart';
 
 import 'guia_culturas.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaPlanejamentoCanteiro extends StatefulWidget {
   final String? canteiroIdOrigem;
@@ -26,8 +23,8 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
   String? _canteiroId;
   String _nomeCanteiro = '';
   double _areaM2 = 0;
-  double? _larguraM;
-  double? _comprimentoM;
+  double? _larguraM; // opcional (puxa do Firestore se existir)
+  double? _comprimentoM; // opcional (puxa do Firestore se existir)
 
   // filtros
   String _regiao = 'Sudeste';
@@ -79,7 +76,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
   String _fmt(num v, {int dec = 2}) =>
       v.toStringAsFixed(dec).replaceAll('.', ',');
 
-  /// ✅ Carrega tanto o padrão novo (largura/comprimento) quanto o legado (_m)
   Future<void> _carregarCanteiro(String id) async {
     final user = _user;
     if (user == null) return;
@@ -96,35 +92,21 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
       if (uid.isNotEmpty && uid != user.uid) return;
 
       final nome = (data['nome'] ?? 'Canteiro').toString();
-
-      // área (se não existir, tenta recalcular pelas dimensões)
       final area = _toDouble(data['area_m2']);
 
-      // ✅ lê largura/comprimento, e cai pro _m se for o que existir
-      final largura = data.containsKey('largura')
-          ? _toDouble(data['largura'])
-          : (data.containsKey('largura_m')
-              ? _toDouble(data['largura_m'])
-              : 0.0);
-
-      final comp = data.containsKey('comprimento')
-          ? _toDouble(data['comprimento'])
-          : (data.containsKey('comprimento_m')
-              ? _toDouble(data['comprimento_m'])
-              : 0.0);
-
-      final areaFinal = (area > 0)
-          ? area
-          : ((largura > 0 && comp > 0) ? (largura * comp) : 0.0);
+      final largura =
+          data.containsKey('largura_m') ? _toDouble(data['largura_m']) : 0.0;
+      final comp = data.containsKey('comprimento_m')
+          ? _toDouble(data['comprimento_m'])
+          : 0.0;
 
       setState(() {
         _canteiroId = id;
         _nomeCanteiro = nome;
+        _areaM2 = area;
 
         _larguraM = largura > 0 ? largura : null;
         _comprimentoM = comp > 0 ? comp : null;
-
-        _areaM2 = areaFinal;
 
         _larguraCtrl.text = _larguraM != null ? _fmt(_larguraM!, dec: 2) : '';
         _comprimentoCtrl.text =
@@ -142,6 +124,7 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
   }
 
   double? _larguraFinal() {
+    // prioridade: Firestore -> input
     if (_larguraM != null && _larguraM! > 0) return _larguraM;
     final t = _larguraCtrl.text.trim().replaceAll(',', '.');
     final v = double.tryParse(t);
@@ -155,17 +138,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     final v = double.tryParse(t);
     if (v == null || v <= 0) return null;
     return v;
-  }
-
-  List<String> _uniqueList(Iterable<String> list) {
-    final set = <String>{};
-    final out = <String>[];
-    for (final s in list) {
-      final k = s.trim();
-      if (k.isEmpty) continue;
-      if (set.add(k)) out.add(k);
-    }
-    return out;
   }
 
   // cálculo “plano” por dimensões
@@ -189,10 +161,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     );
   }
 
-  bool _ehForaDeEpoca(List<String> recomendadas, String cultura) {
-    return !recomendadas.contains(cultura);
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = _user;
@@ -214,13 +182,9 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
       _mes = mesesDisponiveis.first;
     }
 
-    final recomendadas = _uniqueList(culturasPorRegiaoMes(_regiao, _mes));
-    final todasCulturas = (guiaCompleto.keys.toList()..sort());
-    final foraDeEpoca =
-        todasCulturas.where((c) => !recomendadas.contains(c)).toList();
+    final sugestoesMes = culturasPorRegiaoMes(_regiao, _mes);
 
-    // busca (dedup p/ não explodir Dropdown)
-    final resultadosBusca = _uniqueList(buscarCulturas(_buscaCtrl.text));
+    final resultadosBusca = buscarCulturas(_buscaCtrl.text);
 
     final info = _infoSelecionada;
 
@@ -230,11 +194,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     final planoDim = (info != null)
         ? _planoPorDimensoes(info)
         : (linhas: 0, plantasPorLinha: 0, total: 0);
-
-    final selecionada = _culturaSelecionada;
-    final selecionadaFora = (selecionada != null)
-        ? _ehForaDeEpoca(recomendadas, selecionada)
-        : false;
 
     return PageContainer(
       title: 'Planejamento do Canteiro',
@@ -302,7 +261,7 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Dica: salvando aqui, “Meus canteiros” passa a mostrar certinho.',
+                  'Dica: se você salvar largura/comprimento no Firestore depois, isso vira automático.',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
               ],
@@ -343,19 +302,18 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
           const SizedBox(height: 12),
           SectionCard(
             title: '3) Escolha a cultura',
-            subtitle:
-                'Recomendadas do mês + opção de escolher fora de época com alerta.',
+            subtitle: 'Pode escolher do mês ou buscar qualquer uma do guia.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (recomendadas.isNotEmpty) ...[
-                  Text('✅ Recomendadas: $_regiao • $_mes',
+                if (sugestoesMes.isNotEmpty) ...[
+                  Text('Sugestões: $_regiao • $_mes',
                       style: const TextStyle(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: recomendadas.map((nome) {
+                    children: sugestoesMes.map((nome) {
                       final sel = _culturaSelecionada == nome;
                       return ChoiceChip(
                         selected: sel,
@@ -366,49 +324,9 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                     }).toList(),
                   ),
                   const SizedBox(height: 14),
+                  Divider(color: Colors.grey.shade200),
+                  const SizedBox(height: 14),
                 ],
-
-                // ✅ Fora de época (colapsável, igual a ideia do seu print)
-                Theme(
-                  data: Theme.of(context)
-                      .copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.warning_amber_rounded),
-                    title: const Text(
-                      'Outras Culturas (Fora de Época)',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    children: [
-                      const SizedBox(height: 8),
-                      Text(
-                        'Pode escolher também, mas o sistema vai te alertar que não é o mês ideal.',
-                        style: TextStyle(
-                            color: Colors.grey.shade700, fontSize: 12),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: foraDeEpoca.take(60).map((nome) {
-                          final sel = _culturaSelecionada == nome;
-                          return ChoiceChip(
-                            selected: sel,
-                            label: Text(nome),
-                            onSelected: (_) =>
-                                setState(() => _culturaSelecionada = nome),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 14),
-                Divider(color: Colors.grey.shade200),
-                const SizedBox(height: 14),
-
                 AppTextField(
                   controller: _buscaCtrl,
                   label: 'Buscar cultura',
@@ -424,9 +342,7 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: (resultadosBusca.contains(_culturaSelecionada)
-                      ? _culturaSelecionada
-                      : null),
+                  value: _culturaSelecionada,
                   decoration: const InputDecoration(
                     labelText: 'Resultado da busca',
                     prefixIcon: Icon(Icons.eco_outlined),
@@ -453,31 +369,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (selecionadaFora) ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: Colors.orange.withOpacity(0.25)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.warning_amber_rounded),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Atenção: ${info.nome} está FORA DE ÉPOCA em $_regiao • $_mes. Dá pra plantar, mas o risco de desempenho é maior.',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
                       _linha('Cultura', info.nome),
                       _linha('Categoria', info.categoria),
                       _linha('Ciclo', '${info.cicloDias} dias'),
@@ -503,8 +394,6 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                             rows: planoDim.linhas,
                             cols: planoDim.plantasPorLinha),
                       const SizedBox(height: 12),
-
-                      // ✅ AQUI é o ponto: salvar no padrão que o resto do app lê
                       AppButton(
                         text: 'SALVAR LARGURA/COMPRIMENTO NO CANTEIRO',
                         icon: Icons.save,
@@ -522,53 +411,21 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
                                       cor: Colors.red);
                                   return;
                                 }
-
                                 try {
-                                  final area = double.parse(
-                                      (larg * comp).toStringAsFixed(3));
-                                  final ref = FirebaseFirestore.instance
+                                  await FirebaseFirestore.instance
                                       .collection('canteiros')
-                                      .doc(_canteiroId);
-
-                                  await ref.set({
-                                    // ✅ padrão “principal” (Meus Canteiros / Detalhes)
-                                    'largura':
-                                        double.parse(larg.toStringAsFixed(2)),
-                                    'comprimento':
-                                        double.parse(comp.toStringAsFixed(2)),
-                                    'area_m2': area,
-
-                                    // ✅ compat (legado / outras telas)
+                                      .doc(_canteiroId)
+                                      .set({
                                     'largura_m':
                                         double.parse(larg.toStringAsFixed(2)),
                                     'comprimento_m':
                                         double.parse(comp.toStringAsFixed(2)),
-
-                                    // ✅ metadados (mantém o padrão do app sem quebrar nada)
-                                    'data_atualizacao':
-                                        FieldValue.serverTimestamp(),
-
-                                    // ✅ já deixa o planejamento salvo junto (pra virar “top” depois)
-                                    if (_culturaSelecionada != null)
-                                      'planejamento_atual': {
-                                        'regiao': _regiao,
-                                        'mes': _mes,
-                                        'cultura': _culturaSelecionada,
-                                        'qtd_por_area': qtdPorArea,
-                                        'linhas': planoDim.linhas,
-                                        'por_linha': planoDim.plantasPorLinha,
-                                        'total_dim': planoDim.total,
-                                        'criado_em':
-                                            FieldValue.serverTimestamp(),
-                                        'fora_de_epoca': selecionadaFora,
-                                      },
+                                    'updatedAt': FieldValue.serverTimestamp(),
                                   }, SetOptions(merge: true));
 
-                                  // atualiza estado local na hora
                                   setState(() {
                                     _larguraM = larg;
                                     _comprimentoM = comp;
-                                    _areaM2 = area;
                                   });
 
                                   _snack('✅ Dimensões salvas no canteiro!',
@@ -614,13 +471,6 @@ class _CanteiroPicker extends StatelessWidget {
 
   const _CanteiroPicker({required this.onSelect, this.selectedId});
 
-  double _toDouble(dynamic v) {
-    if (v == null) return 0;
-    if (v is num) return v.toDouble();
-    final s = v.toString().trim().replaceAll(',', '.');
-    return double.tryParse(s) ?? 0;
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -654,23 +504,15 @@ class _CanteiroPicker extends StatelessWidget {
           items: docs.map((d) {
             final data = (d.data() as Map<String, dynamic>? ?? {});
             final nome = (data['nome'] ?? 'Canteiro').toString();
-
-            // tenta area_m2, senão recalcula do que tiver
-            final area = _toDouble(data['area_m2']);
-            final larg = data.containsKey('largura')
-                ? _toDouble(data['largura'])
-                : _toDouble(data['largura_m']);
-            final comp = data.containsKey('comprimento')
-                ? _toDouble(data['comprimento'])
-                : _toDouble(data['comprimento_m']);
-
-            final areaFinal = (area > 0)
-                ? area
-                : ((larg > 0 && comp > 0) ? (larg * comp) : 0);
+            final area = data['area_m2'];
+            double areaM2 = 0;
+            if (area is num) areaM2 = area.toDouble();
+            if (area is String)
+              areaM2 = double.tryParse(area.replaceAll(',', '.')) ?? 0;
 
             return DropdownMenuItem(
               value: d.id,
-              child: Text('$nome (${areaFinal.toStringAsFixed(2)} m²)'),
+              child: Text('$nome (${areaM2.toStringAsFixed(2)} m²)'),
             );
           }).toList(),
           onChanged: (id) {

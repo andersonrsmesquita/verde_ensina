@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
-import '../../core/ui/widgets/page_container.dart';
-import '../../core/ui/widgets/section_card.dart';
-import '../../core/ui/widgets/app_button.dart';
 
 class TelaAlertas extends StatelessWidget {
   const TelaAlertas({super.key});

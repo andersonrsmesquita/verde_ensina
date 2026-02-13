@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '_tela_detalhes_canteiro_old.dart';
-import '../../core/ui/app_messenger.dart';
+import 'tela_detalhes_canteiro.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaCanteiros extends StatefulWidget {
   const TelaCanteiros({super.key});
@@ -36,7 +36,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   void initState() {
     super.initState();
 
-    // ✅ suffixIcon (clear) responder na hora
+    // ✅ Faz o suffixIcon (clear) funcionar na hora, sem depender do debounce
     _buscaCtrl.addListener(() {
       if (!mounted) return;
       setState(() {});
@@ -79,19 +79,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
   String _norm(String s) => s.trim().toLowerCase();
 
-  // ✅ fallback de área (mesma lógica do card/resumo, agora também pro sort)
-  double _areaFallback(Map<String, dynamic> dados) {
-    var area = _num(dados['area_m2']).toDouble();
-    if (area > 0) return area;
-
-    final l = _num(dados['largura'] ?? dados['largura_m']).toDouble();
-    final c = _num(dados['comprimento'] ?? dados['comprimento_m']).toDouble();
-    final calc = l * c;
-    if (calc > 0) return calc;
-
-    return 0;
-  }
-
   // =========================
   // Status helpers
   // =========================
@@ -132,7 +119,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       final vol = _num(dados['volume_l']).toDouble();
       return '${vol.toStringAsFixed(1)} L';
     } else {
-      final area = _areaFallback(dados);
+      final area = _num(dados['area_m2']).toDouble();
       return '${area.toStringAsFixed(2)} m²';
     }
   }
@@ -228,8 +215,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     num medidaOf(Map<String, dynamic> d) {
       final tipo = (d['tipo'] ?? 'Canteiro').toString();
       if (tipo == 'Vaso') return _num(d['volume_l']);
-      // ✅ agora usa fallback se area_m2 for 0
-      return _areaFallback(d);
+      return _num(d['area_m2']);
     }
 
     String nomeLowerOf(Map<String, dynamic> d) =>
@@ -364,14 +350,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     if (tipoLocal != 'Canteiro' && tipoLocal != 'Vaso') tipoLocal = 'Canteiro';
 
     String finalidade = (dados['finalidade'] ?? 'consumo').toString().trim();
-    if (finalidade != 'consumo' && finalidade != 'comercio') {
+    if (finalidade != 'consumo' && finalidade != 'comercio')
       finalidade = 'consumo';
-    }
 
     String status = (dados['status'] ?? 'livre').toString().trim();
-    if (status != 'livre' && status != 'ocupado' && status != 'manutencao') {
+    if (status != 'livre' && status != 'ocupado' && status != 'manutencao')
       status = 'livre';
-    }
 
     bool ativo = (dados['ativo'] ?? true) == true;
 
@@ -390,9 +374,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               if (sheetFechando) return;
               sheetFechando = true;
               if (!sheetCtx.mounted) return;
-              if (Navigator.of(sheetCtx).canPop()) {
-                Navigator.of(sheetCtx).pop();
-              }
+              // Pop em microtask pra evitar asserts do framework durante dispose
+              Future.microtask(() {
+                if (sheetCtx.mounted && Navigator.of(sheetCtx).canPop()) {
+                  Navigator.of(sheetCtx).pop();
+                }
+              });
             }
 
             Future<void> salvar() async {
@@ -416,12 +403,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   comp = _doubleFromController(compController);
                   larg = _doubleFromController(largController);
                   areaM2 = comp * larg;
-                  volumeL = 0;
                 } else {
                   volumeL = _doubleFromController(volumeController);
-                  // ✅ vaso não guarda largura/comp pra não poluir doc
-                  comp = 0;
-                  larg = 0;
                   areaM2 = 0;
                 }
 
@@ -432,7 +415,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
                   'tipo': tipoLocal,
 
-                  // mantém campos antigos
+                  // mantém os campos antigos
                   'comprimento': comp,
                   'largura': larg,
 
@@ -441,7 +424,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   'largura_m': larg,
 
                   'area_m2': areaM2,
-                  'volume_l': volumeL,
+                  'volume_l': (tipoLocal == 'Vaso') ? volumeL : 0,
 
                   'ativo': ativo,
                   'status': status,
@@ -467,15 +450,16 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
                 closeSheet();
 
-                // AppMessenger é global (não depende do sheetCtx)
-                AppMessenger.success(
-                    editando ? 'Local atualizado.' : 'Local cadastrado!');
+                // Mensagem depois de fechar (sem depender de context)
+                Future.microtask(() {
+                  AppMessenger.success(editando ? 'Local atualizado.' : 'Local cadastrado!');
+                });
               } catch (e) {
-                AppMessenger.error('Erro ao salvar: $e');
+                Future.microtask(() {
+                  AppMessenger.error('Erro ao salvar: $e');
+                });
               } finally {
-                if (!sheetFechando && sheetCtx.mounted) {
-                  setModalState(() => salvando = false);
-                }
+                if (!sheetFechando && sheetCtx.mounted) setModalState(() => salvando = false);
               }
             }
 
@@ -994,6 +978,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
           child: TextField(
             controller: _buscaCtrl,
             onChanged: (v) {
+              // atualiza o termo com debounce, mas UI já atualiza pelo listener do controller
               _debounce?.cancel();
               _debounce = Timer(const Duration(milliseconds: 350), () {
                 if (!mounted) return;
@@ -1086,7 +1071,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       if (tipo == 'Vaso') {
         totalVol += _num(data['volume_l']).toDouble();
       } else {
-        totalArea += _areaFallback(data);
+        totalArea += _num(data['area_m2']).toDouble();
       }
     }
 
@@ -1191,6 +1176,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
         child: Column(
           children: [
+            // ✅ bloco premium de filtros
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -1214,7 +1200,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 ],
               ),
             ),
+
             const SizedBox(height: 12),
+
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _buildQuery().snapshots(),

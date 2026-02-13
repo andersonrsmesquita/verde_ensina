@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:verde_ensina/core/ui/app_ui.dart';
 
-import '../../core/ui/app_messenger.dart';
 
 class TelaDiarioManejo extends StatefulWidget {
   const TelaDiarioManejo({super.key});
