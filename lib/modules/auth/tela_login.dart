@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/repositories/user_profile_repository.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
+import '../../core/ui/app_ui.dart';
 
 class TelaLogin extends StatefulWidget {
   const TelaLogin({super.key});

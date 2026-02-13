@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
 
+import '../../core/ui/app_ui.dart';
 
 class TelaDiarioManejo extends StatefulWidget {
   const TelaDiarioManejo({super.key});
@@ -383,7 +383,7 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
                         Row(
                           children: [
                             Expanded(
-                              child: OutlinedButton.icon(
+                              child: AppButtons.outlinedIcon(
                                 onPressed: salvando
                                     ? null
                                     : () async {
@@ -436,7 +436,7 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
                         SizedBox(
                           height: 52,
                           width: double.infinity,
-                          child: ElevatedButton.icon(
+                          child: AppButtons.elevatedIcon(
                             onPressed: salvando ? null : salvar,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green.shade700,

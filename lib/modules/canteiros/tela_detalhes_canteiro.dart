@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/ui/app_ui.dart';
+
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
 import 'guia_culturas.dart';
@@ -1196,7 +1198,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    TextButton.icon(
+                    AppButtons.textIcon(
                       onPressed: () {
                         setModalState(() {
                           for (final c in culturas) {
@@ -1298,7 +1300,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         const SizedBox(height: 10),
                       ],
                       const SizedBox(height: 8),
-                      OutlinedButton.icon(
+                      AppButtons.outlinedIcon(
                         onPressed: () {
                           Navigator.pop(ctx);
                           _mostrarDialogoPerda(
@@ -1318,7 +1320,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   child: SizedBox(
                     width: double.infinity,
                     height: 52,
-                    child: ElevatedButton.icon(
+                    child: AppButtons.elevatedIcon(
                       onPressed: temErro
                           ? null
                           : () async {
@@ -1588,7 +1590,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               SizedBox(
                 width: double.infinity,
                 height: 48,
-                child: ElevatedButton.icon(
+                child: AppButtons.elevatedIcon(
                   onPressed: () async {
                     final qtd = int.tryParse(qtdCtrl.text.trim()) ?? 0;
                     final max = mapaPlantioAtual[culturaSel] ?? 0;
@@ -1979,7 +1981,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   ),
                   const Spacer(),
                   if (temPlantioAtivo && cicloMapa.isNotEmpty)
-                    ElevatedButton.icon(
+                    AppButtons.elevatedIcon(
                       onPressed: () => _mostrarDialogoColheita(
                         idPlantioAtivo: cicloId,
                         mapaPlantioAtual: cicloMapa,
@@ -2107,7 +2109,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 ],
                 Align(
                   alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
+                  child: AppButtons.outlinedIcon(
                     onPressed: () => _mostrarDialogoPerda(
                       idPlantioAtivo: cicloId,
                       mapaPlantioAtual: cicloMapa,
@@ -2761,7 +2763,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           ? const CircularProgressIndicator()
                           : (!_hasMore
                               ? const Text('Fim do histórico.')
-                              : TextButton.icon(
+                              : AppButtons.textIcon(
                                   onPressed: _loadMore,
                                   icon: const Icon(Icons.expand_more),
                                   label: const Text('Carregar mais'),

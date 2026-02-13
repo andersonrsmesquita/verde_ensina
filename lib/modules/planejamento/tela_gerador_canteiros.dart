@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
 
+import '../../core/ui/app_ui.dart';
 
 class TelaGeradorCanteiros extends StatefulWidget {
   final List<Map<String, dynamic>> itensPlanejados;
@@ -529,7 +529,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
               child: SizedBox(
                 height: 52,
                 width: double.infinity,
-                child: ElevatedButton.icon(
+                child: AppButtons.elevatedIcon(
                   onPressed: _salvando || _canteirosSugeridos.isEmpty
                       ? null
                       : _criarTodosCanteiros,
@@ -897,7 +897,7 @@ class _EstadoVazio extends StatelessWidget {
               style: TextStyle(color: Colors.grey.shade600),
             ),
             const SizedBox(height: 14),
-            ElevatedButton.icon(
+            AppButtons.elevatedIcon(
               onPressed: onReprocessar,
               icon: const Icon(Icons.refresh),
               label: const Text('Reprocessar'),

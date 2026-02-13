@@ -3,9 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:verde_ensina/core/ui/widgets/page_container.dart';
+import 'package:verde_ensina/core/ui/widgets/section_card.dart';
+import 'package:verde_ensina/core/ui/widgets/app_button.dart';
+import 'package:verde_ensina/core/ui/widgets/app_text_field.dart';
 
 import 'guia_culturas.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
 
 class TelaPlanejamentoCanteiro extends StatefulWidget {
   final String? canteiroIdOrigem;

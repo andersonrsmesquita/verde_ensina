@@ -4,9 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/logic/base_agronomica.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
 
 // Premium UI (global)
+import '../../core/ui/widgets/page_container.dart';
+import '../../core/ui/widgets/section_card.dart';
+import '../../core/ui/widgets/app_button.dart';
 
 class TelaAdubacaoOrgano15 extends StatefulWidget {
   const TelaAdubacaoOrgano15({super.key});

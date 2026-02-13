@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'tela_detalhes_canteiro.dart';
-import 'package:verde_ensina/core/ui/app_ui.dart';
+import '../../core/ui/app_ui.dart';
 
 class TelaCanteiros extends StatefulWidget {
   const TelaCanteiros({super.key});
@@ -784,7 +784,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                         const SizedBox(height: 10),
                         SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton.icon(
+                          child: AppButtons.outlinedIcon(
                             onPressed:
                                 salvando ? null : _migrarCamposBasicosDev,
                             icon: const Icon(Icons.build),
@@ -1306,7 +1306,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
-                          ElevatedButton.icon(
+                          AppButtons.elevatedIcon(
                             onPressed: () => _criarOuEditarLocal(),
                             icon: const Icon(Icons.add),
                             label: const Text('Cadastrar Local'),

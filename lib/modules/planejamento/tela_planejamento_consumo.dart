@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/ui/app_ui.dart';
+
 import 'tela_gerador_canteiros.dart';
 
 class TelaPlanejamentoConsumo extends StatefulWidget {
@@ -361,7 +363,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                                 'Você ainda não tem canteiros ativos.',
                               ),
                               const SizedBox(height: 12),
-                              ElevatedButton.icon(
+                              AppButtons.elevatedIcon(
                                 onPressed: () {
                                   Navigator.pop(sheetContext);
                                   Future.microtask(() {
@@ -744,7 +746,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             foregroundColor: Colors.green[800],
             elevation: 0,
             actions: [
-              TextButton.icon(
+              AppButtons.textIcon(
                 onPressed: _selecionarCanteiro,
                 icon: const Icon(Icons.grid_view),
                 label: Text(
@@ -837,7 +839,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           ),
                         ),
                         if (_editandoIndex != null)
-                          TextButton.icon(
+                          AppButtons.textIcon(
                             onPressed: _cancelarEdicao,
                             icon: const Icon(Icons.close, size: 16),
                             label: const Text('Cancelar'),
@@ -950,7 +952,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
+                      child: AppButtons.elevatedIcon(
                         onPressed: _salvarItem,
                         icon: Icon(
                           _editandoIndex != null
@@ -1133,7 +1135,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                 ),
               ],
             ),
-            child: ElevatedButton.icon(
+            child: AppButtons.elevatedIcon(
               onPressed: _gerarESalvarEIrParaGerador,
               icon: const Icon(Icons.auto_awesome),
               label: const Text('GERAR PLANO INTELIGENTE'),
