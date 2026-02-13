@@ -1,104 +1,99 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_state_listenable.dart';
+import 'app_routes.dart';
 
-// Suas telas
-import '../../features/auth/tela_login.dart';
-import '../../features/home/tela_home.dart';
-import '../../features/trilha/tela_trilha.dart';
-import '../../features/canteiros/tela_canteiros.dart';
-import '../../features/solo/tela_diagnostico.dart';
-import '../../features/calculadoras/tela_calagem.dart';
-import '../../features/planejamento/tela_planejamento_consumo.dart';
-import '../../features/adubacao/tela_adubacao_organo15.dart';
+// Telas
+import '../../modules/auth/tela_login.dart';
+import '../../modules/home/tela_home.dart';
+import '../../modules/conteudo/tela_conteudo.dart';
+import '../../modules/diario/tela_diario_manejo.dart';
+import '../../modules/alertas/tela_alertas.dart';
+import '../../modules/pragas/tela_pragas.dart';
+import '../../modules/irrigacao/tela_irrigacao.dart';
+import '../../modules/financeiro/tela_financeiro.dart';
+import '../../modules/mercado/tela_mercado.dart';
+import '../../modules/configuracoes/tela_configuracoes.dart';
 
-CustomTransitionPage<T> _fadeSlide<T>({
-  required Widget child,
-  required GoRouterState state,
-}) {
-  return CustomTransitionPage<T>(
-    key: state.pageKey,
-    child: child,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final fade = CurvedAnimation(parent: animation, curve: Curves.easeOut);
-      final offset = Tween<Offset>(
-        begin: const Offset(0.02, 0.02),
-        end: Offset.zero,
-      ).animate(fade);
+class AppRouter {
+  static final AuthStateListenable _authListen = AuthStateListenable();
 
-      return FadeTransition(
-        opacity: fade,
-        child: SlideTransition(position: offset, child: child),
-      );
-    },
-  );
-}
+  static CustomTransitionPage<void> _fade(Widget child, GoRouterState state) {
+    return CustomTransitionPage<void>(
+      key: state.pageKey,
+      child: child,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+    );
+  }
 
-GoRouter buildRouter(AuthStateListenable auth) {
-  return GoRouter(
-    initialLocation: '/',
-    refreshListenable: auth,
+  static final GoRouter router = GoRouter(
+    initialLocation: AppRoutes.home,
+    refreshListenable: _authListen,
     redirect: (context, state) {
-      final loggedIn = auth.isLoggedIn;
-      final goingLogin = state.matchedLocation == '/login';
+      final user = FirebaseAuth.instance.currentUser;
+      final indoProLogin = state.matchedLocation == AppRoutes.login;
 
-      if (!loggedIn && !goingLogin) return '/login';
-      if (loggedIn && goingLogin) return '/';
+      if (user == null) {
+        return indoProLogin ? null : AppRoutes.login;
+      }
+
+      if (user != null && indoProLogin) {
+        return AppRoutes.home;
+      }
+
       return null;
     },
     routes: [
       GoRoute(
-        path: '/login',
-        pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaLogin(), state: state),
+        path: AppRoutes.login,
+        pageBuilder: (context, state) => _fade(const TelaLogin(), state),
       ),
       GoRoute(
-        path: '/',
-        pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaHome(), state: state),
+        path: AppRoutes.home,
+        pageBuilder: (context, state) => _fade(const TelaHome(), state),
       ),
 
-      // Rotas utilitárias (pra navegar sem depender de "abas internas")
+      // Conteúdo & Diário (retenção + essencial)
       GoRoute(
-        path: '/trilha',
+        path: AppRoutes.conteudo,
+        pageBuilder: (context, state) => _fade(const TelaConteudo(), state),
+      ),
+      GoRoute(
+        path: AppRoutes.diario,
+        pageBuilder: (context, state) => _fade(const TelaDiarioManejo(), state),
+      ),
+
+      // Módulos “base” (já deixa reservado)
+      GoRoute(
+        path: AppRoutes.alertas,
+        pageBuilder: (context, state) => _fade(const TelaAlertas(), state),
+      ),
+      GoRoute(
+        path: AppRoutes.pragas,
+        pageBuilder: (context, state) => _fade(const TelaPragas(), state),
+      ),
+      GoRoute(
+        path: AppRoutes.irrigacao,
+        pageBuilder: (context, state) => _fade(const TelaIrrigacao(), state),
+      ),
+
+      // Futuro / admin
+      GoRoute(
+        path: AppRoutes.financeiro,
+        pageBuilder: (context, state) => _fade(const TelaFinanceiro(), state),
+      ),
+      GoRoute(
+        path: AppRoutes.mercado,
+        pageBuilder: (context, state) => _fade(const TelaMercado(), state),
+      ),
+      GoRoute(
+        path: AppRoutes.configuracoes,
         pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaTrilha(), state: state),
-      ),
-      GoRoute(
-        path: '/planejamento',
-        pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaPlanejamentoConsumo(), state: state),
-      ),
-      GoRoute(
-        path: '/canteiros',
-        pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaCanteiros(), state: state),
-      ),
-      GoRoute(
-        path: '/adubacao',
-        pageBuilder: (context, state) =>
-            _fadeSlide(child: const TelaAdubacaoOrgano15(), state: state),
-      ),
-      GoRoute(
-        path: '/diagnostico/:canteiroId',
-        pageBuilder: (context, state) {
-          final id = state.pathParameters['canteiroId']!;
-          return _fadeSlide(
-            child: TelaDiagnostico(canteiroIdOrigem: id),
-            state: state,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/calagem/:canteiroId',
-        pageBuilder: (context, state) {
-          final id = state.pathParameters['canteiroId']!;
-          return _fadeSlide(
-            child: TelaCalagem(canteiroIdOrigem: id),
-            state: state,
-          );
-        },
+            _fade(const TelaConfiguracoes(), state),
       ),
     ],
   );

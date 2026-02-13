@@ -2,14 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'package:verde_ensina/core/ui/app_messenger.dart';
+import '../../core/ui/app_messenger.dart';
+import '../../core/repositories/user_profile_repository.dart';
 
-// Imports das telas funcionais
-import 'package:verde_ensina/modules/canteiros/tela_canteiros.dart';
-import 'package:verde_ensina/modules/solo/tela_diagnostico.dart';
-import 'package:verde_ensina/modules/calculadoras/tela_calagem.dart';
-import 'package:verde_ensina/modules/planejamento/tela_planejamento_consumo.dart';
-import 'package:verde_ensina/modules/adubacao/tela_adubacao_organo15.dart';
+// Imports das suas telas funcionais
+import '../canteiros/tela_canteiros.dart';
+import '../solo/tela_diagnostico.dart';
+import '../calculadoras/tela_calagem.dart';
+import '../planejamento/tela_planejamento_consumo.dart';
+import '../adubacao/tela_adubacao_organo15.dart';
+
+import '../diario/tela_diario_manejo.dart';
+import '../conteudo/tela_conteudo.dart';
+import '../financeiro/tela_financeiro.dart';
+import '../mercado/tela_mercado.dart';
+import '../configuracoes/tela_configuracoes.dart';
+import '../alertas/tela_alertas.dart';
+import '../pragas/tela_pragas.dart';
+import '../irrigacao/tela_irrigacao.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -20,10 +30,6 @@ class TelaHome extends StatefulWidget {
 
 class _TelaHomeState extends State<TelaHome> {
   int _indiceAtual = 0;
-
-  void _snack(String msg, {Color? cor}) {
-    AppMessenger.showSnack(msg, cor: cor);
-  }
 
   void _setAba(int index) {
     if (index == _indiceAtual) return;
@@ -44,17 +50,15 @@ class _TelaHomeState extends State<TelaHome> {
             children: [
               Icon(Icons.eco, color: Colors.white),
               SizedBox(width: 10),
-              Text(
-                'Verde Ensina',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              Text('Verde Ensina',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
           actions: [
             IconButton(
               tooltip: 'Notificações',
               icon: const Icon(Icons.notifications_none),
-              onPressed: () => _snack('Notificações: em breve 😉'),
+              onPressed: () => AppMessenger.info('Notificações: em breve 😉'),
             ),
           ],
         );
@@ -66,10 +70,8 @@ class _TelaHomeState extends State<TelaHome> {
           foregroundColor: Colors.white,
           elevation: 0,
           centerTitle: true,
-          title: const Text(
-            'Trilha do Cultivo',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          title: const Text('Trilha do Cultivo',
+              style: TextStyle(fontWeight: FontWeight.bold)),
         );
 
       default:
@@ -78,10 +80,8 @@ class _TelaHomeState extends State<TelaHome> {
           backgroundColor: Colors.white,
           foregroundColor: Colors.black,
           elevation: 0,
-          title: const Text(
-            'Meu Perfil',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          title: const Text('Meu Perfil',
+              style: TextStyle(fontWeight: FontWeight.bold)),
         );
     }
   }
@@ -96,12 +96,9 @@ class _TelaHomeState extends State<TelaHome> {
       body: IndexedStack(
         index: _indiceAtual,
         children: [
-          _AbaInicioDashboard(
-            onIrParaJornada: () => _setAba(1),
-            onAviso: (msg) => _snack(msg),
-          ),
-          _AbaJornadaTrilha(onAviso: (msg) => _snack(msg)),
-          _AbaPerfil(onAviso: (msg, {Color? cor}) => _snack(msg, cor: cor)),
+          _AbaInicioDashboard(onIrParaJornada: () => _setAba(1)),
+          const _AbaJornadaTrilha(),
+          const AbaPerfilPage(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -125,14 +122,9 @@ class _TelaHomeState extends State<TelaHome> {
           elevation: 0,
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.home_filled),
-              label: 'Início',
-            ),
+                icon: Icon(Icons.home_filled), label: 'Início'),
             BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Jornada'),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Perfil',
-            ),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Perfil'),
           ],
         ),
       ),
@@ -145,12 +137,8 @@ class _TelaHomeState extends State<TelaHome> {
 // ============================================================================
 class _AbaInicioDashboard extends StatelessWidget {
   final VoidCallback onIrParaJornada;
-  final void Function(String msg) onAviso;
 
-  const _AbaInicioDashboard({
-    required this.onIrParaJornada,
-    required this.onAviso,
-  });
+  const _AbaInicioDashboard({required this.onIrParaJornada});
 
   @override
   Widget build(BuildContext context) {
@@ -188,7 +176,7 @@ class _AbaInicioDashboard extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: [
                     primary.withOpacity(0.95),
-                    primary.withOpacity(0.75),
+                    primary.withOpacity(0.75)
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
@@ -241,15 +229,13 @@ class _AbaInicioDashboard extends StatelessWidget {
           const SizedBox(height: 18),
           if (user != null) _ResumoDashboard(uid: user.uid),
           const SizedBox(height: 22),
-          const Text(
-            'Gestão & Serviços',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
+          const Text('Módulos',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, c) {
               final w = c.maxWidth;
-              final cols = w >= 820 ? 3 : 2;
+              final cols = w >= 900 ? 3 : 2;
 
               return GridView.count(
                 shrinkWrap: true,
@@ -264,61 +250,114 @@ class _AbaInicioDashboard extends StatelessWidget {
                     subtitulo: 'O que plantar?',
                     icone: Icons.calculate,
                     cor: Colors.blue,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaPlanejamentoConsumo(),
-                        ),
-                      );
-                    },
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TelaPlanejamentoConsumo()),
+                    ),
                   ),
                   _CardMenuGrande(
                     titulo: 'Canteiros',
                     subtitulo: 'Minha área',
                     icone: Icons.grid_on,
                     cor: Colors.green,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaCanteiros(),
-                        ),
-                      );
-                    },
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaCanteiros()),
+                    ),
                   ),
                   _CardMenuGrande(
                     titulo: 'Adubação',
                     subtitulo: 'Organo15',
                     icone: Icons.eco,
                     cor: Colors.orange,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaAdubacaoOrgano15(),
-                        ),
-                      );
-                    },
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TelaAdubacaoOrgano15()),
+                    ),
+                  ),
+                  _CardMenuGrande(
+                    titulo: 'Diário de Manejo',
+                    subtitulo: 'Rotina do produtor',
+                    icone: Icons.menu_book,
+                    cor: Colors.teal,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TelaDiarioManejo()),
+                    ),
+                  ),
+                  _CardMenuGrande(
+                    titulo: 'Dicas & Receitas',
+                    subtitulo: 'Curadoria + comunidade',
+                    icone: Icons.restaurant,
+                    cor: Colors.deepOrange,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaConteudo()),
+                    ),
+                  ),
+                  _CardMenuGrande(
+                    titulo: 'Alertas/Agenda',
+                    subtitulo: 'Lembretes',
+                    icone: Icons.notifications_active,
+                    cor: Colors.amber,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaAlertas()),
+                    ),
+                  ),
+                  _CardMenuGrande(
+                    titulo: 'Pragas & Doenças',
+                    subtitulo: 'Base de conhecimento',
+                    icone: Icons.bug_report,
+                    cor: Colors.redAccent,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaPragas()),
+                    ),
+                  ),
+                  _CardMenuGrande(
+                    titulo: 'Irrigação',
+                    subtitulo: 'Regras + histórico',
+                    icone: Icons.water_drop,
+                    cor: Colors.lightBlue,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaIrrigacao()),
+                    ),
                   ),
                   _CardMenuGrande(
                     titulo: 'Financeiro',
+                    subtitulo: 'Custos e lucro',
                     icone: Icons.attach_money,
                     cor: Colors.indigo,
-                    onTap: () => onAviso('Financeiro: em breve 💸'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaFinanceiro()),
+                    ),
                   ),
                   _CardMenuGrande(
                     titulo: 'Mercado',
-                    subtitulo: 'Compra/Venda',
+                    subtitulo: 'Compra/Venda (futuro)',
                     icone: Icons.storefront,
                     cor: Colors.purple,
-                    onTap: () => onAviso('Mercado: em breve 🛒'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TelaMercado()),
+                    ),
                   ),
                   _CardMenuGrande(
                     titulo: 'Configurações',
+                    subtitulo: 'Preferências',
                     icone: Icons.settings,
                     cor: Colors.grey,
-                    onTap: () => onAviso('Configurações: em breve ⚙️'),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TelaConfiguracoes()),
+                    ),
                   ),
                 ],
               );
@@ -438,10 +477,9 @@ class _MiniMetricCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
+                Text(title,
+                    style:
+                        TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 const SizedBox(height: 4),
                 Text(
                   value,
@@ -466,13 +504,12 @@ class _MiniMetricCard extends StatelessWidget {
 // ABA 2: JORNADA
 // ============================================================================
 class _AbaJornadaTrilha extends StatelessWidget {
-  final void Function(String msg) onAviso;
-  const _AbaJornadaTrilha({required this.onAviso});
+  const _AbaJornadaTrilha();
 
   void _iniciarAcaoComCanteiro(BuildContext context, String acao) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      onAviso('Faça login para selecionar canteiro.');
+      AppMessenger.warn('Faça login para selecionar canteiro.');
       return;
     }
 
@@ -486,28 +523,22 @@ class _AbaJornadaTrilha extends StatelessWidget {
         subtitulo: 'Escolha o canteiro onde você quer executar essa etapa.',
         onCadastrar: () {
           Navigator.pop(ctx);
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-          );
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TelaCanteiros()));
         },
         onSelecionar: (doc) {
           Navigator.pop(ctx);
 
           if (acao == 'diagnostico') {
             Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TelaDiagnostico(canteiroIdOrigem: doc.id),
-              ),
-            );
+                context,
+                MaterialPageRoute(
+                    builder: (_) => TelaDiagnostico(canteiroIdOrigem: doc.id)));
           } else if (acao == 'calagem') {
             Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TelaCalagem(canteiroIdOrigem: doc.id),
-              ),
-            );
+                context,
+                MaterialPageRoute(
+                    builder: (_) => TelaCalagem(canteiroIdOrigem: doc.id)));
           }
         },
       ),
@@ -525,8 +556,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [primary.withOpacity(0.95), primary.withOpacity(0.75)],
-            ),
+                colors: [primary.withOpacity(0.95), primary.withOpacity(0.75)]),
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
@@ -544,19 +574,14 @@ class _AbaJornadaTrilha extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Siga o Passo a Passo',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text('Siga o Passo a Passo',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                     SizedBox(height: 4),
-                    Text(
-                      'Complete as fases para colher mais.',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
+                    Text('Complete as fases para colher mais.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
                   ],
                 ),
               ),
@@ -565,29 +590,27 @@ class _AbaJornadaTrilha extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         _TimelineItem(
-          fase: 0,
+          fase: 1,
           titulo: 'Planejamento',
           descricao: 'O que plantar?',
           icone: Icons.calculate,
           corIcone: Colors.blue,
           onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaPlanejamentoConsumo()),
-          ),
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const TelaPlanejamentoConsumo())),
         ),
         _TimelineItem(
-          fase: 1,
+          fase: 2,
           titulo: 'Meus Canteiros',
           descricao: 'Organize sua área.',
           icone: Icons.grid_on,
           corIcone: Colors.green,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-          ),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TelaCanteiros())),
         ),
         _TimelineItem(
-          fase: 2,
+          fase: 3,
           titulo: 'Diagnóstico',
           descricao: 'Analise o solo.',
           icone: Icons.science,
@@ -595,7 +618,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
           onTap: () => _iniciarAcaoComCanteiro(context, 'diagnostico'),
         ),
         _TimelineItem(
-          fase: 3,
+          fase: 4,
           titulo: 'Calagem',
           descricao: 'Corrija a acidez.',
           icone: Icons.landscape,
@@ -603,19 +626,17 @@ class _AbaJornadaTrilha extends StatelessWidget {
           onTap: () => _iniciarAcaoComCanteiro(context, 'calagem'),
         ),
         _TimelineItem(
-          fase: 4,
+          fase: 5,
           titulo: 'Adubação',
           descricao: 'Nutrição Organo15.',
           icone: Icons.eco,
           corIcone: Colors.orange,
           bloqueado: false,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaAdubacaoOrgano15()),
-          ),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const TelaAdubacaoOrgano15())),
         ),
         const _TimelineItem(
-          fase: 5,
+          fase: 6,
           titulo: 'Colheita',
           descricao: 'Venda (Em breve).',
           icone: Icons.shopping_basket,
@@ -685,18 +706,12 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                widget.titulo,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text(widget.titulo,
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              Text(
-                widget.subtitulo,
-                style: const TextStyle(color: Colors.grey),
-              ),
+              Text(widget.subtitulo,
+                  style: const TextStyle(color: Colors.grey)),
               const SizedBox(height: 12),
               TextField(
                 onChanged: (v) =>
@@ -783,8 +798,9 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                       itemBuilder: (context, index) {
                         final doc = docs[index] as QueryDocumentSnapshot;
                         final nome = (doc['nome'] ?? 'Canteiro').toString();
-                        final area =
-                            (doc.data() as Map<String, dynamic>)['area_m2'];
+                        final area = doc.data() is Map<String, dynamic>
+                            ? (doc.data() as Map<String, dynamic>)['area_m2']
+                            : null;
 
                         double areaM2 = 0;
                         if (area is num) areaM2 = area.toDouble();
@@ -793,10 +809,9 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
                         return ListTile(
                           leading:
                               const Icon(Icons.grid_on, color: Colors.green),
-                          title: Text(
-                            nome,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          title: Text(nome,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle:
                               Text('Área: ${areaM2.toStringAsFixed(2)} m²'),
                           trailing: const Icon(Icons.chevron_right),
@@ -816,11 +831,10 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
 }
 
 // ============================================================================
-// ABA 3: PERFIL
+// PERFIL (versão premium com usuarios/{uid})
 // ============================================================================
-class _AbaPerfil extends StatelessWidget {
-  final void Function(String msg, {Color? cor}) onAviso;
-  const _AbaPerfil({required this.onAviso});
+class AbaPerfilPage extends StatelessWidget {
+  const AbaPerfilPage({super.key});
 
   Future<void> _confirmarLogout(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -830,14 +844,11 @@ class _AbaPerfil extends StatelessWidget {
         content: const Text('Você será desconectado da sua conta.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Sair'),
           ),
@@ -847,85 +858,88 @@ class _AbaPerfil extends StatelessWidget {
 
     if (ok == true) {
       await FirebaseAuth.instance.signOut();
-      onAviso('Você saiu da conta.', cor: Colors.green);
+      AppMessenger.success('Você saiu da conta.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final repo = UserProfileRepository();
 
     if (user == null) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-        children: const [
-          _InfoBox(
-            icon: Icons.lock_outline,
-            cor: Colors.orange,
-            texto: 'Você está desconectado. Faça login para acessar o perfil.',
-          ),
-        ],
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: _InfoBox(
+          icon: Icons.lock_outline,
+          cor: Colors.orange,
+          texto: 'Você está desconectado. Faça login para acessar o perfil.',
+        ),
       );
     }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
       children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 34,
-                backgroundColor: Colors.green.shade100,
-                child: Text(
-                  user.email?.isNotEmpty == true
-                      ? user.email![0].toUpperCase()
-                      : 'U',
-                  style: TextStyle(
-                    fontSize: 28,
-                    color: Colors.green.shade800,
-                    fontWeight: FontWeight.bold,
+        StreamBuilder(
+          stream: repo.watch(user.uid),
+          builder: (context, snapshot) {
+            final data = snapshot.data?.data() as Map<String, dynamic>?;
+            final displayName = (data?['displayName'] ?? '').toString().trim();
+            final plan = (data?['plan'] ?? 'free').toString();
+
+            final titulo = displayName.isNotEmpty
+                ? displayName
+                : (user.email ?? 'Produtor');
+            final subtitulo = 'Plano: ${plan.toUpperCase()}';
+
+            return Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.email ?? 'Produtor',
-                      style: const TextStyle(
-                        fontSize: 16,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 34,
+                    backgroundColor: Colors.green.shade100,
+                    child: Text(
+                      titulo.isNotEmpty ? titulo[0].toUpperCase() : 'U',
+                      style: TextStyle(
+                        fontSize: 28,
+                        color: Colors.green.shade800,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Modo: Individual (em breve: Família/Equipe)',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(titulo,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        Text(subtitulo,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 12)),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
         const SizedBox(height: 14),
         _CardSection(
@@ -934,12 +948,12 @@ class _AbaPerfil extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.help_outline),
               title: const Text('Ajuda & Suporte'),
-              onTap: () => onAviso('Suporte: em breve 😉'),
+              onTap: () => AppMessenger.info('Suporte: em breve 😉'),
             ),
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('Privacidade'),
-              onTap: () => onAviso('Privacidade: em breve'),
+              onTap: () => AppMessenger.info('Privacidade: em breve'),
             ),
           ],
         ),
@@ -996,9 +1010,6 @@ class _CardSection extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// WIDGETS AUXILIARES
-// ============================================================================
 class _CardMenuGrande extends StatelessWidget {
   final String titulo;
   final String? subtitulo;
@@ -1048,17 +1059,14 @@ class _CardMenuGrande extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  titulo,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16),
-                ),
+                Text(titulo,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
                 if (subtitulo != null) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    subtitulo!,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
-                  ),
+                  Text(subtitulo!,
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 11)),
                 ],
               ],
             ),
@@ -1107,10 +1115,9 @@ class _TimelineItem extends StatelessWidget {
                   border: Border.all(color: Colors.white, width: 2),
                   boxShadow: const [
                     BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
+                        color: Colors.black12,
+                        blurRadius: 4,
+                        offset: Offset(0, 2)),
                   ],
                 ),
                 child: Center(
@@ -1180,11 +1187,9 @@ class _TimelineItem extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 5),
-                              Text(
-                                descricao,
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[600]),
-                              ),
+                              Text(descricao,
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey[600])),
                             ],
                           ),
                         ),

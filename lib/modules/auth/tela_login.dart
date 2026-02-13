@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/repositories/user_profile_repository.dart';
+import '../../core/ui/app_messenger.dart';
+
 class TelaLogin extends StatefulWidget {
   const TelaLogin({super.key});
 
@@ -11,24 +14,19 @@ class TelaLogin extends StatefulWidget {
 class _TelaLoginState extends State<TelaLogin> {
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
-
   final _formKey = GlobalKey<FormState>();
 
   bool _ehCadastro = false;
   bool _loading = false;
   bool _verSenha = false;
 
+  final _profileRepo = UserProfileRepository();
+
   @override
   void dispose() {
     _emailController.dispose();
     _senhaController.dispose();
     super.dispose();
-  }
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
-    );
   }
 
   Future<void> _autenticar() async {
@@ -41,31 +39,39 @@ class _TelaLoginState extends State<TelaLogin> {
       final email = _emailController.text.trim();
       final senha = _senhaController.text.trim();
 
+      UserCredential cred;
+
       if (_ehCadastro) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
           password: senha,
         );
       } else {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: email,
           password: senha,
         );
       }
-      // Se deu certo: o AuthGate (main.dart) troca pra Home automaticamente.
+
+      final user = cred.user;
+      if (user != null) {
+        await _profileRepo.ensureFromAuthUser(user);
+      }
+      // GoRouter redirect já manda pra Home automaticamente
     } on FirebaseAuthException catch (e) {
-      String mensagem = "Erro desconhecido";
+      String msg = 'Erro desconhecido';
 
-      if (e.code == 'user-not-found') mensagem = "E-mail não cadastrado.";
-      if (e.code == 'wrong-password') mensagem = "Senha incorreta.";
-      if (e.code == 'invalid-email') mensagem = "E-mail inválido.";
-      if (e.code == 'email-already-in-use') mensagem = "Este e-mail já existe.";
-      if (e.code == 'weak-password')
-        mensagem = "Senha fraca (mínimo 6 caracteres).";
+      if (e.code == 'user-not-found') msg = 'E-mail não cadastrado.';
+      if (e.code == 'wrong-password') msg = 'Senha incorreta.';
+      if (e.code == 'invalid-email') msg = 'E-mail inválido.';
+      if (e.code == 'email-already-in-use') msg = 'Este e-mail já existe.';
+      if (e.code == 'weak-password') msg = 'Senha fraca (mínimo 6 caracteres).';
       if (e.code == 'network-request-failed')
-        mensagem = "Sem internet / falha de rede.";
+        msg = 'Sem internet / falha de rede.';
 
-      _snack(mensagem);
+      AppMessenger.error(msg);
+    } catch (e) {
+      AppMessenger.error('Erro: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -93,8 +99,6 @@ class _TelaLoginState extends State<TelaLogin> {
                         fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 30),
-
-                  // EMAIL
                   TextFormField(
                     controller: _emailController,
                     decoration: const InputDecoration(
@@ -111,8 +115,6 @@ class _TelaLoginState extends State<TelaLogin> {
                     },
                   ),
                   const SizedBox(height: 16),
-
-                  // SENHA
                   TextFormField(
                     controller: _senhaController,
                     decoration: InputDecoration(
@@ -136,8 +138,6 @@ class _TelaLoginState extends State<TelaLogin> {
                     },
                   ),
                   const SizedBox(height: 24),
-
-                  // BOTÃO
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -155,8 +155,6 @@ class _TelaLoginState extends State<TelaLogin> {
                           : Text(_ehCadastro ? 'CADASTRAR' : 'ENTRAR'),
                     ),
                   ),
-
-                  // TROCAR MODO
                   TextButton(
                     onPressed: _loading
                         ? null

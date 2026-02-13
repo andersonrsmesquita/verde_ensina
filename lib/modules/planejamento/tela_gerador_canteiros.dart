@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/ui/app_messenger.dart';
+
 class TelaGeradorCanteiros extends StatefulWidget {
   final List<Map<String, dynamic>> itensPlanejados;
 
@@ -26,15 +28,31 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   // ---------------------------
   double _asDouble(dynamic v) {
     if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
+
+    if (v is num) {
+      final d = v.toDouble();
+      if (d.isNaN || d.isInfinite) return 0.0;
+      return d;
+    }
+
     final s = v.toString().replaceAll(',', '.').trim();
-    return double.tryParse(s) ?? 0.0;
+    final d = double.tryParse(s) ?? 0.0;
+    if (d.isNaN || d.isInfinite) return 0.0;
+    return d;
   }
 
   int _asInt(dynamic v) {
     if (v == null) return 0;
+
     if (v is int) return v;
+
+    if (v is double) {
+      if (v.isNaN || v.isInfinite) return 0;
+      return v.round();
+    }
+
     if (v is num) return v.round();
+
     return int.tryParse(v.toString().trim()) ?? 0;
   }
 
@@ -55,6 +73,72 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           .toList();
     }
     return <String>[];
+  }
+
+  // ---------------------------
+  // Sanitizador Firestore (anti “abort()” no Windows)
+  // ---------------------------
+  Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
+    final val = _sanitize(map, r'$');
+    return (val as Map).cast<String, dynamic>();
+  }
+
+  dynamic _sanitize(dynamic value, String path) {
+    if (value == null) return null;
+
+    // tipos OK
+    if (value is String || value is bool || value is int) return value;
+
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) {
+        throw ArgumentError(
+            'Firestore: double inválido em $path (NaN/Infinity).');
+      }
+      return value;
+    }
+
+    if (value is num) {
+      final d = value.toDouble();
+      if (d.isNaN || d.isInfinite) {
+        throw ArgumentError('Firestore: num inválido em $path (NaN/Infinity).');
+      }
+      return d; // Firestore gosta de num como double
+    }
+
+    if (value is Timestamp ||
+        value is GeoPoint ||
+        value is FieldValue ||
+        value is DocumentReference) {
+      return value;
+    }
+
+    if (value is DateTime) return Timestamp.fromDate(value);
+    if (value is Enum) return value.name;
+
+    if (value is List) {
+      return value.asMap().entries.map((e) {
+        return _sanitize(e.value, '$path[${e.key}]');
+      }).toList();
+    }
+
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      for (final entry in value.entries) {
+        final k = entry.key;
+        if (k is! String) {
+          throw ArgumentError(
+            'Firestore: chave não-String em $path -> "$k" (${k.runtimeType})',
+          );
+        }
+        out[k] = _sanitize(entry.value, '$path.$k');
+      }
+      return out;
+    }
+
+    throw UnsupportedError(
+      'Firestore: tipo NÃO suportado em $path -> ${value.runtimeType}. '
+      'Converta antes de salvar.',
+    );
   }
 
   // ---------------------------
@@ -89,7 +173,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     Map<String, dynamic> canteiro,
     Map<String, dynamic> candidata,
   ) {
-    // quanto maior, melhor
     final nomeCandidata = _nomePlanta(candidata);
 
     final parDoCanteiro = List<String>.from(
@@ -99,10 +182,8 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
     int score = 0;
 
-    // Se o canteiro "quer" a candidata, sobe
     if (parDoCanteiro.contains(nomeCandidata)) score += 2;
 
-    // Se a candidata "quer" alguém que já tá no canteiro, sobe
     final plantasNoCanteiro = List<Map<String, dynamic>>.from(
       canteiro['plantas'] as List? ?? const [],
     );
@@ -114,7 +195,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       }
     }
 
-    // Se a candidata é pequena (área baixa), ajuda a “encaixar”
     final area = _asDouble(candidata['area']);
     if (area > 0 && area < 1.0) score += 1;
 
@@ -126,6 +206,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       canteiro['plantas'] as List? ?? const [],
     );
     final nomes = plantas.map(_nomePlanta).toList();
+
     if (nomes.isEmpty) {
       canteiro['nome'] = 'Canteiro';
       return;
@@ -135,9 +216,9 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       return;
     }
 
-    // Nome “premium”: mostra até 2 culturas, o resto vira "+X"
     final top2 = nomes.take(2).toList();
     final resto = nomes.length - 2;
+
     canteiro['nome'] = resto > 0
         ? 'Consórcio: ${top2.join(' + ')} +$resto'
         : 'Consórcio: ${top2.join(' + ')}';
@@ -146,7 +227,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   void _processarInteligencia() {
     final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
 
-    // Ordena por área desc (robusto)
     fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
 
     final canteiros = <Map<String, dynamic>>[];
@@ -162,7 +242,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         'par': List<String>.from(_listaString(mestre['par'])),
       };
 
-      // Ordena candidatas por preferência e “encaixe”
       final candidatasOrdenadas = List<Map<String, dynamic>>.from(fila)
         ..sort((a, b) {
           final sa = _scorePreferencia(canteiro, a);
@@ -177,15 +256,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         if (_ehCompat(canteiro, candidata)) {
           (canteiro['plantas'] as List).add(candidata);
           canteiro['areaTotal'] =
-              (_asDouble(canteiro['areaTotal'])) + _asDouble(candidata['area']);
+              _asDouble(canteiro['areaTotal']) + _asDouble(candidata['area']);
 
-          // acumula inimigos
-          final inimigosCandidata = _listaString(candidata['evitar']);
-          (canteiro['evitar'] as List).addAll(inimigosCandidata);
-
-          // acumula pares
-          final paresCandidata = _listaString(candidata['par']);
-          (canteiro['par'] as List).addAll(paresCandidata);
+          (canteiro['evitar'] as List)
+              .addAll(_listaString(candidata['evitar']));
+          (canteiro['par'] as List).addAll(_listaString(candidata['par']));
 
           _atualizarNomeAuto(canteiro);
         } else {
@@ -269,22 +344,14 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   }
 
   // ---------------------------
-  // Firestore Save
+  // Firestore Save (batch + AppMessenger + popUntil)
   // ---------------------------
   Future<void> _criarTodosCanteiros() async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Você precisa estar logado para salvar o planejamento.',
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppMessenger.error(
+          'Você precisa estar logado para salvar o planejamento.');
       return;
     }
 
@@ -298,19 +365,18 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         final canteiroRef = fs.collection('canteiros').doc();
 
         final area = _asDouble(sugestao['areaTotal']);
-        const largura = 1.0; // padrão (pode virar config depois)
+        const largura = 1.0;
         final comprimento = area > 0 ? (area / largura) : 1.0;
 
         final plantas = List<Map<String, dynamic>>.from(
           sugestao['plantas'] as List? ?? const [],
         );
-        final culturas = plantas.map((p) => _nomePlanta(p)).toList();
-        final mudasTotais = plantas.fold<int>(
-          0,
-          (acc, p) => acc + _asInt(p['mudas']),
-        );
 
-        batch.set(canteiroRef, {
+        final culturas = plantas.map((p) => _nomePlanta(p)).toList();
+        final mudasTotais =
+            plantas.fold<int>(0, (acc, p) => acc + _asInt(p['mudas']));
+
+        final canteiroPayload = <String, dynamic>{
           'uid_usuario': user.uid,
           'nome': _asString(sugestao['nome'], fallback: 'Canteiro'),
           'area_m2': double.parse(area.toStringAsFixed(2)),
@@ -321,7 +387,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           'culturas': culturas,
           'mudas_totais': mudasTotais,
           'plantas_planejadas': plantas.map((p) {
-            return {
+            return <String, dynamic>{
               'planta': _nomePlanta(p),
               'mudas': _asInt(p['mudas']),
               'area': _asDouble(p['area']),
@@ -331,7 +397,9 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           }).toList(),
           'data_criacao': FieldValue.serverTimestamp(),
           'data_atualizacao': FieldValue.serverTimestamp(),
-        });
+        };
+
+        batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
         final histRef = fs.collection('historico_manejo').doc();
 
@@ -345,7 +413,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           detalhes += "- $nome: $mudas mudas\n";
         }
 
-        batch.set(histRef, {
+        final historicoPayload = <String, dynamic>{
           'canteiro_id': canteiroRef.id,
           'uid_usuario': user.uid,
           'tipo_manejo': 'Plantio',
@@ -358,30 +426,24 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           'data_colheita_prevista': Timestamp.fromDate(
             DateTime.now().add(const Duration(days: 90)),
           ),
-        });
+        };
+
+        batch.set(histRef, _sanitizeMap(historicoPayload));
       }
 
       await batch.commit();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Canteiros criados e plantados!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
 
+      // Primeiro volta pra Home
       Navigator.of(context).popUntil((route) => route.isFirst);
+
+      // Depois mostra a msg (sem depender do contexto da tela que acabou de morrer)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppMessenger.success('✅ Canteiros criados e plantados!');
+      });
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao salvar planejamento: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppMessenger.error('Erro ao salvar planejamento: $e');
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
@@ -397,7 +459,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     return Stack(
       children: [
         Scaffold(
-          backgroundColor: const Color(0xFFF5F7FA),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
             title: const Text(
               'Plano de Canteiros',
@@ -436,10 +498,8 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _CardCanteiro(
-                          nome: _asString(
-                            canteiro['nome'],
-                            fallback: 'Canteiro',
-                          ),
+                          nome:
+                              _asString(canteiro['nome'], fallback: 'Canteiro'),
                           area: area,
                           culturasCount: plantas.length,
                           mudasTotal: mudas,
@@ -474,7 +534,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                       ? null
                       : _criarTodosCanteiros,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[700],
+                    backgroundColor: Colors.green.shade700,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -496,7 +556,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           ),
         ),
 
-        // Overlay de loading premium
+        // Overlay de loading
         IgnorePointer(
           ignoring: !_salvando,
           child: AnimatedOpacity(
@@ -628,10 +688,8 @@ class _MiniStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
+          Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
           const SizedBox(height: 4),
           Text(
             value,
@@ -709,7 +767,6 @@ class _CardCanteiro extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -737,16 +794,13 @@ class _CardCanteiro extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 10),
           const Divider(height: 18),
-
           const Text(
             'Culturas neste canteiro:',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 10),
-
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -755,10 +809,8 @@ class _CardCanteiro extends StatelessWidget {
               final mudas = (p['mudas'] ?? 0).toString();
 
               return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.green.shade50,
                   borderRadius: BorderRadius.circular(999),
@@ -808,7 +860,7 @@ class _ChipInfo extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             text,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.black87,
               fontWeight: FontWeight.w600,
               fontSize: 12,

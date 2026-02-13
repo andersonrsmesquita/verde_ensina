@@ -3,20 +3,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 class AuthStateListenable extends ChangeNotifier {
+  late final StreamSubscription<User?> _sub;
+
   AuthStateListenable() {
     _sub = FirebaseAuth.instance.authStateChanges().listen((_) {
       notifyListeners();
     });
   }
 
-  StreamSubscription<User?>? _sub;
-
-  User? get user => FirebaseAuth.instance.currentUser;
-  bool get isLoggedIn => user != null;
-
   @override
   void dispose() {
-    _sub?.cancel();
+    _sub.cancel();
     super.dispose();
   }
 }
