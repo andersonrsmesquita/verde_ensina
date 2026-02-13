@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'tela_detalhes_canteiro.dart';
+import '../../core/ui/app_messenger.dart';
 
 class TelaCanteiros extends StatefulWidget {
   const TelaCanteiros({super.key});
@@ -360,6 +361,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
     final formKey = GlobalKey<FormState>();
     bool salvando = false;
+    bool sheetFechando = false;
 
     try {
       await showModalBottomSheet(
@@ -369,7 +371,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         builder: (sheetCtx) => StatefulBuilder(
           builder: (context, setModalState) {
             void closeSheet() {
-              if (Navigator.of(sheetCtx).canPop()) Navigator.of(sheetCtx).pop();
+              if (sheetFechando) return;
+              sheetFechando = true;
+              if (!sheetCtx.mounted) return;
+              // Pop em microtask pra evitar asserts do framework durante dispose
+              Future.microtask(() {
+                if (sheetCtx.mounted && Navigator.of(sheetCtx).canPop()) {
+                  Navigator.of(sheetCtx).pop();
+                }
+              });
             }
 
             Future<void> salvar() async {
@@ -440,28 +450,16 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
                 closeSheet();
 
-                _runNextFrame(() {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          editando ? 'Local atualizado.' : 'Local cadastrado!'),
-                      backgroundColor: Colors.green,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                // Mensagem depois de fechar (sem depender de context)
+                Future.microtask(() {
+                  AppMessenger.success(editando ? 'Local atualizado.' : 'Local cadastrado!');
                 });
               } catch (e) {
-                _runNextFrame(() {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(
-                      content: Text('Erro ao salvar: $e'),
-                      backgroundColor: Colors.red,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                Future.microtask(() {
+                  AppMessenger.error('Erro ao salvar: $e');
                 });
               } finally {
-                if (sheetCtx.mounted) setModalState(() => salvando = false);
+                if (!sheetFechando && sheetCtx.mounted) setModalState(() => salvando = false);
               }
             }
 

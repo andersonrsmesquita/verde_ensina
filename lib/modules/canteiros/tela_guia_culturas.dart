@@ -50,16 +50,16 @@ class _TelaGuiaCulturasState extends State<TelaGuiaCulturas> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<String?>(
+                DropdownButtonFormField<String>(
                   value: _cat,
                   decoration: const InputDecoration(
                     labelText: 'Categoria',
                     prefixIcon: Icon(Icons.filter_list),
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Todas')),
+                    const DropdownMenuItem(value: null, child: Text('Todas')),
                     ...categorias.map(
-                      (c) => DropdownMenuItem<String?>(value: c, child: Text(c)),
+                      (c) => DropdownMenuItem(value: c, child: Text(c)),
                     ),
                   ],
                   onChanged: (v) => setState(() => _cat = v),

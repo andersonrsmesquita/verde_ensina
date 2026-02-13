@@ -766,9 +766,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             qtdPorPlanta[p] = qtdInicial;
           }
 
-          final recomendadas = List<String>.from(
-            calendarioRegional[regiao]?[mes] ?? const [],
-          );
+          final recomendadas = culturasPorRegiaoMes(regiao, mes);
 
           final porCategoria = <String, List<String>>{};
           for (final p in recomendadas) {
