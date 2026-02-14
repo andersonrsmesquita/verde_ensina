@@ -7,7 +7,15 @@ class IrrigacaoRepository {
 
   IrrigacaoRepository(this.tenantId);
 
-  // Histórico
+  // Stream de canteiros ativos para o seletor
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchCanteiros() {
+    return FirebasePaths.canteirosCol(tenantId)
+        .where('ativo', isEqualTo: true)
+        .orderBy('nome')
+        .snapshots();
+  }
+
+  // Stream de histórico filtrado
   Stream<QuerySnapshot<Map<String, dynamic>>> watchHistorico() {
     return FirebasePaths.historicoManejoCol(tenantId)
         .where('tipo_manejo', isEqualTo: 'Irrigação')
@@ -16,31 +24,20 @@ class IrrigacaoRepository {
         .snapshots();
   }
 
-  // Canteiros Ativos
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchCanteiros() {
-    return FirebasePaths.canteirosCol(tenantId)
-        .where('ativo', isEqualTo: true)
-        .orderBy('nome')
-        .snapshots();
-  }
-
-  // Busca Custo da Água nas Configurações
+  // Busca custo da água configurado no perfil do usuário
   Future<double> getCustoAguaUsuario(String uid) async {
     try {
       final doc = await _db.collection('configuracoes_usuario').doc(uid).get();
-      if (doc.exists && doc.data() != null) {
-        final val = doc.data()!['custo_padrao_agua'];
+      if (doc.exists) {
+        final val = doc.data()?['custo_padrao_agua'];
         if (val is num) return val.toDouble();
-        if (val is String)
-          return double.tryParse(val.replaceAll(',', '.')) ?? 0.0;
       }
-    } catch (e) {
-      print('Erro config: $e');
-    }
-    return 0.0;
+    } catch (_) {}
+    // De acordo com o manual, o custo padrão será R$ 6,00 por m³ [cite: 2935]
+    return 6.00;
   }
 
-  // Salvar Rega (Suporta Lote)
+  // Gravação em lote (SaaS Premium) corrigida para bater com a TelaIrrigacao
   Future<void> registrarRegaEmLote({
     required String uidUsuario,
     required List<Map<String, dynamic>> canteirosSelecionados,
@@ -48,38 +45,61 @@ class IrrigacaoRepository {
     required String metodo,
     required double custoAguaM3,
     required double volumeTotalLitros,
-    String? obs,
+    required String obs,
   }) async {
     final batch = _db.batch();
+
+    // Extrai nomes e IDs para salvar no banco
+    final nomes = canteirosSelecionados.map((l) => l['nome']).join(', ');
+    final ids = canteirosSelecionados.map((l) => l['id']).toList();
+    final agora = FieldValue.serverTimestamp();
+
+    // 1. Cria o documento principal de histórico
     final docRef = FirebasePaths.historicoManejoCol(tenantId).doc();
 
-    // Calcula custo total baseado no volume
-    final custoTotal = volumeTotalLitros * (custoAguaM3 / 1000);
-
-    // Nomes para exibição
-    final nomes = canteirosSelecionados.map((c) => c['nome']).join(', ');
-
-    final payload = {
-      'canteiro_id': 'LOTE', // Indica que foi múltiplo
-      'canteiros_ids': canteirosSelecionados.map((c) => c['id']).toList(),
-      'canteiro_nome': canteirosSelecionados.length > 1
-          ? '${canteirosSelecionados.length} Locais'
-          : nomes,
+    batch.set(docRef, {
+      'canteiro_id': ids.length == 1 ? ids.first : 'LOTE',
+      'canteiro_nome': ids.length > 1 ? '${ids.length} Locais' : nomes,
       'canteiros_detalhe': nomes,
       'uid_usuario': uidUsuario,
       'tipo_manejo': 'Irrigação',
       'produto': 'Água ($metodo)',
-      'detalhes': '$tempoMinutos min via $metodo. ${obs ?? ''}',
       'volume_l': volumeTotalLitros,
-      'custo_estimado': custoTotal,
+      // O custo é calculado convertendo o m³ para litros [cite: 3309]
+      'custo_estimado': volumeTotalLitros * (custoAguaM3 / 1000),
       'tempo_min': tempoMinutos,
       'metodo': metodo,
-      'data': FieldValue.serverTimestamp(),
+      'obs': obs,
+      'data': agora,
+      'createdAt': agora,
       'concluido': true,
-      'origem': 'modulo_irrigacao_v2',
-    };
+      'origem': 'assistente_irrigacao_pro',
+    });
 
-    batch.set(docRef, payload);
+    // 2. Atualiza os dados dentro de CADA canteiro selecionado para manter o dashboard do usuário atualizado
+    for (var c in canteirosSelecionados) {
+      final canteiroRef = FirebasePaths.canteirosCol(tenantId).doc(c['id']);
+
+      final area = c['area'] as double;
+      // Calcula o volume individual (5 litros por metro quadrado)
+      final volumeCanteiro = area * 5.0;
+
+      batch.set(
+          canteiroRef,
+          {
+            'updatedAt': agora,
+            'totais_insumos.agua_litros': FieldValue.increment(volumeCanteiro),
+            'ult_manejo': {
+              'tipo': 'Irrigação',
+              'hist_id': docRef.id,
+              'resumo': '$metodo (${volumeCanteiro.toStringAsFixed(0)} L)',
+              'atualizadoEm': agora,
+            }
+          },
+          SetOptions(merge: true));
+    }
+
+    // 3. Salva tudo de uma vez no Firebase
     await batch.commit();
   }
 }

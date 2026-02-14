@@ -1,61 +1,62 @@
 import 'package:flutter/material.dart';
 
 /// Central de Tokens de Design do Aplicativo (Design System).
-/// Define espaçamentos, bordas, sombras e durações padronizadas.
-/// Utiliza um sistema de grid de 4px/8px para consistência visual.
 class AppTokens {
-  // Impede a instanciação acidental da classe
   AppTokens._();
 
   // ==========================================
-  // 1. ESPAÇAMENTOS (Grid de 4px / 8px)
+  // 1. ESPAÇAMENTOS
   // ==========================================
   static const double xxs = 4.0;
-  static const double xs  = 8.0;
-  static const double sm  = 12.0;
-  static const double md  = 16.0;
-  static const double lg  = 20.0; // ou 24.0 (múltiplo de 8)
-  static const double xl  = 24.0;
-  static const double xxl = 32.0;
-  static const double xxxl = 48.0;
+  static const double xs = 8.0;
+  static const double sm = 12.0;
+  static const double md = 16.0;
+  static const double lg = 24.0;
+  static const double xl = 32.0;
+  static const double xxl = 48.0;
+  static const double xxxl = 64.0;
 
   // ==========================================
-  // 2. ARREDONDAMENTOS (Bordas - Material 3)
+  // 2. ARREDONDAMENTOS (COMPATIBILIDADE TOTAL)
   // ==========================================
-  static const double rXs = 8.0;
-  static const double rSm = 12.0;
-  static const double rMd = 16.0; // Ajustado para o padrão M3
-  static const double rLg = 24.0; // Excelente para modais curvos e botões grandes
-  static const double rXl = 32.0;
-  static const double rPill = 999.0; // Borda totalmente arredondada (Formato de pílula)
+
+  // Nomes novos (Usados na Tela de Irrigação)
+  static const double radiusXs = 8.0;
+  static const double radiusSm = 12.0;
+  static const double radiusMd = 16.0;
+  static const double radiusLg = 24.0;
+  static const double radiusXl = 32.0;
+  static const double radiusPill = 999.0;
+
+  // Nomes antigos (Usados no resto do App - Aliases)
+  static const double rXs = radiusXs;
+  static const double rSm = radiusSm;
+  static const double rMd = radiusMd;
+  static const double rLg = radiusLg;
+  static const double rXl = radiusXl;
+  static const double rPill = radiusPill;
 
   // ==========================================
-  // 3. TAMANHOS DE COMPONENTES E ÍCONES
+  // 3. TAMANHOS
   // ==========================================
   static const double maxWidth = 900.0;
-  
   static const double btnHeight = 48.0;
-  static const double btnHeightSm = 36.0; // Botões menores (ex: tags)
-  
+  static const double btnHeightSm = 36.0;
   static const double iconSm = 18.0;
   static const double iconMd = 24.0;
   static const double iconLg = 32.0;
 
   // ==========================================
-  // 4. ANIMAÇÕES (Durações e Curvas)
+  // 4. ANIMAÇÕES
   // ==========================================
   static const Duration animFast = Duration(milliseconds: 150);
   static const Duration animNormal = Duration(milliseconds: 250);
   static const Duration animSlow = Duration(milliseconds: 350);
-  
-  // Curva padrão para movimentos suaves (Acelera e desacelera)
   static const Curve curveDefault = Curves.easeInOut;
 
   // ==========================================
-  // 5. SOMBRAS (Elevações Premium)
+  // 5. SOMBRAS
   // ==========================================
-
-  /// Sombra sutil para Cards do dia a dia e itens de lista.
   static List<BoxShadow> shadowSm(Color c) => [
         BoxShadow(
           color: c.withOpacity(0.04),
@@ -64,7 +65,6 @@ class AppTokens {
         ),
       ];
 
-  /// Sombra "Premium" profunda para pop-ups, bottom sheets e modais.
   static List<BoxShadow> shadowLg(Color c) => [
         BoxShadow(
           color: c.withOpacity(0.08),

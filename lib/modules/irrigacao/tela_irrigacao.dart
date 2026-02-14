@@ -20,21 +20,11 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
   final _weatherService = WeatherService();
   Future<WeatherData>? _weatherFuture;
 
-  // Cache do custo para não buscar toda vez que abre o modal
   double _custoAguaCache = 6.0;
-
-  @override
-  void initState() {
-    super.initState();
-    // ✅ CORREÇÃO CRÍTICA: Inicialização movida para cá.
-    // O SessionScope precisa de um post-frame callback no initState ou usar didChangeDependencies com flag.
-    // Como session pode mudar, vamos usar didChangeDependencies mas com proteção.
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Garante que só inicializa uma vez para evitar o loop
     if (_repo == null) {
       final session = SessionScope.of(context).session;
       if (session != null) {
@@ -49,9 +39,7 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && _repo != null) {
       final c = await _repo!.getCustoAguaUsuario(user.uid);
-      if (c > 0) {
-        if (mounted) setState(() => _custoAguaCache = c);
-      }
+      if (c > 0 && mounted) setState(() => _custoAguaCache = c);
     }
   }
 
@@ -68,48 +56,60 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    if (_repo == null)
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    if (_repo == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Manejo Hídrico',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Manejo Hídrico'),
         centerTitle: true,
         backgroundColor: Colors.blue.shade800,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildSmartPanel(cs),
-          const SizedBox(height: 10),
+          _buildSmartPanel(theme),
+          const SizedBox(height: AppTokens.sm),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _abrirRegistro,
-                icon: const Icon(Icons.water_drop, color: Colors.white),
-                label: const Text('REGISTRAR IRRIGAÇÃO'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  foregroundColor: Colors.white,
-                ),
+            padding: const EdgeInsets.symmetric(horizontal: AppTokens.md),
+            child: AppButtons.elevatedIcon(
+              onPressed: _abrirRegistro,
+              icon: const Icon(Icons.water_drop),
+              label: const Text('REGISTRAR IRRIGAÇÃO'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: AppTokens.md),
+                elevation: 2,
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          Expanded(child: _buildHistoryList()),
+          const SizedBox(height: AppTokens.lg),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTokens.md),
+            child: Text(
+              'Histórico Recente',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTokens.sm),
+          Expanded(child: _buildHistoryList(theme)),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryList() {
+  Widget _buildHistoryList(ThemeData theme) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _repo!.watchHistorico(),
       builder: (context, snap) {
@@ -121,50 +121,52 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
         if (docs.isEmpty) return const _EmptyState();
 
         return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          padding: const EdgeInsets.fromLTRB(
+              AppTokens.md, 0, AppTokens.md, AppTokens.xl),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const SizedBox(height: AppTokens.sm),
           itemBuilder: (ctx, i) => _RegaCard(data: docs[i].data()),
         );
       },
     );
   }
 
-  Widget _buildSmartPanel(ColorScheme cs) {
+  Widget _buildSmartPanel(ThemeData theme) {
     return FutureBuilder<WeatherData>(
       future: _weatherFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return Container(
             height: 120,
-            margin: const EdgeInsets.all(20),
+            margin: const EdgeInsets.all(AppTokens.md),
             decoration: BoxDecoration(
                 color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
             child: const Center(child: CircularProgressIndicator()),
           );
         }
+
         final w = snapshot.data!;
         final isAlert = w.isRaining || w.humidity > 85;
-        final bg = isAlert
+        final gradientColors = isAlert
             ? [Colors.blueGrey.shade700, Colors.blueGrey.shade500]
-            : [Colors.blue.shade800, Colors.blue.shade600];
+            : [Colors.blue.shade800, Colors.blue.shade500];
 
         return Container(
           width: double.infinity,
-          margin: const EdgeInsets.all(20),
-          padding: const EdgeInsets.all(20),
+          margin: const EdgeInsets.all(AppTokens.md),
+          padding: const EdgeInsets.all(AppTokens.lg),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-                colors: bg,
+                colors: gradientColors,
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppTokens.radiusLg),
             boxShadow: [
               BoxShadow(
-                  color: bg[0].withOpacity(0.4),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5))
+                  color: gradientColors[0].withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6))
             ],
           ),
           child: Column(
@@ -172,29 +174,57 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.location_on,
+                            color: Colors.white70, size: 14),
+                        const SizedBox(width: 4),
                         Text(w.city,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12)),
-                        Text('${w.temp.toStringAsFixed(0)}°C',
-                            style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
+                            style: theme.textTheme.labelMedium
+                                ?.copyWith(color: Colors.white70)),
                       ]),
+                      const SizedBox(height: 2),
+                      Text('${w.temp.toStringAsFixed(0)}°C',
+                          style: theme.textTheme.displayMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              height: 1.0)),
+                    ],
+                  ),
                   Icon(w.isRaining ? Icons.thunderstorm : Icons.wb_sunny,
-                      size: 40, color: Colors.white),
+                      size: 48, color: Colors.white.withOpacity(0.9)),
                 ],
               ),
-              const Divider(color: Colors.white24),
-              Text(w.recommendation,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13)),
+              const SizedBox(height: AppTokens.md),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                        isAlert
+                            ? Icons.warning_amber
+                            : Icons.water_drop_outlined,
+                        color: Colors.white,
+                        size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(w.recommendation,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         );
@@ -209,38 +239,75 @@ class _RegaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     final date = (data['data'] as Timestamp?)?.toDate() ?? DateTime.now();
     final custo = double.tryParse(data['custo_estimado'].toString()) ?? 0.0;
     final vol = double.tryParse(data['volume_l'].toString()) ?? 0.0;
     final local = data['canteiro_nome'] ?? 'Lote';
+    final detalhe = data['canteiros_detalhe'];
 
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey.shade200)),
-      child: ListTile(
-        leading: CircleAvatar(
-            backgroundColor: Colors.blue.shade50,
-            child: const Icon(Icons.water_drop, color: Colors.blue)),
-        title: Text(local,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(
-            "${data['metodo']} • ${DateFormat('dd/MM HH:mm').format(date)}"),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        side: BorderSide(color: cs.outlineVariant.withOpacity(0.4)),
+      ),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.md),
+        child: Row(
           children: [
-            Text("${vol.toStringAsFixed(0)} L",
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.blue)),
-            Text("R\$ ${custo.toStringAsFixed(2)}",
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.green.shade800,
-                    fontWeight: FontWeight.bold)),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                shape: BoxShape.circle,
+              ),
+              child:
+                  Icon(Icons.water_drop, color: Colors.blue.shade700, size: 24),
+            ),
+            const SizedBox(width: AppTokens.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(local,
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  if (detalhe != null && detalhe != local)
+                    Text(detalhe,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: cs.outline),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    "${data['metodo']} • ${DateFormat('dd/MM HH:mm').format(date)}",
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text("${vol.toStringAsFixed(0)} L",
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.blue.shade800)),
+                Text("R\$ ${custo.toStringAsFixed(2)}",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
           ],
         ),
       ),
@@ -251,41 +318,48 @@ class _RegaCard extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
   @override
-  Widget build(BuildContext context) =>
-      const Center(child: Text("Sem registros de rega."));
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.opacity,
+              size: 64, color: Colors.grey.shade300), // Ícone seguro corrigido
+          const SizedBox(height: AppTokens.md),
+          Text(
+            "Sem registros de rega.",
+            style: Theme.of(context)
+                .textTheme
+                .bodyLarge
+                ?.copyWith(color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-// ============================================================================
-// SOLUÇÃO DEFINITIVA DO MODAL (SUBSTITUA A CLASSE _SheetNovaRega INTEIRA)
-// ============================================================================
 class _SheetNovaRega extends StatefulWidget {
   final IrrigacaoRepository repo;
   final double custoAguaM3;
-
-  const _SheetNovaRega(
-      {super.key, required this.repo, required this.custoAguaM3});
+  const _SheetNovaRega({required this.repo, required this.custoAguaM3});
 
   @override
   State<_SheetNovaRega> createState() => _SheetNovaRegaState();
 }
 
 class _SheetNovaRegaState extends State<_SheetNovaRega> {
-  // Lista de canteiros selecionados
   final List<Map<String, dynamic>> _selecionados = [];
-
   String _metodo = 'Gotejamento';
   int _tempo = 30;
   bool _salvando = false;
   final _obsCtrl = TextEditingController();
 
-  // 1. Cálculos (Lógica de Negócio)
   double get _areaTotalSelecionada =>
       _selecionados.fold(0.0, (sum, c) => sum + (c['area'] as double));
 
   double get _volumeEstimadoLitros {
-    // Se tiver área cadastrada, meta é 5L/m2. Se não, estima vazão por tempo.
     if (_areaTotalSelecionada > 0) return _areaTotalSelecionada * 5.0;
-    // Vazão média: Manual (15L/min) | Gotejo (2L/min)
     double vazao = _metodo.contains('Manual') ? 15.0 : 2.0;
     return _tempo * vazao;
   }
@@ -293,14 +367,15 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
   double get _custoEstimado =>
       _volumeEstimadoLitros * (widget.custoAguaM3 / 1000);
 
-  // 2. Diálogo de Seleção (Checkbox)
-  void _abrirSelecaoCanteiros(List<QueryDocumentSnapshot> docs) async {
+  void _abrirSelecao(List<QueryDocumentSnapshot> docs) async {
     await showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppTokens.radiusLg)),
               title: const Text('Selecione os Locais'),
               content: SizedBox(
                 width: double.maxFinite,
@@ -312,16 +387,16 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
                     final data = docs[i].data() as Map<String, dynamic>;
                     final id = docs[i].id;
                     final nome = data['nome'] ?? 'Sem nome';
-                    // Tratamento robusto para número
                     final area =
-                        double.tryParse(data['area_m2'].toString()) ?? 0.0;
-
+                        double.tryParse((data['area_m2'] ?? 0).toString()) ??
+                            0.0;
                     final isSelected = _selecionados.any((s) => s['id'] == id);
 
                     return CheckboxListTile(
-                      activeColor: Colors.green,
+                      activeColor: Colors.blue.shade800,
+                      contentPadding: EdgeInsets.zero,
                       title: Text(nome,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: Text('${area}m²'),
                       value: isSelected,
                       onChanged: (val) {
@@ -333,7 +408,6 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
                             _selecionados.removeWhere((s) => s['id'] == id);
                           }
                         });
-                        // Força atualização da tela de baixo para recalcular custos
                         this.setState(() {});
                       },
                     );
@@ -343,7 +417,7 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('PRONTO',
+                    child: const Text('CONCLUIR',
                         style: TextStyle(fontWeight: FontWeight.bold))),
               ],
             );
@@ -356,11 +430,10 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
   Future<void> _salvar() async {
     if (_selecionados.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('⚠️ Selecione onde você regou!'),
-          backgroundColor: Colors.orange));
+          content: Text('⚠️ Selecione pelo menos um local.'),
+          behavior: SnackBarBehavior.floating));
       return;
     }
-
     setState(() => _salvando = true);
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -378,11 +451,13 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
       if (mounted) Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('✅ Irrigação salva com sucesso!'),
-          backgroundColor: Colors.green));
+        content: Text('✅ Irrigação registrada com sucesso!'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro: $e')));
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
@@ -390,6 +465,8 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -401,224 +478,165 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // --- TÍTULO ---
-          const Text('Nova Rega',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-
-          // --- SELETOR DE CANTEIROS (Debug Visual) ---
+          Row(
+            children: [
+              Icon(Icons.water_drop, color: Colors.blue.shade700),
+              const SizedBox(width: 8),
+              Text('Nova Rega',
+                  style: theme.textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 24),
           StreamBuilder<QuerySnapshot>(
             stream: widget.repo.watchCanteiros(),
             builder: (context, snap) {
-              // ESTADO 1: CARREGANDO (Botão Cinza)
-              if (snap.connectionState == ConnectionState.waiting) {
-                return Container(
-                  height: 60,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12)),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
-                      SizedBox(width: 10),
-                      Text("Buscando canteiros..."),
-                    ],
-                  ),
-                );
-              }
+              if (!snap.hasData) return const LinearProgressIndicator();
+              final docs = snap.data!.docs;
 
-              // ESTADO 2: ERRO (Botão Vermelho)
-              if (snap.hasError) {
-                return Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red)),
-                  child: Text("Erro ao carregar: ${snap.error}",
-                      style: const TextStyle(color: Colors.red)),
-                );
-              }
-
-              final docs = snap.data?.docs ?? [];
-
-              // ESTADO 3: VAZIO (Botão Laranja)
               if (docs.isEmpty) {
                 return Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppTokens.md),
                   decoration: BoxDecoration(
                       color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange)),
+                      borderRadius: BorderRadius.circular(AppTokens.radiusSm)),
+                  // Sintaxe 100% corrigida aqui!
                   child: const Row(
                     children: [
-                      Icon(Icons.warning_amber, color: Colors.orange),
-                      SizedBox(width: 10),
+                      Icon(Icons.warning, color: Colors.deepOrange),
+                      SizedBox(width: 8),
                       Expanded(
-                          child: Text(
-                              "Nenhum canteiro ativo encontrado no banco de dados.",
-                              style: TextStyle(
-                                  color: Colors.orange,
-                                  fontWeight: FontWeight.bold))),
+                        child: Text(
+                          'Nenhum canteiro ativo encontrado.',
+                          style: TextStyle(color: Colors.deepOrange),
+                        ),
+                      ),
                     ],
                   ),
                 );
               }
 
-              // ESTADO 4: SUCESSO (Botão de Seleção Real)
               return InkWell(
-                onTap: () => _abrirSelecaoCanteiros(docs),
+                onTap: () => _abrirSelecao(docs),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.green, width: 1.5),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                            color: Colors.green.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4))
-                      ]),
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.grey.shade50,
+                  ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('LOCAIS IRRIGADOS',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey,
-                                  fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text(
-                            _selecionados.isEmpty
-                                ? 'Toque para selecionar'
-                                : '${_selecionados.length} selecionados',
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87),
-                          ),
-                        ],
+                      const Icon(Icons.grid_on_rounded, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selecionados.isEmpty
+                              ? 'Selecione os Locais'
+                              : '${_selecionados.length} locais selecionados',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: _selecionados.isEmpty
+                                  ? Colors.grey.shade600
+                                  : Colors.black87),
+                        ),
                       ),
-                      const Icon(Icons.arrow_drop_down_circle,
-                          color: Colors.green, size: 28),
+                      const Icon(Icons.arrow_drop_down, color: Colors.blue),
                     ],
                   ),
                 ),
               );
             },
           ),
-
-          // Chips (Lista visual dos selecionados)
-          if (_selecionados.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Wrap(
-                spacing: 8,
-                children: _selecionados
-                    .map((c) => Chip(
-                          label: Text(c['nome']),
-                          backgroundColor: Colors.green.shade50,
-                          deleteIcon: const Icon(Icons.close, size: 14),
-                          onDeleted: () =>
-                              setState(() => _selecionados.remove(c)),
-                        ))
+          if (_selecionados.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: _selecionados
+                  .map((c) => Chip(
+                        label: Text(c['nome'],
+                            style: const TextStyle(fontSize: 11)),
+                        backgroundColor: Colors.blue.shade50,
+                        side: BorderSide.none,
+                        onDeleted: () =>
+                            setState(() => _selecionados.remove(c)),
+                      ))
+                  .toList(),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(
+              flex: 2,
+              child: DropdownButtonFormField<String>(
+                value: _metodo,
+                decoration: const InputDecoration(
+                    labelText: 'Método', border: OutlineInputBorder()),
+                items: [
+                  'Gotejamento',
+                  'Aspersão',
+                  'Manual (Mangueira)',
+                  'Regador'
+                ]
+                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                     .toList(),
+                onChanged: (v) => setState(() => _metodo = v!),
               ),
             ),
-
-          const SizedBox(height: 20),
-
-          // --- INPUTS (Método e Tempo) ---
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<String>(
-                  value: _metodo,
-                  decoration: const InputDecoration(
-                      labelText: 'Método', border: OutlineInputBorder()),
-                  items: [
-                    'Gotejamento',
-                    'Aspersão',
-                    'Manual (Mangueira)',
-                    'Regador'
-                  ]
-                      .map((e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e, style: const TextStyle(fontSize: 13))))
-                      .toList(),
-                  onChanged: (v) => setState(() => _metodo = v!),
-                ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 1,
+              child: TextFormField(
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                    labelText: 'Tempo',
+                    suffixText: 'min',
+                    border: OutlineInputBorder()),
+                initialValue: _tempo.toString(),
+                onChanged: (v) => setState(() => _tempo = int.tryParse(v) ?? 0),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 1,
-                child: TextFormField(
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                      labelText: 'Minutos',
-                      border: OutlineInputBorder(),
-                      suffixText: 'min'),
-                  initialValue: _tempo.toString(),
-                  onChanged: (v) =>
-                      setState(() => _tempo = int.tryParse(v) ?? 0),
-                ),
-              ),
-            ],
-          ),
-
+            )
+          ]),
           const SizedBox(height: 24),
-
-          // --- RESUMO FINANCEIRO (Destaque) ---
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200)),
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.blue.shade100)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildInfo(
-                    'ÁREA TOTAL',
-                    '${_areaTotalSelecionada.toStringAsFixed(1)} m²',
-                    Colors.blueGrey),
-                _buildInfo(
-                    'VOLUME',
+                _buildInfoItem(
+                    'VOLUME ESTIMADO',
                     '${_volumeEstimadoLitros.toStringAsFixed(0)} L',
-                    Colors.blue),
-                _buildInfo('CUSTO', 'R\$ ${_custoEstimado.toStringAsFixed(2)}',
-                    Colors.green),
+                    Colors.blue.shade900),
+                Container(width: 1, height: 40, color: Colors.blue.shade200),
+                _buildInfoItem(
+                    'CUSTO',
+                    'R\$ ${_custoEstimado.toStringAsFixed(2)}',
+                    Colors.green.shade800),
               ],
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // --- BOTÃO CONFIRMAR ---
           SizedBox(
             height: 55,
             child: ElevatedButton(
               onPressed: _salvando ? null : _salvar,
               style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 4),
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
               child: _salvando
-                  ? const CircularProgressIndicator(color: Colors.white)
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2.5))
                   : const Text('CONFIRMAR REGISTRO',
                       style:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -629,16 +647,18 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
     );
   }
 
-  Widget _buildInfo(String label, String value, Color color) {
+  Widget _buildInfoItem(String label, String value, Color color) {
     return Column(
       children: [
         Text(label,
             style: TextStyle(
-                fontSize: 10, fontWeight: FontWeight.bold, color: color)),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: color.withOpacity(0.7))),
         const SizedBox(height: 4),
         Text(value,
             style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.w900, color: color)),
+                fontSize: 22, fontWeight: FontWeight.w900, color: color)),
       ],
     );
   }

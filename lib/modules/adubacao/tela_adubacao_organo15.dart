@@ -255,200 +255,241 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     }
   }
 
+  // ==========================================================================
+  // FUNÇÃO PARA CHAMAR O ASSISTENTE (CLÍNICA)
+  // ==========================================================================
+  void _abrirClinicaDaPlanta() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const ClinicaDaPlantaSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appSession = SessionScope.of(context).session;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     if (appSession == null) {
-      return const Scaffold(
-        body:
-            Center(child: Text('Selecione um espaço (tenant) para continuar.')),
+      return Scaffold(
+        backgroundColor: cs.surfaceContainerLowest,
+        body: Center(
+          child: Text('Selecione um espaço (tenant) para continuar.',
+              style: theme.textTheme.bodyLarge?.copyWith(color: cs.outline)),
+        ),
       );
     }
 
-    final theme = Theme.of(context);
-
     return Scaffold(
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
         title: const Text('Calculadora Organo15'),
+        centerTitle: true,
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
+        elevation: 0,
+      ),
+      // BOTÃO FLUTUANTE DA CLÍNICA ADICIONADO AQUI!
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _abrirClinicaDaPlanta,
+        backgroundColor: Colors.red.shade700,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.health_and_safety),
+        label: const Text('Diagnóstico Visual',
+            style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: 80), // Margem bottom pro FAB não tampar o botão gerar
           children: [
             if (_salvando) const LinearProgressIndicator(),
-
-            Card(
-              elevation: 0,
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Modo de Aplicação',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    SegmentedButton<_ModoReceita>(
-                      style: ButtonStyle(
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      segments: const [
-                        ButtonSegment(
-                          value: _ModoReceita.canteiro,
-                          label: Text('Canteiro (m²)'),
-                          icon: Icon(Icons.eco_outlined),
-                        ),
-                        ButtonSegment(
-                          value: _ModoReceita.vaso,
-                          label: Text('Vaso (L)'),
-                          icon: Icon(Icons.local_florist_outlined),
-                        ),
-                      ],
-                      selected: {_modo},
-                      onSelectionChanged: _salvando
-                          ? null
-                          : (set) => _resetTudoAoTrocarModo(set.first),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
+            _buildModoSelecao(theme, cs),
             const SizedBox(height: 16),
-
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                side: BorderSide(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Parâmetros',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 16),
-                    if (_modo == _ModoReceita.canteiro) ...[
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Usar canteiro cadastrado'),
-                        subtitle: const Text('Puxa a área automaticamente.'),
-                        value: _usarCanteiroCadastrado,
-                        onChanged: _salvando
-                            ? null
-                            : (v) {
-                                setState(() {
-                                  _usarCanteiroCadastrado = v;
-                                  _canteiroId = null;
-                                  _nomeCanteiro = '';
-                                  _areaM2 = 0;
-                                  _inputController.clear();
-                                  _resultado = null;
-                                });
-                              },
-                      ),
-                      if (_usarCanteiroCadastrado) ...[
-                        const SizedBox(height: 8),
-                        _CanteiroPicker(
-                          selectedId: _canteiroId,
-                          onSelect: _carregarCanteiro,
-                        ),
-                        if (_canteiroId != null && _areaM2 > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text('Área carregada: ${_fmt(_areaM2)} m²',
-                                style: TextStyle(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.bold)),
-                          ),
-                      ],
-                      const Divider(height: 24),
-                    ],
-                    TextFormField(
-                      controller: _inputController,
-                      readOnly: _modo == _ModoReceita.canteiro &&
-                          _usarCanteiroCadastrado,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-                        LengthLimitingTextInputFormatter(10),
-                      ],
-                      validator: (v) {
-                        if (_modo == _ModoReceita.canteiro &&
-                            _usarCanteiroCadastrado &&
-                            _canteiroId == null) {
-                          return 'Selecione um canteiro';
-                        }
-                        if (_toNum(v) == null || _toNum(v)! <= 0)
-                          return 'Inválido';
-                        return null;
-                      },
-                      decoration: InputDecoration(
-                        labelText: _modo == _ModoReceita.canteiro
-                            ? 'Área do canteiro'
-                            : 'Volume do vaso',
-                        hintText: _modo == _ModoReceita.canteiro
-                            ? 'Ex: 5,50'
-                            : 'Ex: 20',
-                        suffixText: _modo == _ModoReceita.canteiro ? 'm²' : 'L',
-                        border: const OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => _resetResultado(),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_modo == _ModoReceita.canteiro) ...[
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Solo argiloso?'),
-                        subtitle: const Text(
-                            "Ative se a terra for 'pesada' ou formar liga."),
-                        value: _isSoloArgiloso,
-                        onChanged: _salvando
-                            ? null
-                            : (val) => setState(() {
-                                  _isSoloArgiloso = val;
-                                  _resultado = null;
-                                }),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    DropdownButtonFormField<String>(
-                      value: _tipoAdubo,
-                      decoration: const InputDecoration(
-                        labelText: 'Adubo disponível',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _opcoesAdubo.entries
-                          .map((e) => DropdownMenuItem(
-                              value: e.key, child: Text(e.value)))
-                          .toList(),
-                      onChanged: _salvando
-                          ? null
-                          : (val) => setState(() {
-                                _tipoAdubo = val ?? 'bovino';
-                                _resultado = null;
-                              }),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
+            _buildParametros(theme, cs),
             const SizedBox(height: 24),
-
-            // ✅ CORREÇÃO: Usando AppButtons.elevatedIcon (ajustado para bater com seu Design System)
             AppButtons.elevatedIcon(
               onPressed: _salvando ? null : _calcular,
               label: const Text('GERAR RECEITA'),
               icon: const Icon(Icons.auto_awesome),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModoSelecao(ThemeData theme, ColorScheme cs) {
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Modo de Aplicação',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            SegmentedButton<_ModoReceita>(
+              style: ButtonStyle(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              segments: const [
+                ButtonSegment(
+                  value: _ModoReceita.canteiro,
+                  label: Text('Canteiro (m²)'),
+                  icon: Icon(Icons.eco_outlined),
+                ),
+                ButtonSegment(
+                  value: _ModoReceita.vaso,
+                  label: Text('Vaso (L)'),
+                  icon: Icon(Icons.local_florist_outlined),
+                ),
+              ],
+              selected: {_modo},
+              onSelectionChanged:
+                  _salvando ? null : (set) => _resetTudoAoTrocarModo(set.first),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParametros(ThemeData theme, ColorScheme cs) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Parâmetros da Área',
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            if (_modo == _ModoReceita.canteiro) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Usar canteiro cadastrado'),
+                subtitle: const Text('Puxa a área automaticamente.'),
+                value: _usarCanteiroCadastrado,
+                activeColor: cs.primary,
+                onChanged: _salvando
+                    ? null
+                    : (v) {
+                        setState(() {
+                          _usarCanteiroCadastrado = v;
+                          _canteiroId = null;
+                          _nomeCanteiro = '';
+                          _areaM2 = 0;
+                          _inputController.clear();
+                          _resultado = null;
+                        });
+                      },
+              ),
+              if (_usarCanteiroCadastrado) ...[
+                const SizedBox(height: 8),
+                _CanteiroPicker(
+                  selectedId: _canteiroId,
+                  onSelect: _carregarCanteiro,
+                ),
+                if (_canteiroId != null && _areaM2 > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('Área carregada: ${_fmt(_areaM2)} m²',
+                        style: TextStyle(
+                            color: cs.primary, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+              const Divider(height: 24),
+            ],
+            TextFormField(
+              controller: _inputController,
+              readOnly:
+                  _modo == _ModoReceita.canteiro && _usarCanteiroCadastrado,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+                LengthLimitingTextInputFormatter(10),
+              ],
+              validator: (v) {
+                if (_modo == _ModoReceita.canteiro &&
+                    _usarCanteiroCadastrado &&
+                    _canteiroId == null) {
+                  return 'Selecione um canteiro';
+                }
+                if (_toNum(v) == null || _toNum(v)! <= 0) {
+                  return 'Inválido';
+                }
+                return null;
+              },
+              decoration: InputDecoration(
+                labelText: _modo == _ModoReceita.canteiro
+                    ? 'Área do canteiro'
+                    : 'Volume do vaso',
+                hintText:
+                    _modo == _ModoReceita.canteiro ? 'Ex: 5,50' : 'Ex: 20',
+                suffixText: _modo == _ModoReceita.canteiro ? 'm²' : 'L',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onChanged: (_) => _resetResultado(),
+            ),
+            const SizedBox(height: 16),
+            if (_modo == _ModoReceita.canteiro) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Solo argiloso?'),
+                subtitle: const Text("Ative se a terra formar liga (barro)."),
+                value: _isSoloArgiloso,
+                activeColor: cs.primary,
+                onChanged: _salvando
+                    ? null
+                    : (val) => setState(() {
+                          _isSoloArgiloso = val;
+                          _resultado = null;
+                        }),
+              ),
+              const SizedBox(height: 8),
+            ],
+            DropdownButtonFormField<String>(
+              value: _tipoAdubo,
+              decoration: InputDecoration(
+                labelText: 'Adubo disponível',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              items: _opcoesAdubo.entries
+                  .map((e) =>
+                      DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
+              onChanged: _salvando
+                  ? null
+                  : (val) => setState(() {
+                        _tipoAdubo = val ?? 'bovino';
+                        _resultado = null;
+                      }),
             ),
           ],
         ),
@@ -463,12 +504,14 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         bool savingLocal = false;
 
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
             final isCanteiro = _resultadoEhCanteiro;
+            final theme = Theme.of(ctx);
 
             Future<void> onSave() async {
               if (savingLocal) return;
@@ -481,6 +524,10 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
             }
 
             return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -489,14 +536,12 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                   Row(
                     children: [
                       Icon(isCanteiro ? Icons.eco : Icons.local_florist,
-                          color: Theme.of(ctx).colorScheme.primary),
+                          color: theme.colorScheme.primary),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           isCanteiro ? 'Receita Organo15' : 'Mistura para Vaso',
-                          style: Theme.of(ctx)
-                              .textTheme
-                              .titleLarge
+                          style: theme.textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -510,7 +555,8 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text('Para: $_nomeCanteiro',
                           style: TextStyle(
-                              color: Theme.of(ctx).colorScheme.secondary)),
+                              color: theme.colorScheme.secondary,
+                              fontWeight: FontWeight.bold)),
                     ),
                   const Divider(),
                   const SizedBox(height: 12),
@@ -536,7 +582,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                   ],
                   const SizedBox(height: 20),
                   Card(
-                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                    color: theme.colorScheme.surfaceContainerHighest,
                     elevation: 0,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -557,7 +603,6 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  // ✅ CORREÇÃO: Usando elevatedIcon aqui também para consistência
                   AppButtons.elevatedIcon(
                     onPressed: savingLocal ? null : onSave,
                     icon: savingLocal
@@ -652,10 +697,13 @@ class _CanteiroPicker extends StatelessWidget {
         return DropdownButtonFormField<String>(
           value: selectedId,
           isExpanded: true,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Selecione o Canteiro',
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           ),
           items: docs.map((d) {
             final data = d.data() as Map<String, dynamic>;
