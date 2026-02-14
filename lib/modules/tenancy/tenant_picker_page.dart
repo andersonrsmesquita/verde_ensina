@@ -89,7 +89,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Escolha seu espaço'),
+        title: const Text('Escolha um espaço de trabalho'),
         actions: [
           IconButton(
             tooltip: 'Sair',

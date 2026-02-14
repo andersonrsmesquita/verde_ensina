@@ -279,7 +279,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
-          'Jornada do Produtor',
+          'Jornada',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,

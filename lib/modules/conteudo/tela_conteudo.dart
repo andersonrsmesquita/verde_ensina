@@ -20,7 +20,7 @@ class TelaConteudo extends StatelessWidget {
         body: const TabBarView(
           children: [
             _ListaPlaceholder(texto: 'Dicas práticas (em breve)'),
-            _ListaPlaceholder(texto: 'Receitas do produtor (em breve)'),
+            _ListaPlaceholder(texto: 'Receitas e conteúdos (em breve)'),
           ],
         ),
       ),

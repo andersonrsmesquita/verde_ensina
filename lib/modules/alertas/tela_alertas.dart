@@ -30,7 +30,7 @@ class TelaAlertas extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Lembretes, agenda e rotina do produtor',
+                    'Lembretes, agenda e rotina do manejo',
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 16),

@@ -309,10 +309,12 @@ class _AbaInicioDashboard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _HeaderBlock(
-                          title: user == null ? 'Olá! 👋' : 'Olá, Produtor! 👋',
+                          title: 'Olá! 👋',
                           subtitle: user == null
                               ? 'Faça login para ver sua visão geral.'
-                              : 'Visão geral da sua produção.',
+                              : (SessionScope.of(context).session == null
+                                  ? 'Escolha um espaço de trabalho para continuar.'
+                                  : 'Espaço: ${SessionScope.of(context).session!.tenantName}'),
                         ),
                         const SizedBox(height: 14),
                         _SectionTitle('Ações rápidas'),
@@ -707,7 +709,7 @@ class _ModulesGrid extends StatelessWidget {
       ),
       _ModuleItem(
         title: 'Diário de Manejo',
-        subtitle: 'Rotina do produtor',
+        subtitle: 'Rotina de manejo',
         icon: Icons.menu_book,
         onTap: onDiario,
       ),
