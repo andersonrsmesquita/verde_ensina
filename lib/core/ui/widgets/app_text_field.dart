@@ -6,6 +6,9 @@ import '../app_context_ext.dart';
 
 enum AppFieldVariant { outline, filled }
 
+/// Campo de texto altamente customizável e integrado ao Design System.
+/// Padrão de Excelência: Gerencia estados de foco, visibilidade de senha
+/// e oferece variações semânticas (email, senha, número).
 class AppTextField extends StatefulWidget {
   final TextEditingController controller;
 
@@ -78,6 +81,10 @@ class AppTextField extends StatefulWidget {
     this.autofocus = false,
   });
 
+  // ==========================================
+  // CONSTRUTORES DE FÁBRICA (FACTORY)
+  // ==========================================
+
   factory AppTextField.email({
     Key? key,
     required TextEditingController controller,
@@ -94,7 +101,7 @@ class AppTextField extends StatefulWidget {
       key: key,
       controller: controller,
       label: label ?? 'E-mail',
-      hint: hint ?? 'ex: contato@empresa.com',
+      hint: hint ?? 'ex: contato@verdeensina.com',
       helperText: helperText,
       prefixIcon: prefixIcon,
       keyboardType: TextInputType.emailAddress,
@@ -138,67 +145,6 @@ class AppTextField extends StatefulWidget {
     );
   }
 
-  factory AppTextField.number({
-    Key? key,
-    required TextEditingController controller,
-    String? label,
-    String? hint,
-    IconData? prefixIcon = Icons.numbers_outlined,
-    String? helperText,
-    String? Function(String?)? validator,
-    bool enabled = true,
-    ValueChanged<String>? onChanged,
-    int maxDigits = 12,
-  }) {
-    return AppTextField(
-      key: key,
-      controller: controller,
-      label: label,
-      hint: hint,
-      helperText: helperText,
-      prefixIcon: prefixIcon,
-      validator: validator,
-      enabled: enabled,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-        LengthLimitingTextInputFormatter(maxDigits),
-      ],
-      onChanged: onChanged,
-      textInputAction: TextInputAction.next,
-    );
-  }
-
-  factory AppTextField.phoneBR({
-    Key? key,
-    required TextEditingController controller,
-    String? label,
-    String? hint,
-    IconData? prefixIcon = Icons.phone_outlined,
-    String? helperText,
-    String? Function(String?)? validator,
-    bool enabled = true,
-    ValueChanged<String>? onChanged,
-  }) {
-    return AppTextField(
-      key: key,
-      controller: controller,
-      label: label ?? 'Telefone',
-      hint: hint ?? '(00) 00000-0000',
-      helperText: helperText,
-      prefixIcon: prefixIcon,
-      keyboardType: TextInputType.phone,
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-        LengthLimitingTextInputFormatter(11),
-      ],
-      validator: validator,
-      enabled: enabled,
-      onChanged: onChanged,
-      textInputAction: TextInputAction.next,
-    );
-  }
-
   @override
   State<AppTextField> createState() => _AppTextFieldState();
 }
@@ -206,18 +152,23 @@ class AppTextField extends StatefulWidget {
 class _AppTextFieldState extends State<AppTextField> {
   late bool _obscure;
   bool _hasText = false;
+  late FocusNode _innerFocusNode;
 
   @override
   void initState() {
     super.initState();
     _obscure = widget.obscureText;
     _hasText = widget.controller.text.trim().isNotEmpty;
+    _innerFocusNode = widget.focusNode ?? FocusNode();
+
     widget.controller.addListener(_handleTextChanged);
+    _innerFocusNode.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_handleTextChanged);
+    if (widget.focusNode == null) _innerFocusNode.dispose();
     super.dispose();
   }
 
@@ -236,10 +187,12 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 
   InputDecoration _decoration(BuildContext context) {
-    final cs = context.cs;
+    final colors = context.colors;
 
     final Widget? prefixWidget = widget.prefix ??
-        (widget.prefixIcon != null ? Icon(widget.prefixIcon) : null);
+        (widget.prefixIcon != null
+            ? Icon(widget.prefixIcon, size: AppTokens.iconMd)
+            : null);
 
     final List<Widget> suffixWidgets = [];
 
@@ -250,9 +203,11 @@ class _AppTextFieldState extends State<AppTextField> {
           onPressed: widget.enabled
               ? () => setState(() => _obscure = !_obscure)
               : null,
-          icon: Icon(_obscure
-              ? Icons.visibility_outlined
-              : Icons.visibility_off_outlined),
+          icon: Icon(
+              _obscure
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: AppTokens.iconMd),
         ),
       );
     }
@@ -266,7 +221,7 @@ class _AppTextFieldState extends State<AppTextField> {
         IconButton(
           tooltip: 'Limpar',
           onPressed: _clear,
-          icon: const Icon(Icons.close_rounded),
+          icon: const Icon(Icons.close_rounded, size: AppTokens.iconMd),
         ),
       );
     }
@@ -274,7 +229,7 @@ class _AppTextFieldState extends State<AppTextField> {
     if (widget.suffix != null) {
       suffixWidgets.add(widget.suffix!);
     } else if (widget.suffixIcon != null) {
-      suffixWidgets.add(Icon(widget.suffixIcon));
+      suffixWidgets.add(Icon(widget.suffixIcon, size: AppTokens.iconMd));
     }
 
     final Widget? suffixWidget = suffixWidgets.isEmpty
@@ -283,20 +238,21 @@ class _AppTextFieldState extends State<AppTextField> {
             mainAxisSize: MainAxisSize.min,
             children: suffixWidgets
                 .map((w) => Padding(
-                      padding: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.only(right: 4),
                       child: w,
                     ))
                 .toList(),
           );
 
-    final bool filled = widget.variant == AppFieldVariant.filled;
+    final bool isFilled = widget.variant == AppFieldVariant.filled;
+    final bool isFocused = _innerFocusNode.hasFocus;
 
-    OutlineInputBorder border(Color c) => OutlineInputBorder(
+    OutlineInputBorder border(Color c, double width) => OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppTokens.rMd),
-          borderSide: BorderSide(color: c, width: 1),
+          borderSide: BorderSide(color: c, width: width),
         );
 
-    final baseBorderColor = cs.outlineVariant.withOpacity(0.55);
+    final baseBorderColor = colors.outlineVariant.withOpacity(0.5);
 
     return InputDecoration(
       labelText: widget.label,
@@ -305,35 +261,39 @@ class _AppTextFieldState extends State<AppTextField> {
       prefixIcon: prefixWidget,
       suffixIcon: suffixWidget,
       isDense: true,
-      filled: filled,
-      fillColor: filled ? cs.surfaceContainerHighest.withOpacity(0.55) : null,
+      filled: true, // Sempre preenchido levemente para melhor UX
+      fillColor: isFocused
+          ? colors.primary.withOpacity(0.03)
+          : (isFilled
+              ? colors.surfaceContainerHighest.withOpacity(0.4)
+              : Colors.transparent),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppTokens.md,
-        vertical: 14,
+        vertical: 16,
       ),
-      border: border(baseBorderColor),
-      enabledBorder: border(baseBorderColor),
-      focusedBorder: border(cs.primary),
-      errorBorder: border(cs.error),
-      focusedErrorBorder: border(cs.error),
-      helperMaxLines: 2,
-      errorMaxLines: 3,
-      counterText: widget.maxLength == null ? '' : null,
+      border: border(baseBorderColor, 1),
+      enabledBorder: border(baseBorderColor, 1),
+      focusedBorder: border(colors.primary, 1.5),
+      errorBorder: border(colors.error, 1),
+      focusedErrorBorder: border(colors.error, 1.5),
+      labelStyle: TextStyle(
+          color: isFocused ? colors.primary : colors.onSurfaceVariant),
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final tt = context.tt;
+    final textTheme = context.text;
 
-    final style = tt.bodyLarge?.copyWith(
+    final style = textTheme.bodyLarge?.copyWith(
       fontWeight: FontWeight.w600,
-      height: 1.15,
+      color: widget.enabled ? null : context.colors.onSurface.withOpacity(0.4),
     );
 
     return TextFormField(
       controller: widget.controller,
-      focusNode: widget.focusNode,
+      focusNode: _innerFocusNode,
       autofocus: widget.autofocus,
       decoration: _decoration(context),
       keyboardType: widget.keyboardType,
@@ -352,6 +312,7 @@ class _AppTextFieldState extends State<AppTextField> {
       onChanged: widget.onChanged,
       onTap: widget.onTap,
       style: style,
+      cursorColor: context.colors.primary,
     );
   }
 }

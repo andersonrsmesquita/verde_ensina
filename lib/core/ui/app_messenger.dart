@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'app_colors.dart'; // Importa nosso Design System
 
 class AppMessenger {
+  // Construtor privado
   AppMessenger._();
 
   /// Use no MaterialApp: scaffoldMessengerKey: AppMessenger.key
@@ -11,7 +13,8 @@ class AppMessenger {
     String message, {
     required Color backgroundColor,
     IconData? icon,
-    Duration duration = const Duration(seconds: 3),
+    Duration duration = const Duration(seconds: 4), // Aumentado para dar tempo de ler
+    SnackBarAction? action, // Suporte a botões como "DESFAZER"
   }) {
     final messenger = key.currentState;
     if (messenger == null) return;
@@ -21,17 +24,20 @@ class AppMessenger {
     messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(12),
+        margin: const EdgeInsets.fromLTRB(16, 16, 16, 24), // Descola bem do fundo e laterais
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         duration: duration,
         backgroundColor: backgroundColor,
+        elevation: 6, // Sombra suave (Material 3)
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
+        action: action,
         content: Row(
           children: [
             if (icon != null) ...[
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 10),
+              Icon(icon, color: Colors.white, size: 24),
+              const SizedBox(width: 12),
             ],
             Expanded(
               child: Text(
@@ -40,7 +46,8 @@ class AppMessenger {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
               ),
             ),
@@ -50,50 +57,60 @@ class AppMessenger {
     );
   }
 
-  static void success(String message) {
+  static void success(String message, {SnackBarAction? action}) {
     _show(
       message,
-      backgroundColor: const Color(0xFF1B8A5A),
+      backgroundColor: AppColors.success, // Puxando do Design System
       icon: Icons.check_circle_outline,
+      action: action,
     );
   }
 
-  static void info(String message) {
+  static void info(String message, {SnackBarAction? action}) {
     _show(
       message,
-      backgroundColor: const Color(0xFF2D6CDF),
+      backgroundColor: AppColors.info,
       icon: Icons.info_outline,
+      action: action,
     );
   }
 
-  static void warn(String message) {
+  static void warn(String message, {SnackBarAction? action}) {
     _show(
       message,
-      backgroundColor: const Color(0xFFE28A00),
+      backgroundColor: AppColors.warning,
       icon: Icons.warning_amber_outlined,
+      action: action,
     );
   }
 
-  static void error(String message) {
+  static void error(String message, {SnackBarAction? action}) {
     _show(
       message,
-      backgroundColor: const Color(0xFFD64545),
+      backgroundColor: AppColors.error,
       icon: Icons.error_outline,
+      action: action,
     );
   }
 
-  /// Compat: telas antigas chamam `AppMessenger.show("...")`.
-  ///
-  /// Heurística simples:
-  /// - começa com "✅" => success
-  /// - começa com "⚠" => warn
-  /// - começa com "❌" => error
-  /// - senão => info
-  static void show(String message) {
+  /// Compatibilidade com telas antigas e Heurística Inteligente
+  /// Remove os emojis do texto para não duplicar com os ícones reais
+  static void show(String message, {SnackBarAction? action}) {
     final trimmed = message.trimLeft();
-    if (trimmed.startsWith('✅')) return success(message);
-    if (trimmed.startsWith('⚠')) return warn(message);
-    if (trimmed.startsWith('❌')) return error(message);
-    return info(message);
+
+    if (trimmed.startsWith('✅')) {
+      final cleanMsg = trimmed.replaceFirst('✅', '').trim();
+      return success(cleanMsg, action: action);
+    }
+    if (trimmed.startsWith('⚠️') || trimmed.startsWith('⚠')) {
+      final cleanMsg = trimmed.replaceFirst(RegExp(r'⚠️|⚠'), '').trim();
+      return warn(cleanMsg, action: action);
+    }
+    if (trimmed.startsWith('❌')) {
+      final cleanMsg = trimmed.replaceFirst('❌', '').trim();
+      return error(cleanMsg, action: action);
+    }
+
+    return info(message, action: action);
   }
 }
