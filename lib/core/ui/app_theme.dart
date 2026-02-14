@@ -1,58 +1,98 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
+import 'app_tokens.dart';
+
 class AppTheme {
-  AppTheme._();
+  static ThemeData light() => _build(AppColors.lightScheme());
+  static ThemeData dark() => _build(AppColors.darkScheme());
 
-  static const Color seed = Color(0xFF2E7D32); // verde principal
-  static const Color accent = Color(0xFF795548); // marrom/terra
-  static const Color surface = Color(0xFFF1F8E9); // fundo clarinho
-
-  static ThemeData light() {
-    final scheme = ColorScheme.fromSeed(seedColor: seed).copyWith(
-      secondary: accent,
-      surface: surface,
+  static ThemeData _build(ColorScheme cs) {
+    final base = ThemeData(
+      useMaterial3: true,
+      colorScheme: cs,
+      brightness: cs.brightness,
     );
 
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.surface,
+    final inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTokens.rMd),
+      borderSide: BorderSide(color: cs.outlineVariant.withOpacity(0.55), width: 1),
+    );
+
+    return base.copyWith(
+      scaffoldBackgroundColor: cs.surface,
 
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: cs.surface,
+        foregroundColor: cs.onSurface,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: const TextStyle(
+        titleTextStyle: base.textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w800,
-          fontSize: 18,
-          color: Colors.white,
         ),
       ),
 
-      // ✅ Aqui é o ponto do erro: usar CardThemeData
       cardTheme: CardThemeData(
-        color: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        margin: const EdgeInsets.all(0),
+        color: cs.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rLg),
+          side: BorderSide(color: cs.outlineVariant.withOpacity(0.35)),
+        ),
+        margin: EdgeInsets.zero,
       ),
 
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
+      dividerTheme: DividerThemeData(
+        color: cs.outlineVariant.withOpacity(0.40),
+        thickness: 1,
+        space: 1,
       ),
 
       inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        isDense: true,
+        filled: false,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.md, vertical: 14),
+        border: inputBorder,
+        enabledBorder: inputBorder,
+        focusedBorder: inputBorder.copyWith(
+          borderSide: BorderSide(color: cs.primary, width: 1.2),
+        ),
+        errorBorder: inputBorder.copyWith(
+          borderSide: BorderSide(color: cs.error, width: 1.2),
+        ),
+        focusedErrorBorder: inputBorder.copyWith(
+          borderSide: BorderSide(color: cs.error, width: 1.2),
+        ),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(AppTokens.btnHeight),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(AppTokens.btnHeight),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          minimumSize: const Size.fromHeight(AppTokens.btnHeight),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }

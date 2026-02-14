@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/app_session.dart';
+import '../../core/session/session_scope.dart';
+
 class TelaDiagnostico extends StatefulWidget {
   final String? canteiroIdOrigem;
   final String? culturaAtual;
@@ -17,6 +21,11 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     with SingleTickerProviderStateMixin {
   // Auth
   User? get _user => FirebaseAuth.instance.currentUser;
+
+  // SaaS / Multi-tenant
+  AppSession? get _sessionOrNull => SessionScope.of(context).session;
+  AppSession get appSession =>
+      _sessionOrNull ?? (throw StateError('Sessão não inicializada'));
 
   // UI
   late TabController _tabController;
@@ -126,8 +135,10 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
 
     setState(() => _carregandoCanteiro = true);
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('canteiros')
+      final appSession = SessionScope.of(context).session;
+      if (appSession == null) return;
+
+      final doc = await FirebasePaths.canteirosCol(appSession.tenantId)
           .doc(id)
           .get();
       if (!doc.exists || !mounted) return;
@@ -382,13 +393,16 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       };
 
       // Batch (premium: grava tudo junto)
+      final appSession = SessionScope.of(context).session;
+      if (appSession == null) throw Exception('Sem tenant selecionado');
+
       final fs = FirebaseFirestore.instance;
       final batch = fs.batch();
 
-      final analiseRef = fs.collection('analises_solo').doc();
+      final analiseRef = FirebasePaths.analisesSoloCol(appSession.tenantId).doc();
       batch.set(analiseRef, _limparNulos(dadosAnalise));
 
-      final historicoRef = fs.collection('historico_manejo').doc();
+      final historicoRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
       batch.set(
         historicoRef,
         _limparNulos({
@@ -408,7 +422,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       );
 
       // Cache no canteiro (zera recalcular lendo tudo depois)
-      final canteiroRef = fs.collection('canteiros').doc(canteiroId);
+      final canteiroRef = FirebasePaths.canteirosCol(appSession.tenantId).doc(canteiroId);
       batch.set(
         canteiroRef,
         _limparNulos({
@@ -530,9 +544,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
 
     // Seleção de canteiro (premium)
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('canteiros')
-          .where('uid_usuario', isEqualTo: user.uid)
+      stream: FirebasePaths.canteirosCol(appSession.tenantId)
           .where('ativo', isEqualTo: true)
           .snapshots(),
       builder: (context, snap) {

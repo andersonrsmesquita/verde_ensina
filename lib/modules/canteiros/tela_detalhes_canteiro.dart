@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
 
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
@@ -18,6 +20,7 @@ class TelaDetalhesCanteiro extends StatefulWidget {
 }
 
 class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
+  // Controllers (reutilizados em dialogs)
   final _nomeController = TextEditingController();
   final _compController = TextEditingController();
   final _largController = TextEditingController();
@@ -31,13 +34,23 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   String? get _uid => _auth.currentUser?.uid;
   bool get _isLogado => _uid != null;
 
+  // SaaS / Multi-tenant
+  String? get _tenantIdOrNull => SessionScope.of(context).session?.tenantId;
+  String get _tenantId {
+    final t = _tenantIdOrNull;
+    if (t == null) {
+      throw StateError('Nenhum tenant selecionado. Abra o app e selecione um tenant.');
+    }
+    return t;
+  }
+
   static const int _pageSize = 25;
 
   bool _loadingFirst = true;
   bool _loadingMore = false;
   bool _hasMore = true;
-  DocumentSnapshot? _lastDoc;
-  final List<QueryDocumentSnapshot> _docs = [];
+  DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
   Object? _err;
 
   bool _aggInitChecked = false;
@@ -45,28 +58,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   static const String _colCanteiros = 'canteiros';
   static const String _colHistorico = 'historico_manejo';
 
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _nomeController.dispose();
-    _compController.dispose();
-    _largController.dispose();
-    _scroll.dispose();
-    super.dispose();
-  }
-
   // -----------------------
-  // Helpers
+  // Helpers (num / money / date / errors)
   // -----------------------
   double _toDouble(dynamic v) {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
-    return double.tryParse(v.toString().replaceAll(',', '.')) ?? 0.0;
+    final s = v.toString().trim().replaceAll(',', '.');
+    return double.tryParse(s) ?? 0.0;
   }
 
   int _toInt(dynamic v) {
@@ -89,7 +88,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     );
   }
 
-  String _money(double v) => 'R\$ ${v.toStringAsFixed(2)}';
+  String _money(double v) {
+    final sign = v < 0 ? '-' : '';
+    final abs = v.abs();
+    final s = abs.toStringAsFixed(2).replaceAll('.', ',');
+    return '${sign}R\$ $s';
+  }
 
   String _fmtData(Timestamp? ts) {
     if (ts == null) return '';
@@ -106,9 +110,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (e is FirebaseException) {
       switch (e.code) {
         case 'permission-denied':
-          return 'Permissão negada (rules do Firestore). Verifique se uid_usuario bate com request.auth.uid e se regras aceitam Timestamp.';
+          return 'Permissão negada (rules do Firestore). Verifique uid_usuario vs request.auth.uid e se as regras aceitam os campos.';
         case 'failed-precondition':
-          // bem comum em queries sem índice também
           return 'Falha de pré-condição (muito comum por índice faltando ou regra). Veja o console.';
         case 'not-found':
           return 'Documento não encontrado (foi apagado/arquivado?).';
@@ -150,9 +153,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isIndex
-                ? '⚠️ Falta criar um índice no Firestore'
-                : '❌ Erro no Firestore',
+            isIndex ? '⚠️ Falta criar um índice no Firestore' : '❌ Erro no Firestore',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: isIndex ? Colors.orange.shade900 : Colors.red.shade900,
@@ -177,10 +178,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // -----------------------
   // Finalidade
   // -----------------------
-  String _labelFinalidade(String f) =>
-      (f == 'comercio') ? 'Comércio' : 'Consumo';
-  Color _corFinalidade(String f) =>
-      (f == 'comercio') ? Colors.indigo : Colors.teal;
+  String _labelFinalidade(String f) => (f == 'comercio') ? 'Comércio' : 'Consumo';
+  Color _corFinalidade(String f) => (f == 'comercio') ? Colors.indigo : Colors.teal;
 
   // -----------------------
   // Map helpers
@@ -188,9 +187,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   Map<String, int> _intMapFromAny(dynamic mp) {
     if (mp is Map) {
       final out = <String, int>{};
-      mp.forEach((k, v) {
-        out[k.toString()] = _toInt(v);
-      });
+      mp.forEach((k, v) => out[k.toString()] = _toInt(v));
       return out;
     }
     return {};
@@ -238,16 +235,33 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   Future<void> _atualizarStatusCanteiro(String novoStatus) async {
     try {
-      await _db.collection(_colCanteiros).doc(widget.canteiroId).update({
+      await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
         'status': novoStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
       setState(() {});
     } catch (e) {
-      _snack('❌ Falha ao atualizar status: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao atualizar status: ${_friendlyError(e)}', bg: Colors.red);
     }
+  }
+
+  // -----------------------
+  // Lifecycle
+  // -----------------------
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _nomeController.dispose();
+    _compController.dispose();
+    _largController.dispose();
+    _scroll.dispose();
+    super.dispose();
   }
 
   // -----------------------
@@ -281,7 +295,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // Agregados premium: inicializa campos se faltarem
   // -----------------------
   Future<void> _ensureAggFields(
-    DocumentReference canteiroRef,
+    DocumentReference<Map<String, dynamic>> canteiroRef,
     Map<String, dynamic> d,
   ) async {
     if (_aggInitChecked) return;
@@ -317,7 +331,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // -----------------------
   // HISTÓRICO PAGINADO
   // -----------------------
-  Query _historicoQuery(String uid) {
+  Query<Map<String, dynamic>> _historicoQuery(String uid) {
     return _db
         .collection(_colHistorico)
         .where('canteiro_id', isEqualTo: widget.canteiroId)
@@ -363,7 +377,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
 
     try {
-      Query q = _historicoQuery(_uid!).limit(_pageSize);
+      Query<Map<String, dynamic>> q = _historicoQuery(_uid!).limit(_pageSize);
       if (_lastDoc != null) q = q.startAfterDocument(_lastDoc!);
 
       final snap = await q.get();
@@ -385,7 +399,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   // -----------------------
-  // DEV: recalcular agregados
+  // DEV: recalcular agregados (BUG CORRIGIDO)
   // -----------------------
   Future<void> _recalcularAgregadosDev() async {
     if (!_isLogado) {
@@ -408,13 +422,24 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     );
 
     try {
-      final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
+      final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
 
+      // pega tudo DESC (mais recente primeiro)
       final all = await _historicoQuery(_uid!).get();
 
       double totalCusto = 0.0;
       double totalReceita = 0.0;
 
+      // soma total
+      for (final doc in all.docs) {
+        final d = doc.data();
+        final c = d['custo'];
+        final r = d['receita'];
+        if (c is num) totalCusto += c.toDouble();
+        if (r is num) totalReceita += r.toDouble();
+      }
+
+      // identifica ciclo ativo (plantio concluido == false mais recente)
       String cicloId = '';
       Timestamp? cicloInicio;
       String cicloProdutos = '';
@@ -422,15 +447,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       bool cicloConcluido = true;
 
       for (final doc in all.docs) {
-        final d = (doc.data() as Map<String, dynamic>?) ?? {};
-        final c = d['custo'];
-        final r = d['receita'];
-        if (c is num) totalCusto += c.toDouble();
-        if (r is num) totalReceita += r.toDouble();
-      }
-
-      for (final doc in all.docs) {
-        final d = (doc.data() as Map<String, dynamic>?) ?? {};
+        final d = doc.data();
         if (d['tipo_manejo'] == 'Plantio' && d['concluido'] == false) {
           cicloId = doc.id;
           cicloConcluido = false;
@@ -445,19 +462,18 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         }
       }
 
+      // soma ciclo: como a lista está DESC, o ciclo é "do topo até o plantio"
       double cicloCusto = 0.0;
       double cicloReceita = 0.0;
       if (!cicloConcluido && cicloId.isNotEmpty) {
-        bool contando = false;
         for (final doc in all.docs) {
-          if (doc.id == cicloId) contando = true;
-          if (!contando) continue;
-
-          final d = (doc.data() as Map<String, dynamic>?) ?? {};
+          final d = doc.data();
           final c = d['custo'];
           final r = d['receita'];
           if (c is num) cicloCusto += c.toDouble();
           if (r is num) cicloReceita += r.toDouble();
+
+          if (doc.id == cicloId) break; // PAROU no plantio (inclui plantio)
         }
       }
 
@@ -481,8 +497,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      _snack('❌ Falha ao recalcular: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao recalcular: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
@@ -516,18 +531,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 return;
               }
               try {
-                await _db
-                    .collection(_colCanteiros)
-                    .doc(widget.canteiroId)
-                    .update({
+                await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
                   'nome': novoNome,
                   'updatedAt': FieldValue.serverTimestamp(),
                 });
                 if (!mounted) return;
                 Navigator.pop(ctx);
               } catch (e) {
-                _snack('❌ Falha ao renomear: ${_friendlyError(e as Object)}',
-                    bg: Colors.red);
+                _snack('❌ Falha ao renomear: ${_friendlyError(e)}', bg: Colors.red);
               }
             },
             child: const Text('Salvar'),
@@ -538,7 +549,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   // -----------------------
-  // IRRIGAÇÃO (premium: atualiza agregados no canteiro)
+  // IRRIGAÇÃO (premium)
   // -----------------------
   void _mostrarDialogoIrrigacao() {
     if (!_isLogado) {
@@ -549,7 +560,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     String metodo = 'Gotejamento';
     final tempoController = TextEditingController(text: '30');
     final chuvaController = TextEditingController(text: '0');
-    final custoController = TextEditingController(text: '0.00');
+    final custoController = TextEditingController(text: '0,00');
 
     showModalBottomSheet(
       context: context,
@@ -615,8 +626,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               const SizedBox(height: 15),
               TextField(
                 controller: custoController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                   labelText: 'Custo Operacional (R\$)',
                   hintText: 'Água, Luz...',
@@ -630,12 +640,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: () async {
-                    final tempo = int.tryParse(tempoController.text) ?? 0;
+                    final tempo = int.tryParse(tempoController.text.trim()) ?? 0;
                     final chuva = double.tryParse(
-                            chuvaController.text.replaceAll(',', '.')) ??
+                          chuvaController.text.trim().replaceAll(',', '.'),
+                        ) ??
                         0.0;
                     final custo = double.tryParse(
-                            custoController.text.replaceAll(',', '.')) ??
+                          custoController.text.trim().replaceAll(',', '.'),
+                        ) ??
                         0.0;
 
                     Navigator.pop(ctx);
@@ -664,8 +676,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (!_isLogado) return;
 
     final uid = _uid!;
-    final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
-    final histRef = _db.collection(_colHistorico).doc();
+    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
+    final histRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
 
     try {
       await _db.runTransaction((tx) async {
@@ -677,7 +689,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             ((c['agg_ciclo_id'] ?? '').toString().isNotEmpty) &&
             (c['agg_ciclo_concluido'] != true);
 
-        // valores atuais (soma segura, sem increment pra não estourar por tipo zoado)
         final totalCustoAtual = _toDouble(c['agg_total_custo']);
         final cicloCustoAtual = _toDouble(c['agg_ciclo_custo']);
 
@@ -703,13 +714,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       _snack('✅ Irrigação registrada.', bg: Colors.green);
       await _refreshHistorico();
     } catch (e) {
-      _snack('❌ Falha ao salvar irrigação: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao salvar irrigação: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
   // -----------------------
-  // PLANTIO (premium: cria ciclo e reseta agregados do ciclo)
+  // PLANTIO (premium)
   // -----------------------
   void _mostrarDialogoPlantio(double cCanteiro, double lCanteiro) {
     if (!_isLogado) {
@@ -717,10 +727,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       return;
     }
     if (cCanteiro <= 0 || lCanteiro <= 0) {
-      _snack(
-        '⚠️ Medidas inválidas. Edite o canteiro e corrija as medidas.',
-        bg: Colors.orange,
-      );
+      _snack('⚠️ Medidas inválidas. Edite o canteiro e corrija as medidas.', bg: Colors.orange);
       return;
     }
 
@@ -728,7 +735,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     const regiao = 'Sudeste';
     const mes = 'Fevereiro';
     final obsController = TextEditingController();
-    final custoMudasController = TextEditingController(text: '0.00');
+    final custoMudasController = TextEditingController(text: '0,00');
 
     final areaTotalCanteiro = cCanteiro * lCanteiro;
 
@@ -741,15 +748,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           double areaOcupada = 0.0;
 
           qtdPorPlanta.forEach((planta, qtd) {
-            final info =
-                guiaCompleto[planta] ?? {'eLinha': 0.5, 'ePlanta': 0.5};
+            final info = guiaCompleto[planta] ?? {'eLinha': 0.5, 'ePlanta': 0.5};
             final eLinha = (info['eLinha'] as num).toDouble();
             final ePlanta = (info['ePlanta'] as num).toDouble();
             areaOcupada += (qtd * (eLinha * ePlanta));
           });
 
-          final percentualOcupado =
-              (areaOcupada / areaTotalCanteiro).clamp(0.0, 1.0);
+          final percentualOcupado = (areaOcupada / areaTotalCanteiro).clamp(0.0, 1.0);
           final estourou = (areaTotalCanteiro - areaOcupada) < 0;
 
           void adicionarPlanta(String p) {
@@ -759,10 +764,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             final areaUnit = (eLinha * ePlanta).clamp(0.0001, 999999.0);
 
             int qtdInicial = (areaTotalCanteiro / areaUnit).floor();
-            if (qtdPorPlanta.isNotEmpty &&
-                (areaTotalCanteiro - areaOcupada) > 0) {
-              qtdInicial =
-                  ((areaTotalCanteiro - areaOcupada) / areaUnit).floor();
+            if (qtdPorPlanta.isNotEmpty && (areaTotalCanteiro - areaOcupada) > 0) {
+              qtdInicial = ((areaTotalCanteiro - areaOcupada) / areaUnit).floor();
             }
             if (qtdInicial < 1) qtdInicial = 1;
             qtdPorPlanta[p] = qtdInicial;
@@ -777,10 +780,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             porCategoria[cat]!.add(p);
           }
 
-          final outras = guiaCompleto.keys
-              .where((c) => !recomendadas.contains(c))
-              .toList()
+          final outras = guiaCompleto.keys.where((c) => !recomendadas.contains(c)).toList()
             ..sort();
+
           final outrasPorCategoria = <String, List<String>>{};
           for (final p in outras) {
             final cat = (guiaCompleto[p]?['cat'] ?? 'Outros').toString();
@@ -856,8 +858,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding:
-                                    const EdgeInsets.only(top: 8, bottom: 4),
+                                padding: const EdgeInsets.only(top: 8, bottom: 4),
                                 child: Text(
                                   e.key.toUpperCase(),
                                   style: const TextStyle(
@@ -869,17 +870,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               ),
                               Wrap(
                                 spacing: 5,
-                                children: e.value
-                                    .map((p) => buildChip(p, true))
-                                    .toList(),
+                                children: e.value.map((p) => buildChip(p, true)).toList(),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 15),
                         Theme(
-                          data: Theme.of(contextModal)
-                              .copyWith(dividerColor: Colors.transparent),
+                          data: Theme.of(contextModal).copyWith(dividerColor: Colors.transparent),
                           child: ExpansionTile(
                             title: const Text(
                               '⚠️ Outras Culturas (Fora de Época)',
@@ -895,8 +893,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.only(
-                                          top: 8, bottom: 4),
+                                      padding: const EdgeInsets.only(top: 8, bottom: 4),
                                       child: Text(
                                         e.key.toUpperCase(),
                                         style: TextStyle(
@@ -908,9 +905,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                     ),
                                     Wrap(
                                       spacing: 5,
-                                      children: e.value
-                                          .map((p) => buildChip(p, false))
-                                          .toList(),
+                                      children: e.value.map((p) => buildChip(p, false)).toList(),
                                     ),
                                   ],
                                 ),
@@ -935,8 +930,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                 const SizedBox(height: 10),
                                 ...qtdPorPlanta.entries.map((entry) {
                                   return Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
                                         child: Text(
@@ -948,12 +942,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.remove_circle,
-                                            color: Colors.red),
+                                        icon: const Icon(Icons.remove_circle, color: Colors.red),
                                         onPressed: () => setModalState(() {
                                           if (entry.value > 1) {
-                                            qtdPorPlanta[entry.key] =
-                                                entry.value - 1;
+                                            qtdPorPlanta[entry.key] = entry.value - 1;
                                           }
                                         }),
                                       ),
@@ -965,11 +957,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.add_circle,
-                                            color: Colors.green),
+                                        icon: const Icon(Icons.add_circle, color: Colors.green),
                                         onPressed: () => setModalState(() {
-                                          qtdPorPlanta[entry.key] =
-                                              entry.value + 1;
+                                          qtdPorPlanta[entry.key] = entry.value + 1;
                                         }),
                                       ),
                                     ],
@@ -984,15 +974,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             decoration: const InputDecoration(
                               labelText: 'Observação do Plantio',
                               border: OutlineInputBorder(),
-                              contentPadding:
-                                  EdgeInsets.symmetric(horizontal: 10),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10),
                             ),
                           ),
                           const SizedBox(height: 10),
                           TextField(
                             controller: custoMudasController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(
                               labelText: 'Custo de Mudas/Sementes (R\$)',
                               prefixIcon: Icon(Icons.monetization_on),
@@ -1013,8 +1001,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                           ? null
                           : () async {
                               final custo = double.tryParse(
-                                    custoMudasController.text
-                                        .replaceAll(',', '.'),
+                                    custoMudasController.text.trim().replaceAll(',', '.'),
                                   ) ??
                                   0.0;
 
@@ -1029,25 +1016,17 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
                                 if (!mounted) return;
                                 Navigator.pop(ctx);
-                                _snack(
-                                    '✅ Plantio registrado! Canteiro em PRODUÇÃO.',
-                                    bg: Colors.green);
+                                _snack('✅ Plantio registrado! Canteiro em PRODUÇÃO.', bg: Colors.green);
                                 await _refreshHistorico();
                               } catch (e) {
-                                _snack(
-                                    '❌ Falha ao registrar plantio: ${_friendlyError(e as Object)}',
-                                    bg: Colors.red);
+                                _snack('❌ Falha ao registrar plantio: ${_friendlyError(e)}', bg: Colors.red);
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: estourou
-                            ? Colors.grey
-                            : Theme.of(contextModal).colorScheme.primary,
+                        backgroundColor: estourou ? Colors.grey : Theme.of(contextModal).colorScheme.primary,
                         foregroundColor: Colors.white,
                       ),
-                      child: Text(estourou
-                          ? 'FALTA ESPAÇO NO CANTEIRO'
-                          : 'CONFIRMAR PLANTIO'),
+                      child: Text(estourou ? 'FALTA ESPAÇO NO CANTEIRO' : 'CONFIRMAR PLANTIO'),
                     ),
                   ),
               ],
@@ -1071,8 +1050,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (!_isLogado) throw Exception('Usuário não logado.');
 
     final uid = _uid!;
-    final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
-    final plantioRef = _db.collection(_colHistorico).doc();
+    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
+    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
 
     String resumo = "Plantio ($regiao/$mes):\n";
     final nomes = <String>[];
@@ -1093,8 +1072,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       final status = (canteiro['status'] ?? 'livre').toString();
 
       if (status != 'livre') {
-        throw Exception(
-            'Canteiro não está livre. Finalize a safra antes de plantar de novo.');
+        throw Exception('Canteiro não está livre. Finalize a safra antes de plantar de novo.');
       }
 
       final totalCustoAtual = _toDouble(canteiro['agg_total_custo']);
@@ -1102,7 +1080,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       tx.set(plantioRef, {
         'canteiro_id': widget.canteiroId,
         'uid_usuario': uid,
-        'data': _nowTs(), // <= robusto para rules/ordenação
+        'data': _nowTs(),
         'tipo_manejo': 'Plantio',
         'produto': produto,
         'detalhes': resumo,
@@ -1119,8 +1097,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         'agg_ciclo_custo': custo,
         'agg_ciclo_receita': 0.0,
         'agg_ciclo_id': plantioRef.id,
-        'agg_ciclo_inicio':
-            _nowTs(), // <= evita serverTimestamp chato nas rules
+        'agg_ciclo_inicio': _nowTs(),
         'agg_ciclo_produtos': produto,
         'agg_ciclo_mapa': qtdPorPlanta,
         'agg_ciclo_concluido': false,
@@ -1131,6 +1108,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   // -----------------------
   // COLHEITA + PERDA
+  // (mantive igual, só ajustei casts/erros quando precisava)
   // -----------------------
   void _mostrarDialogoColheita({
     required String idPlantioAtivo,
@@ -1139,7 +1117,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }) {
     final selecionados = <String, bool>{};
     final ctrlsQtd = <String, TextEditingController>{};
-    final receitaCtrl = TextEditingController(text: '0.00');
+    final receitaCtrl = TextEditingController(text: '0,00');
     final obsCtrl = TextEditingController();
 
     final culturas = mapaPlantioAtual.keys.toList()..sort();
@@ -1188,14 +1166,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.agriculture,
-                        color: Colors.green, size: 26),
+                    const Icon(Icons.agriculture, color: Colors.green, size: 26),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
                         'Registrar Colheita',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ),
                     AppButtons.textIcon(
@@ -1203,8 +1179,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         setModalState(() {
                           for (final c in culturas) {
                             selecionados[c] = true;
-                            ctrlsQtd[c]!.text =
-                                (mapaPlantioAtual[c] ?? 0).toString();
+                            ctrlsQtd[c]!.text = (mapaPlantioAtual[c] ?? 0).toString();
                           }
                         });
                       },
@@ -1239,17 +1214,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                   children: [
                                     Checkbox(
                                       value: selecionados[cultura],
-                                      onChanged: (v) => setModalState(
-                                        () =>
-                                            selecionados[cultura] = v ?? false,
-                                      ),
+                                      onChanged: (v) => setModalState(() => selecionados[cultura] = v ?? false),
                                       activeColor: Colors.green,
                                     ),
                                     Expanded(
                                       child: Text(
                                         cultura,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold),
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                     Chip(
@@ -1279,8 +1250,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       if (finalidadeCanteiro == 'comercio') ...[
                         TextField(
                           controller: receitaCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: const InputDecoration(
                             labelText: 'Receita da venda (R\$)',
                             prefixIcon: Icon(Icons.monetization_on),
@@ -1327,9 +1297,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               final colhidos = <String, int>{};
                               for (final c in culturas) {
                                 if (selecionados[c] == true) {
-                                  final qtd =
-                                      int.tryParse(ctrlsQtd[c]!.text.trim()) ??
-                                          0;
+                                  final qtd = int.tryParse(ctrlsQtd[c]!.text.trim()) ?? 0;
                                   if (qtd > 0) colhidos[c] = qtd;
                                 }
                               }
@@ -1339,9 +1307,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                 return;
                               }
 
-                              final receita = double.tryParse(
-                                      receitaCtrl.text.replaceAll(',', '.')) ??
-                                  0.0;
+                              final receita = double.tryParse(receitaCtrl.text.replaceAll(',', '.')) ?? 0.0;
                               final obs = obsCtrl.text.trim();
 
                               Navigator.pop(ctx);
@@ -1350,12 +1316,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                 idPlantioAtivo: idPlantioAtivo,
                                 colhidos: colhidos,
                                 finalidadeCanteiro: finalidadeCanteiro,
-                                receita: (finalidadeCanteiro == 'comercio')
-                                    ? receita
-                                    : 0.0,
-                                observacao: (finalidadeCanteiro == 'consumo')
-                                    ? obs
-                                    : '',
+                                receita: (finalidadeCanteiro == 'comercio') ? receita : 0.0,
+                                observacao: (finalidadeCanteiro == 'consumo') ? obs : '',
                               );
 
                               await _refreshHistorico();
@@ -1396,30 +1358,26 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     }
 
     final uid = _uid!;
-    final plantioRef = _db.collection(_colHistorico).doc(idPlantioAtivo);
-    final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
-    final colheitaRef = _db.collection(_colHistorico).doc();
+    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(idPlantioAtivo);
+    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
+    final colheitaRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
 
     try {
       bool cicloFinalizado = false;
 
       await _db.runTransaction((tx) async {
         final plantioSnap = await tx.get(plantioRef);
-        if (!plantioSnap.exists)
-          throw Exception('Plantio ativo não encontrado.');
+        if (!plantioSnap.exists) throw Exception('Plantio ativo não encontrado.');
 
         final data = (plantioSnap.data() as Map<String, dynamic>?) ?? {};
-        if (data['concluido'] == true)
-          throw Exception('Esse plantio já está concluído.');
+        if (data['concluido'] == true) throw Exception('Esse plantio já está concluído.');
 
         Map<String, int> mapaAtual = _intMapFromAny(data['mapa_plantio']);
         if (mapaAtual.isEmpty) {
-          mapaAtual =
-              _extrairMapaDoDetalhe((data['detalhes'] ?? '').toString());
+          mapaAtual = _extrairMapaDoDetalhe((data['detalhes'] ?? '').toString());
         }
         if (mapaAtual.isEmpty) {
-          throw Exception(
-              'Não consegui identificar quantidades. Garanta "mapa_plantio" no Plantio.');
+          throw Exception('Não consegui identificar quantidades. Garanta "mapa_plantio" no Plantio.');
         }
 
         final mapaRestante = Map<String, int>.from(mapaAtual);
@@ -1438,33 +1396,27 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
         cicloFinalizado = mapaRestante.isEmpty;
 
-        // grava colheita
         tx.set(colheitaRef, {
           'canteiro_id': widget.canteiroId,
           'uid_usuario': uid,
           'data': _nowTs(),
           'tipo_manejo': 'Colheita',
           'produto': colhidos.keys.join(' + '),
-          'detalhes':
-              'Colhido: ${colhidos.entries.map((e) => '${e.key} (${e.value} un)').join(' | ')}',
+          'detalhes': 'Colhido: ${colhidos.entries.map((e) => '${e.key} (${e.value} un)').join(' | ')}',
           'concluido': true,
           'finalidade': finalidadeCanteiro,
           'mapa_movimento': colhidos,
           if (finalidadeCanteiro == 'comercio') 'receita': receita,
-          if (finalidadeCanteiro == 'consumo' && observacao.isNotEmpty)
-            'observacao_extra': observacao,
+          if (finalidadeCanteiro == 'consumo' && observacao.isNotEmpty) 'observacao_extra': observacao,
         });
 
-        // atualiza plantio ativo (saldo)
         tx.update(plantioRef, {
           'mapa_plantio': mapaRestante,
           'produto': novoProduto,
           if (cicloFinalizado) 'concluido': true,
-          if (cicloFinalizado)
-            'observacao_extra': 'Ciclo finalizado por colheita total.',
+          if (cicloFinalizado) 'observacao_extra': 'Ciclo finalizado por colheita total.',
         });
 
-        // lê canteiro pra somar receita com segurança
         final canteiroSnap = await tx.get(canteiroRef);
         if (!canteiroSnap.exists) throw Exception('Canteiro não encontrado.');
 
@@ -1492,16 +1444,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       });
 
       _snack(
-        cicloFinalizado
-            ? '✅ Colheita registrada. Canteiro liberado.'
-            : '✅ Colheita parcial registrada. Saldo mantido.',
+        cicloFinalizado ? '✅ Colheita registrada. Canteiro liberado.' : '✅ Colheita parcial registrada. Saldo mantido.',
         bg: Colors.green,
       );
 
       if (mounted) setState(() {});
     } catch (e) {
-      _snack('❌ Falha ao processar colheita: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao processar colheita: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
@@ -1554,9 +1503,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 value: culturaSel,
-                items: culturas
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
+                items: culturas.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                 onChanged: (v) => culturaSel = v ?? culturaSel,
                 decoration: const InputDecoration(
                   labelText: 'Cultura',
@@ -1597,13 +1544,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                     final motivo = motivoCtrl.text.trim();
 
                     if (qtd <= 0) {
-                      _snack('⚠️ Informe uma quantidade > 0.',
-                          bg: Colors.orange);
+                      _snack('⚠️ Informe uma quantidade > 0.', bg: Colors.orange);
                       return;
                     }
                     if (qtd > max) {
-                      _snack('⚠️ Não pode baixar mais que o restante ($max).',
-                          bg: Colors.orange);
+                      _snack('⚠️ Não pode baixar mais que o restante ($max).', bg: Colors.orange);
                       return;
                     }
                     if (motivo.isEmpty) {
@@ -1650,9 +1595,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     }
 
     final uid = _uid!;
-    final plantioRef = _db.collection(_colHistorico).doc(idPlantioAtivo);
-    final canteiroRef = _db.collection(_colCanteiros).doc(widget.canteiroId);
-    final perdaRef = _db.collection(_colHistorico).doc();
+    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(idPlantioAtivo);
+    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
+    final perdaRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
 
     try {
       bool cicloFinalizado = false;
@@ -1662,17 +1607,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         if (!snap.exists) throw Exception('Plantio ativo não encontrado.');
 
         final data = (snap.data() as Map<String, dynamic>?) ?? {};
-        if (data['concluido'] == true)
-          throw Exception('Esse plantio já está concluído.');
+        if (data['concluido'] == true) throw Exception('Esse plantio já está concluído.');
 
         Map<String, int> mapaAtual = _intMapFromAny(data['mapa_plantio']);
         if (mapaAtual.isEmpty) {
-          mapaAtual =
-              _extrairMapaDoDetalhe((data['detalhes'] ?? '').toString());
+          mapaAtual = _extrairMapaDoDetalhe((data['detalhes'] ?? '').toString());
         }
         if (mapaAtual.isEmpty) {
-          throw Exception(
-              'Não consegui identificar quantidades. Garanta "mapa_plantio" no Plantio.');
+          throw Exception('Não consegui identificar quantidades. Garanta "mapa_plantio" no Plantio.');
         }
 
         final atual = mapaAtual[cultura] ?? 0;
@@ -1702,9 +1644,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           'mapa_plantio': mapaAtual,
           'produto': novoProduto,
           if (cicloFinalizado) 'concluido': true,
-          if (cicloFinalizado)
-            'observacao_extra':
-                'Ciclo finalizado por perda total / baixa final.',
+          if (cicloFinalizado) 'observacao_extra': 'Ciclo finalizado por perda total / baixa final.',
         });
 
         final updates = <String, dynamic>{
@@ -1722,16 +1662,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       });
 
       _snack(
-        cicloFinalizado
-            ? '✅ Perda registrada. Canteiro liberado.'
-            : '✅ Perda registrada. Saldo atualizado.',
+        cicloFinalizado ? '✅ Perda registrada. Canteiro liberado.' : '✅ Perda registrada. Saldo atualizado.',
         bg: cicloFinalizado ? Colors.green : Colors.orange,
       );
 
       if (mounted) setState(() {});
     } catch (e) {
-      _snack('❌ Falha ao registrar perda: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao registrar perda: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
@@ -1775,18 +1712,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   ),
                   _CardMenu(
                     icon: Icons.spa,
-                    color:
-                        (statusAtual == 'livre') ? Colors.green : Colors.grey,
+                    color: (statusAtual == 'livre') ? Colors.green : Colors.grey,
                     title: 'Novo Plantio',
-                    subtitle:
-                        (statusAtual == 'livre') ? 'Planejar' : 'Bloqueado',
+                    subtitle: (statusAtual == 'livre') ? 'Planejar' : 'Bloqueado',
                     onTap: () {
                       Navigator.pop(ctx);
                       if (statusAtual != 'livre') {
-                        _snack(
-                          '⚠️ Finalize a safra (colheita/perda) antes de plantar de novo.',
-                          bg: Colors.orange,
-                        );
+                        _snack('⚠️ Finalize a safra (colheita/perda) antes de plantar de novo.', bg: Colors.orange);
                         return;
                       }
                       _mostrarDialogoPlantio(c, l);
@@ -1833,9 +1765,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final corFundo = _getCorStatus(status);
     final corTexto = (status == 'livre')
         ? Colors.green.shade900
-        : (status == 'manutencao'
-            ? Colors.orange.shade900
-            : Colors.red.shade900);
+        : (status == 'manutencao' ? Colors.orange.shade900 : Colors.red.shade900);
 
     final textoStatus = _getTextoStatus(status);
 
@@ -1846,17 +1776,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final cicloReceita = _toDouble(dadosCanteiro['agg_ciclo_receita']);
 
     final cicloId = (dadosCanteiro['agg_ciclo_id'] ?? '').toString();
-    final cicloConcluido =
-        (dadosCanteiro['agg_ciclo_concluido'] ?? false) == true;
+    final cicloConcluido = (dadosCanteiro['agg_ciclo_concluido'] ?? false) == true;
     final cicloInicio = dadosCanteiro['agg_ciclo_inicio'] is Timestamp
         ? dadosCanteiro['agg_ciclo_inicio'] as Timestamp
         : null;
     final cicloMapa = _intMapFromAny(dadosCanteiro['agg_ciclo_mapa']);
-    final cicloProdutos =
-        (dadosCanteiro['agg_ciclo_produtos'] ?? '').toString();
+    final cicloProdutos = (dadosCanteiro['agg_ciclo_produtos'] ?? '').toString();
 
-    final temPlantioAtivo =
-        (status == 'ocupado') && cicloId.isNotEmpty && !cicloConcluido;
+    final temPlantioAtivo = (status == 'ocupado') && cicloId.isNotEmpty && !cicloConcluido;
     final culturasAtivas = cicloMapa.keys.toList()..sort();
 
     Widget financeCard() {
@@ -1880,8 +1807,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               children: [
                 Icon(Icons.account_balance_wallet, size: 18),
                 SizedBox(width: 8),
-                Text('Financeiro',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Financeiro', style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 10),
@@ -1951,9 +1877,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             color: corFundo,
             borderRadius: BorderRadius.circular(15),
             border: Border.all(color: corTexto.withOpacity(0.25)),
-            boxShadow: [
-              BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 6)
-            ],
+            boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 6)],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1963,8 +1887,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   Chip(
                     label: Text(
                       textoStatus,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 10),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
                     ),
                     backgroundColor: Colors.white,
                     labelStyle: TextStyle(color: corTexto),
@@ -1973,8 +1896,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   Chip(
                     label: Text(
                       'Finalidade: ${_labelFinalidade(finalidade)}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 10),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
                     ),
                     backgroundColor: Colors.white,
                     labelStyle: TextStyle(color: _corFinalidade(finalidade)),
@@ -1988,8 +1910,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         finalidadeCanteiro: finalidade,
                       ),
                       icon: const Icon(Icons.check, size: 16),
-                      label:
-                          const Text('Colher', style: TextStyle(fontSize: 12)),
+                      label: const Text('Colher', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
@@ -2012,8 +1933,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   const SizedBox(width: 8),
                   const Padding(
                     padding: EdgeInsets.only(bottom: 4),
-                    child: Text('Área total',
-                        style: TextStyle(fontSize: 11, color: Colors.black54)),
+                    child: Text('Área total', style: TextStyle(fontSize: 11, color: Colors.black54)),
                   ),
                   const Spacer(),
                   IconButton(
@@ -2021,19 +1941,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       Icons.build_circle,
                       color: status == 'manutencao'
                           ? Colors.orange
-                          : (status == 'ocupado'
-                              ? Colors.grey.withOpacity(0.35)
-                              : Colors.grey),
+                          : (status == 'ocupado' ? Colors.grey.withOpacity(0.35) : Colors.grey),
                     ),
                     tooltip: 'Manutenção',
                     onPressed: status == 'ocupado'
-                        ? () => _snack(
-                              '❌ Canteiro em produção. Finalize a safra antes de manutenção.',
-                              bg: Colors.red,
-                            )
-                        : () => _atualizarStatusCanteiro(
-                              status == 'manutencao' ? 'livre' : 'manutencao',
-                            ),
+                        ? () => _snack('❌ Canteiro em produção. Finalize a safra antes de manutenção.', bg: Colors.red)
+                        : () => _atualizarStatusCanteiro(status == 'manutencao' ? 'livre' : 'manutencao'),
                   ),
                 ],
               ),
@@ -2041,15 +1954,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 const Divider(),
                 Row(
                   children: [
-                    const Text('Safra atual',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text('Safra atual', style: TextStyle(fontWeight: FontWeight.bold)),
                     const Spacer(),
                     Text(
-                      cicloInicio == null
-                          ? 'Início: —'
-                          : 'Início: ${_fmtData(cicloInicio)}',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.black54),
+                      cicloInicio == null ? 'Início: —' : 'Início: ${_fmtData(cicloInicio)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black54),
                     ),
                   ],
                 ),
@@ -2057,8 +1966,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 if (cicloProdutos.isNotEmpty)
                   Text(
                     cicloProdutos,
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -2066,19 +1974,15 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   runSpacing: 6,
                   children: culturasAtivas.map((c) {
                     final rest = cicloMapa[c] ?? 0;
-                    return Chip(
-                        label: Text('$c: $rest'),
-                        backgroundColor: Colors.white);
+                    return Chip(label: Text('$c: $rest'), backgroundColor: Colors.white);
                   }).toList(),
                 ),
                 const SizedBox(height: 10),
                 if (cicloInicio != null) ...[
                   ...culturasAtivas.map((planta) {
                     final ciclo = _toInt(guiaCompleto[planta]?['ciclo'] ?? 90);
-                    final diasPassados =
-                        DateTime.now().difference(cicloInicio!.toDate()).inDays;
-                    final progresso = (diasPassados / (ciclo <= 0 ? 1 : ciclo))
-                        .clamp(0.0, 1.0);
+                    final diasPassados = DateTime.now().difference(cicloInicio!.toDate()).inDays;
+                    final progresso = (diasPassados / (ciclo <= 0 ? 1 : ciclo)).clamp(0.0, 1.0);
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -2087,8 +1991,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         children: [
                           Text(
                             '$planta • ${diasPassados}d / ${ciclo}d',
-                            style: const TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 6),
                           ClipRRect(
@@ -2096,9 +1999,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                             child: LinearProgressIndicator(
                               value: progresso,
                               backgroundColor: Colors.white.withOpacity(0.55),
-                              color: (progresso >= 1)
-                                  ? Colors.green
-                                  : Colors.orangeAccent,
+                              color: (progresso >= 1) ? Colors.green : Colors.orangeAccent,
                               minHeight: 8,
                             ),
                           ),
@@ -2135,8 +2036,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     _largController.text = _toDouble(d['largura']).toString();
 
     String finalidade = (d['finalidade'] ?? 'consumo').toString();
-    if (finalidade != 'consumo' && finalidade != 'comercio')
-      finalidade = 'consumo';
+    if (finalidade != 'consumo' && finalidade != 'comercio') finalidade = 'consumo';
 
     showDialog(
       context: context,
@@ -2167,8 +2067,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       child: Text('Comércio (venda/mercado)'),
                     ),
                   ],
-                  onChanged: (v) =>
-                      setLocalState(() => finalidade = v ?? finalidade),
+                  onChanged: (v) => setLocalState(() => finalidade = v ?? finalidade),
                   decoration: const InputDecoration(
                     labelText: 'Finalidade',
                     border: OutlineInputBorder(),
@@ -2177,8 +2076,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: _compController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
                     labelText: 'Comprimento (m)',
                     border: OutlineInputBorder(),
@@ -2187,8 +2085,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: _largController,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
                     labelText: 'Largura (m)',
                     border: OutlineInputBorder(),
@@ -2198,30 +2095,20 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             ),
           ),
           actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
             ElevatedButton(
               onPressed: () async {
                 final nome = _nomeController.text.trim();
-                final comp = double.tryParse(
-                        _compController.text.replaceAll(',', '.')) ??
-                    0.0;
-                final larg = double.tryParse(
-                        _largController.text.replaceAll(',', '.')) ??
-                    0.0;
+                final comp = double.tryParse(_compController.text.replaceAll(',', '.')) ?? 0.0;
+                final larg = double.tryParse(_largController.text.replaceAll(',', '.')) ?? 0.0;
 
                 if (nome.isEmpty || comp <= 0 || larg <= 0) {
-                  _snack('⚠️ Preencha nome e medidas válidas.',
-                      bg: Colors.orange);
+                  _snack('⚠️ Preencha nome e medidas válidas.', bg: Colors.orange);
                   return;
                 }
 
                 try {
-                  await _db
-                      .collection(_colCanteiros)
-                      .doc(widget.canteiroId)
-                      .update({
+                  await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
                     'nome': nome,
                     'comprimento': comp,
                     'largura': larg,
@@ -2234,8 +2121,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   Navigator.pop(ctx);
                   _snack('✅ Canteiro atualizado.', bg: Colors.green);
                 } catch (e) {
-                  _snack('❌ Falha ao salvar: ${_friendlyError(e as Object)}',
-                      bg: Colors.red);
+                  _snack('❌ Falha ao salvar: ${_friendlyError(e)}', bg: Colors.red);
                 }
               },
               child: const Text('Salvar'),
@@ -2248,14 +2134,13 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   Future<void> _alternarStatus(bool ativoAtual) async {
     try {
-      await _db.collection(_colCanteiros).doc(widget.canteiroId).update({
+      await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
         'ativo': !ativoAtual,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       _snack(!ativoAtual ? '✅ Reativado.' : '✅ Arquivado.', bg: Colors.green);
     } catch (e) {
-      _snack('❌ Falha ao alterar status: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao alterar status: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
@@ -2281,10 +2166,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       final db = _db;
 
       while (true) {
-        Query q = db
-            .collection(_colHistorico)
-            .where('canteiro_id', isEqualTo: widget.canteiroId);
+        Query<Map<String, dynamic>> q =
+            db.collection(_colHistorico).where('canteiro_id', isEqualTo: widget.canteiroId);
         if (_uid != null) q = q.where('uid_usuario', isEqualTo: _uid);
+
         final snap = await q.limit(400).get();
         if (snap.docs.isEmpty) break;
 
@@ -2300,20 +2185,17 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       if (!mounted) return;
       Navigator.pop(context);
       Navigator.pop(context);
-      _snack('✅ Excluído com sucesso (canteiro + histórico).',
-          bg: Colors.green);
+      _snack('✅ Excluído com sucesso (canteiro + histórico).', bg: Colors.green);
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      _snack('❌ Falha ao excluir: ${_friendlyError(e as Object)}',
-          bg: Colors.red);
+      _snack('❌ Falha ao excluir: ${_friendlyError(e)}', bg: Colors.red);
     }
   }
 
   void _confirmarExclusaoCanteiro() {
     if (!_enableHardDelete) {
-      _snack('🚫 Excluir definitivo desativado em produção. Use Arquivar.',
-          bg: Colors.orange);
+      _snack('🚫 Excluir definitivo desativado em produção. Use Arquivar.', bg: Colors.orange);
       return;
     }
 
@@ -2322,16 +2204,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       builder: (ctx) => AlertDialog(
         title: const Text('Excluir DEFINITIVO (DEV)?'),
         content: const Text(
-          'Isso apaga o canteiro E todo o histórico dele.\n\n'
-          'Use isso só em desenvolvimento pra “limpar” o banco.',
+          'Isso apaga o canteiro E todo o histórico dele.\n\nUse isso só em desenvolvimento pra “limpar” o banco.',
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () {
               Navigator.pop(ctx);
               _hardDeleteCanteiroCascade();
@@ -2349,24 +2227,20 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Excluir Registro?'),
-        content: const Text('Essa ação não pode ser desfeita.'),
+        content: const Text('Essa ação não pode ser desfeita.\n\n(Em DEV, pode bagunçar agregados: use "Recalcular agregados").'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               try {
-                await _db.collection(_colHistorico).doc(id).delete();
+                await FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(id).delete();
                 if (!mounted) return;
                 Navigator.pop(ctx);
                 _snack('✅ Registro excluído.', bg: Colors.green);
                 await _refreshHistorico();
               } catch (e) {
-                _snack('❌ Falha ao excluir: ${_friendlyError(e as Object)}',
-                    bg: Colors.red);
+                _snack('❌ Falha ao excluir: ${_friendlyError(e)}', bg: Colors.red);
               }
             },
             child: const Text('Excluir'),
@@ -2376,8 +2250,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     );
   }
 
-  void _mostrarDialogoPerdaOuEditar(
-      String id, String detalheAtual, String obsAtual) {
+  void _mostrarDialogoPerdaOuEditar(String id, String detalheAtual, String obsAtual) {
     final detalheCtrl = TextEditingController(text: detalheAtual);
     final obsCtrl = TextEditingController(text: obsAtual);
 
@@ -2390,8 +2263,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Aqui você edita o texto do registro.\n'
-                'Para baixa inteligente (que mexe no saldo), use "Registrar Perda".',
+                'Aqui você edita o texto do registro.\nPara baixa inteligente (que mexe no saldo), use "Registrar Perda".',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 10),
@@ -2415,13 +2287,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () async {
               try {
-                await _db.collection(_colHistorico).doc(id).update({
+                await FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(id).update({
                   'detalhes': detalheCtrl.text,
                   'observacao_extra': obsCtrl.text,
                 });
@@ -2430,8 +2300,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 _snack('✅ Registro atualizado!', bg: Colors.green);
                 await _refreshHistorico();
               } catch (e) {
-                _snack('❌ Falha ao atualizar: ${_friendlyError(e as Object)}',
-                    bg: Colors.red);
+                _snack('❌ Falha ao atualizar: ${_friendlyError(e)}', bg: Colors.red);
               }
             },
             child: const Text('Salvar'),
@@ -2449,8 +2318,16 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // -----------------------
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: _db.collection(_colCanteiros).doc(widget.canteiroId).snapshots(),
+    if (_tenantIdOrNull == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Selecione um espaço (tenant) para continuar.'),
+        ),
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Scaffold(
@@ -2462,10 +2339,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           );
         }
 
-        if (!snapshot.hasData ||
-            snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+        if (!snapshot.hasData || snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         final raw = snapshot.data!.data();
@@ -2495,11 +2370,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           );
         }
 
-        final dados = Map<String, dynamic>.from(raw as Map);
-        final canteiroRef =
-            _db.collection(_colCanteiros).doc(widget.canteiroId);
+        final dados = Map<String, dynamic>.from(raw);
+        final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
 
-        // inicializa agregados se faltarem (pós-frame)
         if (!_aggInitChecked) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _ensureAggFields(canteiroRef, dados);
@@ -2510,15 +2383,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         final String status = (dados['status'] ?? 'livre').toString();
         final double comp = _toDouble(dados['comprimento']);
         final double larg = _toDouble(dados['largura']);
-        final double area = _toDouble(dados['area_m2']) > 0
-            ? _toDouble(dados['area_m2'])
-            : (comp * larg);
+        final double area = _toDouble(dados['area_m2']) > 0 ? _toDouble(dados['area_m2']) : (comp * larg);
 
         String finalidade = (dados['finalidade'] ?? 'consumo').toString();
-        if (finalidade != 'consumo' && finalidade != 'comercio')
-          finalidade = 'consumo';
+        if (finalidade != 'consumo' && finalidade != 'comercio') finalidade = 'consumo';
 
-        // carrega histórico paginado 1x por tela
         if (_isLogado && _docs.isEmpty && _loadingFirst) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _refreshHistorico();
@@ -2538,8 +2407,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.edit, size: 20),
-                  onPressed: () =>
-                      _editarNomeCanteiro((dados['nome'] ?? '').toString()),
+                  onPressed: () => _editarNomeCanteiro((dados['nome'] ?? '').toString()),
                   tooltip: 'Renomear',
                 ),
               ],
@@ -2556,14 +2424,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(value: 'e', child: Text('Editar')),
-                  PopupMenuItem(
-                      value: 's', child: Text(ativo ? 'Arquivar' : 'Reativar')),
+                  PopupMenuItem(value: 's', child: Text(ativo ? 'Arquivar' : 'Reativar')),
                   if (_enableHardDelete)
-                    const PopupMenuItem(
-                        value: 'x', child: Text('Excluir DEFINITIVO (DEV)')),
+                    const PopupMenuItem(value: 'x', child: Text('Excluir DEFINITIVO (DEV)')),
                   if (_enableHardDelete)
-                    const PopupMenuItem(
-                        value: 'r', child: Text('Recalcular agregados (DEV)')),
+                    const PopupMenuItem(value: 'r', child: Text('Recalcular agregados (DEV)')),
                 ],
               ),
             ],
@@ -2589,8 +2454,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                     finalidade: finalidade,
                   ),
                 ),
-                if (_err != null)
-                  SliverToBoxAdapter(child: _buildFirestoreError(_err)),
+                if (!_isLogado)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('⚠️ Faça login para ver o histórico e registrar manejo.'),
+                    ),
+                  ),
+                if (_err != null) SliverToBoxAdapter(child: _buildFirestoreError(_err)),
                 if (_loadingFirst)
                   const SliverFillRemaining(
                     hasScrollBody: false,
@@ -2599,27 +2470,22 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 else if (_docs.isEmpty)
                   const SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                        child:
-                            Text('Sem histórico ainda. Use o botão MANEJO 👇')),
+                    child: Center(child: Text('Sem histórico ainda. Use o botão MANEJO 👇')),
                   )
                 else
                   SliverList(
                     delegate: SliverChildBuilderDelegate((ctx, i) {
-                      final e =
-                          (_docs[i].data() as Map<String, dynamic>?) ?? {};
+                      final e = _docs[i].data();
                       final concluido = (e['concluido'] ?? false) == true;
                       final tipo = (e['tipo_manejo'] ?? '').toString();
                       final produto = (e['produto'] ?? '').toString();
                       final detalhes = (e['detalhes'] ?? '').toString();
                       final custo = _toDouble(e['custo']);
                       final receita = _toDouble(e['receita']);
-                      final ts = e['data'] is Timestamp
-                          ? e['data'] as Timestamp
-                          : null;
+                      final ts = e['data'] is Timestamp ? e['data'] as Timestamp : null;
 
-                      IconData iconByTipo(String tipo) {
-                        switch (tipo) {
+                      IconData iconByTipo(String t) {
+                        switch (t) {
                           case 'Plantio':
                             return Icons.spa;
                           case 'Irrigação':
@@ -2635,8 +2501,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         }
                       }
 
-                      Color colorByTipo(String tipo) {
-                        switch (tipo) {
+                      Color colorByTipo(String t) {
+                        switch (t) {
                           case 'Plantio':
                             return Colors.green;
                           case 'Irrigação':
@@ -2653,21 +2519,17 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       }
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 15, vertical: 6),
+                        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 6),
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor:
-                                colorByTipo(tipo).withOpacity(0.12),
-                            child: Icon(iconByTipo(tipo),
-                                color: colorByTipo(tipo)),
+                            backgroundColor: colorByTipo(tipo).withOpacity(0.12),
+                            child: Icon(iconByTipo(tipo), color: colorByTipo(tipo)),
                           ),
                           title: Text(
                             produto.isEmpty ? tipo : produto,
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
-                              decoration:
-                                  concluido ? TextDecoration.lineThrough : null,
+                              decoration: concluido ? TextDecoration.lineThrough : null,
                             ),
                           ),
                           subtitle: Column(
@@ -2685,8 +2547,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               if (_fmtData(ts).isNotEmpty)
                                 Text(
                                   _fmtData(ts),
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.black54),
+                                  style: const TextStyle(fontSize: 11, color: Colors.black54),
                                 ),
                               if (detalhes.isNotEmpty) ...[
                                 const SizedBox(height: 4),
@@ -2694,29 +2555,20 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               ],
                               if (custo > 0) ...[
                                 const SizedBox(height: 4),
-                                Text(
-                                  'Custo: ${_money(custo)}',
-                                  style: const TextStyle(
-                                      color: Colors.red, fontSize: 12),
-                                ),
+                                Text('Custo: ${_money(custo)}', style: const TextStyle(color: Colors.red, fontSize: 12)),
                               ],
                               if (receita > 0) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   'Receita: ${_money(receita)}',
-                                  style: const TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
+                                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ],
                             ],
                           ),
                           trailing: PopupMenuButton<String>(
                             onSelected: (value) {
-                              if (value == 'excluir')
-                                _confirmarExclusaoItem(_docs[i].id);
+                              if (value == 'excluir') _confirmarExclusaoItem(_docs[i].id);
                               if (value == 'editar') {
                                 _mostrarDialogoPerdaOuEditar(
                                   _docs[i].id,
@@ -2730,8 +2582,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                 value: 'editar',
                                 child: Row(
                                   children: [
-                                    Icon(Icons.edit,
-                                        color: Colors.orange, size: 18),
+                                    Icon(Icons.edit, color: Colors.orange, size: 18),
                                     SizedBox(width: 8),
                                     Text('Editar texto'),
                                   ],
@@ -2742,8 +2593,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                                   value: 'excluir',
                                   child: Row(
                                     children: [
-                                      Icon(Icons.delete,
-                                          color: Colors.red, size: 18),
+                                      Icon(Icons.delete, color: Colors.red, size: 18),
                                       SizedBox(width: 8),
                                       Text('Excluir (DEV)'),
                                     ],
@@ -2806,8 +2656,7 @@ class _MiniStat extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(value,
-              style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
           const SizedBox(height: 4),
           Text(
             label,
@@ -2851,10 +2700,8 @@ class _CardMenu extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 32),
             const SizedBox(height: 8),
-            Text(title,
-                style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-            Text(subtitle,
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+            Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+            Text(subtitle, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
           ],
         ),
       ),

@@ -3,11 +3,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
 
 class TelaGeradorCanteiros extends StatefulWidget {
   final List<Map<String, dynamic>> itensPlanejados;
 
-  const TelaGeradorCanteiros({super.key, required this.itensPlanejados});
+  const TelaGeradorCanteiros({
+    super.key,
+    required this.itensPlanejados,
+  });
 
   @override
   State<TelaGeradorCanteiros> createState() => _TelaGeradorCanteirosState();
@@ -23,9 +28,9 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     _processarInteligencia();
   }
 
-  // ---------------------------
-  // Helpers (robustos)
-  // ---------------------------
+  // ===========================================================================
+  // Helpers robustos
+  // ===========================================================================
   double _asDouble(dynamic v) {
     if (v == null) return 0.0;
 
@@ -52,7 +57,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     }
 
     if (v is num) return v.round();
-
     return int.tryParse(v.toString().trim()) ?? 0;
   }
 
@@ -75,9 +79,9 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     return <String>[];
   }
 
-  // ---------------------------
-  // Sanitizador Firestore (anti “abort()” no Windows)
-  // ---------------------------
+  // ===========================================================================
+  // Sanitizador Firestore (anti abort() / NaN / tipos bizarros)
+  // ===========================================================================
   Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
     final val = _sanitize(map, r'$');
     return (val as Map).cast<String, dynamic>();
@@ -86,7 +90,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   dynamic _sanitize(dynamic value, String path) {
     if (value == null) return null;
 
-    // tipos OK
     if (value is String || value is bool || value is int) return value;
 
     if (value is double) {
@@ -102,7 +105,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       if (d.isNaN || d.isInfinite) {
         throw ArgumentError('Firestore: num inválido em $path (NaN/Infinity).');
       }
-      return d; // Firestore gosta de num como double
+      return d;
     }
 
     if (value is Timestamp ||
@@ -141,43 +144,34 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     );
   }
 
-  // ---------------------------
-  // Inteligência de Agrupamento
-  // ---------------------------
+  // ===========================================================================
+  // Inteligência de agrupamento
+  // ===========================================================================
   bool _ehCompat(
-    Map<String, dynamic> canteiro,
-    Map<String, dynamic> candidata,
-  ) {
+      Map<String, dynamic> canteiro, Map<String, dynamic> candidata) {
     final nomeCandidata = _nomePlanta(candidata);
     final inimigosCandidata = _listaString(candidata['evitar']);
 
-    final evitarDoCanteiro = List<String>.from(
-      canteiro['evitar'] as List? ?? const [],
-    );
+    final evitarDoCanteiro =
+        List<String>.from(canteiro['evitar'] as List? ?? const []);
     if (evitarDoCanteiro.contains(nomeCandidata)) return false;
 
     final plantasNoCanteiro = List<Map<String, dynamic>>.from(
-      canteiro['plantas'] as List? ?? const [],
-    );
+        canteiro['plantas'] as List? ?? const []);
     for (final p in plantasNoCanteiro) {
       final plantaNoCanteiro = _nomePlanta(p);
-      if (inimigosCandidata.contains(plantaNoCanteiro)) {
-        return false;
-      }
+      if (inimigosCandidata.contains(plantaNoCanteiro)) return false;
     }
 
     return true;
   }
 
   int _scorePreferencia(
-    Map<String, dynamic> canteiro,
-    Map<String, dynamic> candidata,
-  ) {
+      Map<String, dynamic> canteiro, Map<String, dynamic> candidata) {
     final nomeCandidata = _nomePlanta(candidata);
 
-    final parDoCanteiro = List<String>.from(
-      canteiro['par'] as List? ?? const [],
-    );
+    final parDoCanteiro =
+        List<String>.from(canteiro['par'] as List? ?? const []);
     final parDaCandidata = _listaString(candidata['par']);
 
     int score = 0;
@@ -185,8 +179,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     if (parDoCanteiro.contains(nomeCandidata)) score += 2;
 
     final plantasNoCanteiro = List<Map<String, dynamic>>.from(
-      canteiro['plantas'] as List? ?? const [],
-    );
+        canteiro['plantas'] as List? ?? const []);
     for (final p in plantasNoCanteiro) {
       final nome = _nomePlanta(p);
       if (parDaCandidata.contains(nome)) {
@@ -203,8 +196,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
   void _atualizarNomeAuto(Map<String, dynamic> canteiro) {
     final plantas = List<Map<String, dynamic>>.from(
-      canteiro['plantas'] as List? ?? const [],
-    );
+        canteiro['plantas'] as List? ?? const []);
     final nomes = plantas.map(_nomePlanta).toList();
 
     if (nomes.isEmpty) {
@@ -278,15 +270,14 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     setState(() => _canteirosSugeridos = canteiros);
   }
 
-  // ---------------------------
-  // UI Actions
-  // ---------------------------
+  // ===========================================================================
+  // Totais
+  // ===========================================================================
   int _totalMudas() {
     int total = 0;
     for (final c in _canteirosSugeridos) {
-      final plantas = List<Map<String, dynamic>>.from(
-        c['plantas'] as List? ?? const [],
-      );
+      final plantas =
+          List<Map<String, dynamic>>.from(c['plantas'] as List? ?? const []);
       for (final p in plantas) {
         total += _asInt(p['mudas']);
       }
@@ -302,11 +293,12 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     return total;
   }
 
+  // ===========================================================================
+  // Editar nome
+  // ===========================================================================
   Future<void> _editarNome(int index) async {
-    final atual = _asString(
-      _canteirosSugeridos[index]['nome'],
-      fallback: 'Canteiro',
-    );
+    final atual =
+        _asString(_canteirosSugeridos[index]['nome'], fallback: 'Canteiro');
     final controller = TextEditingController(text: atual);
 
     final novo = await showDialog<String>(
@@ -319,15 +311,15 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           textInputAction: TextInputAction.done,
           decoration: const InputDecoration(
             hintText: 'Ex: Canteiro Principal',
-            border: OutlineInputBorder(),
           ),
+          onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('Salvar'),
           ),
@@ -338,20 +330,21 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     if (novo == null) return;
     if (novo.trim().isEmpty) return;
 
-    setState(() {
-      _canteirosSugeridos[index]['nome'] = novo.trim();
-    });
+    setState(() => _canteirosSugeridos[index]['nome'] = novo.trim());
   }
 
-  // ---------------------------
-  // Firestore Save (batch + AppMessenger + popUntil)
-  // ---------------------------
+  // ===========================================================================
+  // Firestore Save (batch + sanitize + AppMessenger)
+  // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      AppMessenger.error('Selecione um espaço (tenant) para salvar.');
+      return;
+    }
 
-    if (user == null) {
-      AppMessenger.error(
-          'Você precisa estar logado para salvar o planejamento.');
+    if (_canteirosSugeridos.isEmpty) {
+      AppMessenger.warn('Nada para salvar ainda.');
       return;
     }
 
@@ -362,22 +355,21 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
     try {
       for (final sugestao in _canteirosSugeridos) {
-        final canteiroRef = fs.collection('canteiros').doc();
+        final canteiroRef = FirebasePaths.canteirosCol(appSession.tenantId).doc();
 
         final area = _asDouble(sugestao['areaTotal']);
         const largura = 1.0;
         final comprimento = area > 0 ? (area / largura) : 1.0;
 
         final plantas = List<Map<String, dynamic>>.from(
-          sugestao['plantas'] as List? ?? const [],
-        );
+            sugestao['plantas'] as List? ?? const []);
 
         final culturas = plantas.map((p) => _nomePlanta(p)).toList();
         final mudasTotais =
             plantas.fold<int>(0, (acc, p) => acc + _asInt(p['mudas']));
 
         final canteiroPayload = <String, dynamic>{
-          'uid_usuario': user.uid,
+          'uid_usuario': appSession.uid,
           'nome': _asString(sugestao['nome'], fallback: 'Canteiro'),
           'area_m2': double.parse(area.toStringAsFixed(2)),
           'largura': largura,
@@ -401,21 +393,20 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
         batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
-        final histRef = fs.collection('historico_manejo').doc();
+        final histRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
         final nomes = <String>[];
-        var detalhes = "Plantio Automático (Planejamento):\n";
-
+        var detalhes = 'Plantio Automático (Planejamento):\n';
         for (final p in plantas) {
           final nome = _nomePlanta(p);
           final mudas = _asInt(p['mudas']);
           nomes.add(nome);
-          detalhes += "- $nome: $mudas mudas\n";
+          detalhes += '- $nome: $mudas mudas\n';
         }
 
         final historicoPayload = <String, dynamic>{
           'canteiro_id': canteiroRef.id,
-          'uid_usuario': user.uid,
+          'uid_usuario': appSession.uid,
           'tipo_manejo': 'Plantio',
           'produto': nomes.join(' + '),
           'detalhes': detalhes,
@@ -435,277 +426,254 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
       if (!mounted) return;
 
-      // Primeiro volta pra Home
       Navigator.of(context).popUntil((route) => route.isFirst);
 
-      // Depois mostra a msg (sem depender do contexto da tela que acabou de morrer)
       WidgetsBinding.instance.addPostFrameCallback((_) {
         AppMessenger.success('✅ Canteiros criados e plantados!');
       });
     } catch (e) {
-      AppMessenger.error('Erro ao salvar planejamento: $e');
+      AppMessenger.error('Erro ao salvar: $e');
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
   }
 
-  // ---------------------------
-  // UI
-  // ---------------------------
+  // ===========================================================================
+  // UI (premium via Theme + AppUI)
+  // ===========================================================================
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      return const Scaffold(
+        body: Center(child: Text('Selecione um espaço (tenant) para continuar.')),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Stack(
       children: [
         Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
-            title: const Text(
-              'Plano de Canteiros',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: primary,
-            foregroundColor: Colors.white,
-            elevation: 0,
+            title: const Text('Plano de Canteiros'),
+            actions: [
+              IconButton(
+                tooltip: 'Reprocessar',
+                onPressed: _salvando ? null : _processarInteligencia,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
           ),
           body: _canteirosSugeridos.isEmpty
-              ? _EstadoVazio(onReprocessar: _processarInteligencia)
+              ? _EmptyState(onReprocessar: _processarInteligencia)
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 110),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
                   children: [
-                    _ResumoTopo(
+                    _SummaryCard(
                       qtd: _canteirosSugeridos.length,
                       areaTotal: _totalArea(),
                       mudasTotal: _totalMudas(),
-                      primary: primary,
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     ...List.generate(_canteirosSugeridos.length, (i) {
-                      final canteiro = _canteirosSugeridos[i];
-                      final area = _asDouble(canteiro['areaTotal']);
+                      final c = _canteirosSugeridos[i];
+                      final nome = _asString(c['nome'], fallback: 'Canteiro');
+                      final area = _asDouble(c['areaTotal']);
+
                       const largura = 1.0;
                       final comprimento = area > 0 ? (area / largura) : 1.0;
 
                       final plantas = List<Map<String, dynamic>>.from(
-                        canteiro['plantas'] as List? ?? const [],
-                      );
+                          c['plantas'] as List? ?? const []);
                       final mudas = plantas.fold<int>(
-                        0,
-                        (acc, p) => acc + _asInt(p['mudas']),
-                      );
+                          0, (acc, p) => acc + _asInt(p['mudas']));
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: _CardCanteiro(
-                          nome:
-                              _asString(canteiro['nome'], fallback: 'Canteiro'),
+                        child: _CanteiroCard(
+                          index: i + 1,
+                          nome: nome,
                           area: area,
-                          culturasCount: plantas.length,
-                          mudasTotal: mudas,
                           largura: largura,
                           comprimento: comprimento,
+                          culturasCount: plantas.length,
+                          mudasTotal: mudas,
                           plantas: plantas,
-                          onEditarNome: () => _editarNome(i),
+                          onRename: _salvando ? null : () => _editarNome(i),
                         ),
                       );
                     }),
+                    const SizedBox(height: 8),
+                    Card(
+                      child: ListTile(
+                        leading: Icon(Icons.info_outline, color: cs.primary),
+                        title: const Text('Antes de salvar'),
+                        subtitle: const Text(
+                          'Dica: toque em “renomear” se quiser ajustar os nomes. '
+                          'Depois é só aprovar e o app já cria os canteiros e registra o plantio.',
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-          bottomNavigationBar: Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 14,
-                  offset: const Offset(0, -6),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: 52,
-                width: double.infinity,
-                child: AppButtons.elevatedIcon(
-                  onPressed: _salvando || _canteirosSugeridos.isEmpty
-                      ? null
-                      : _criarTodosCanteiros,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 4,
-                    shadowColor: Colors.green.withOpacity(0.25),
-                  ),
-                  icon: const Icon(Icons.check_circle),
-                  label: const Text(
-                    'APROVAR E PLANTAR AGORA',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                ),
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: AppButtons.elevatedIcon(
+                fullWidth: true,
+                loading: _salvando,
+                onPressed: _salvando || _canteirosSugeridos.isEmpty
+                    ? null
+                    : _criarTodosCanteiros,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('APROVAR E PLANTAR AGORA'),
               ),
             ),
           ),
         ),
 
-        // Overlay de loading
-        IgnorePointer(
-          ignoring: !_salvando,
-          child: AnimatedOpacity(
-            opacity: _salvando ? 1 : 0,
-            duration: const Duration(milliseconds: 180),
-            child: Container(
-              color: Colors.black.withOpacity(0.25),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(width: 14),
-                      Text('Salvando planejamento...'),
-                    ],
-                  ),
+        // overlay de bloqueio (sem inventar estilo; só Theme)
+        if (_salvando) ...[
+          const ModalBarrier(dismissible: false, color: Colors.black26),
+          Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Salvando planejamento...'),
+                  ],
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
 }
 
-// ---------------------------
-// Widgets Premium
-// ---------------------------
-class _ResumoTopo extends StatelessWidget {
+// ===========================================================================
+// Widgets “premium” sem decoração caseira (só Theme / Card / Chip)
+// ===========================================================================
+class _SummaryCard extends StatelessWidget {
   final int qtd;
   final double areaTotal;
   final int mudasTotal;
-  final Color primary;
 
-  const _ResumoTopo({
+  const _SummaryCard({
     required this.qtd,
     required this.areaTotal,
     required this.mudasTotal,
-    required this.primary,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [primary.withOpacity(0.95), primary.withOpacity(0.75)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: primary.withOpacity(0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.white),
-              SizedBox(width: 10),
-              Text(
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.auto_awesome, color: cs.primary),
+              title: const Text(
                 'Sugestão Inteligente',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text('A IA organizou seu consumo em $qtd canteiros.'),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _MiniKpi(
+                    label: 'Área total',
+                    value: '${areaTotal.toStringAsFixed(2)} m²',
+                    icon: Icons.square_foot,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'A IA organizou seu consumo em $qtd canteiros.',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _MiniStat(
-                  label: 'Área total',
-                  value: '${areaTotal.toStringAsFixed(2)} m²',
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MiniKpi(
+                    label: 'Mudas',
+                    value: mudasTotal.toString(),
+                    icon: Icons.grass,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MiniStat(label: 'Mudas', value: mudasTotal.toString()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Dica: toque no lápis para renomear antes de salvar.',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _MiniStat extends StatelessWidget {
+class _MiniKpi extends StatelessWidget {
   final String label;
   final String value;
+  final IconData icon;
 
-  const _MiniStat({required this.label, required this.value});
+  const _MiniKpi({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.18),
+        border: Border.all(color: cs.outlineVariant),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.16)),
+        color: cs.surface,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+          Icon(icon, color: cs.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ),
+          )
         ],
       ),
     );
   }
 }
 
-class _CardCanteiro extends StatelessWidget {
+class _CanteiroCard extends StatelessWidget {
+  final int index;
   final String nome;
   final double area;
   final int culturasCount;
@@ -713,9 +681,10 @@ class _CardCanteiro extends StatelessWidget {
   final double largura;
   final double comprimento;
   final List<Map<String, dynamic>> plantas;
-  final VoidCallback onEditarNome;
+  final VoidCallback? onRename;
 
-  const _CardCanteiro({
+  const _CanteiroCard({
+    required this.index,
     required this.nome,
     required this.area,
     required this.culturasCount,
@@ -723,82 +692,53 @@ class _CardCanteiro extends StatelessWidget {
     required this.largura,
     required this.comprimento,
     required this.plantas,
-    required this.onEditarNome,
+    required this.onRename,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final theme = Theme.of(context);
+
+    return Card(
+      child: ExpansionTile(
+        title: Text(
+          nome,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          'Canteiro #$index • ${area.toStringAsFixed(2)} m²',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: IconButton(
+          tooltip: 'Renomear',
+          onPressed: onRename,
+          icon: const Icon(Icons.edit_outlined),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  nome,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Renomear',
-                onPressed: onEditarNome,
-                icon: Icon(Icons.edit, color: Colors.grey.shade600),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _ChipInfo(
-                icon: Icons.square_foot,
-                text: '${area.toStringAsFixed(1)} m²',
-                color: Colors.blue,
-              ),
-              _ChipInfo(
-                icon: Icons.grass,
-                text: '$mudasTotal mudas',
-                color: Colors.green,
-              ),
-              _ChipInfo(
-                icon: Icons.layers,
-                text: '$culturasCount culturas',
-                color: Colors.deepPurple,
-              ),
-              _ChipInfo(
+              _InfoChip(icon: Icons.grass, label: '$mudasTotal mudas'),
+              _InfoChip(icon: Icons.layers, label: '$culturasCount culturas'),
+              _InfoChip(
                 icon: Icons.straighten,
-                text:
+                label:
                     '${largura.toStringAsFixed(1)}m x ${comprimento.toStringAsFixed(1)}m',
-                color: Colors.blueGrey,
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          const Divider(height: 18),
-          const Text(
-            'Culturas neste canteiro:',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Culturas neste canteiro',
+              style: theme.textTheme.bodySmall,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -807,23 +747,8 @@ class _CardCanteiro extends StatelessWidget {
             children: plantas.map((p) {
               final planta = (p['planta'] ?? 'Planta').toString();
               final mudas = (p['mudas'] ?? 0).toString();
-
-              return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Text(
-                  '$planta ($mudas x)',
-                  style: TextStyle(
-                    color: Colors.green.shade800,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
+              return Chip(
+                label: Text('$planta ($mudas x)'),
               );
             }).toList(),
           ),
@@ -833,48 +758,30 @@ class _CardCanteiro extends StatelessWidget {
   }
 }
 
-class _ChipInfo extends StatelessWidget {
+class _InfoChip extends StatelessWidget {
   final IconData icon;
-  final String text;
-  final Color color;
+  final String label;
 
-  const _ChipInfo({
+  const _InfoChip({
     required this.icon,
-    required this.text,
-    required this.color,
+    required this.label,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.22)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
+    return Chip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
     );
   }
 }
 
-class _EstadoVazio extends StatelessWidget {
+class _EmptyState extends StatelessWidget {
   final VoidCallback onReprocessar;
-  const _EstadoVazio({required this.onReprocessar});
+
+  const _EmptyState({
+    required this.onReprocessar,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -884,23 +791,24 @@ class _EstadoVazio extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.info_outline, size: 44, color: Colors.grey.shade500),
+            const Icon(Icons.info_outline, size: 44),
             const SizedBox(height: 12),
             const Text(
               'Nada para organizar ainda.',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             Text(
               'Volte ao planejamento, selecione as culturas e tente de novo.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade600),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 14),
-            AppButtons.elevatedIcon(
-              onPressed: onReprocessar,
+            AppButtons.outlinedIcon(
               icon: const Icon(Icons.refresh),
               label: const Text('Reprocessar'),
+              onPressed: onReprocessar,
             ),
           ],
         ),

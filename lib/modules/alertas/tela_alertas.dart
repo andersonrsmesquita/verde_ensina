@@ -1,77 +1,117 @@
 import 'package:flutter/material.dart';
 
-import '../../core/ui/widgets/page_container.dart';
-import '../../core/ui/widgets/section_card.dart';
-import '../../core/ui/widgets/app_button.dart';
+import '../../core/ui/app_ui.dart';
 
 class TelaAlertas extends StatelessWidget {
   const TelaAlertas({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return PageContainer(
-      title: 'Alertas / Agenda',
-      child: Column(
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Alertas / Agenda'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
         children: [
-          SectionCard(
-            title: 'Em breve',
-            subtitle: 'Lembretes, agenda e rotina do produtor',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: const [
-                _LinhaInfo(
-                  icon: Icons.notifications_active_outlined,
-                  text: 'Alertas de irrigação, adubação, calagem e colheita.',
-                ),
-                SizedBox(height: 10),
-                _LinhaInfo(
-                  icon: Icons.calendar_month_outlined,
-                  text: 'Agenda por canteiro: o que fazer e quando fazer.',
-                ),
-                SizedBox(height: 10),
-                _LinhaInfo(
-                  icon: Icons.cloud_outlined,
-                  text: 'Integração com clima/chuva para ajustar tarefas.',
-                ),
-              ],
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Em breve',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Lembretes, agenda e rotina do produtor',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  const _InfoTile(
+                    icon: Icons.notifications_active_outlined,
+                    title: 'Alertas de manejo',
+                    subtitle: 'Irrigação, adubação, calagem e colheita.',
+                  ),
+                  const Divider(height: 24),
+                  const _InfoTile(
+                    icon: Icons.calendar_month_outlined,
+                    title: 'Agenda por canteiro',
+                    subtitle: 'O que fazer e quando fazer em cada canteiro.',
+                  ),
+                  const Divider(height: 24),
+                  const _InfoTile(
+                    icon: Icons.cloud_outlined,
+                    title: 'Clima e chuva',
+                    subtitle:
+                        'Integração com clima/chuva para ajustar tarefas.',
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 14),
-          AppButton.primary(
-            label: 'VOLTAR',
-            icon: Icons.arrow_back,
-            onPressed: () => Navigator.of(context).maybePop(),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.tips_and_updates_outlined),
+              title: const Text(
+                'Como vai funcionar',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: const Text(
+                'Você vai poder escolher o canteiro e ativar lembretes automáticos '
+                'para irrigar, adubar e colher — com base no seu planejamento.',
+              ),
+            ),
           ),
         ],
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: SizedBox(
+            height: 48,
+            width: double.infinity,
+            child: AppButtons.elevatedIcon(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('VOLTAR'),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _LinhaInfo extends StatelessWidget {
+class _InfoTile extends StatelessWidget {
   final IconData icon;
-  final String text;
+  final String title;
+  final String subtitle;
 
-  const _LinhaInfo({required this.icon, required this.text});
+  const _InfoTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.25,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      subtitle: Text(subtitle),
     );
   }
 }

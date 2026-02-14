@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import 'tela_detalhes_canteiro.dart';
 import '../../core/ui/app_ui.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
 
 class TelaCanteiros extends StatefulWidget {
   const TelaCanteiros({super.key});
@@ -18,6 +20,7 @@ class TelaCanteiros extends StatefulWidget {
 
 class _TelaCanteirosState extends State<TelaCanteiros> {
   User? get _user => FirebaseAuth.instance.currentUser;
+  final FirebaseFirestore db = FirebaseFirestore.instance;
 
   /// ativos | arquivados | todos
   String _filtroAtivo = 'ativos';
@@ -180,11 +183,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   Query<Map<String, dynamic>> _buildQuery() {
     final user = _user;
 
-    Query<Map<String, dynamic>> q =
-        FirebaseFirestore.instance.collection('canteiros');
+    final appSession = SessionScope.of(context).session;
 
-    // Segurança: sem user, não consulta nada real
-    q = q.where('uid_usuario', isEqualTo: user?.uid ?? '__sem_user__');
+    Query<Map<String, dynamic>> q = (appSession == null)
+        ? FirebaseFirestore.instance.collection('canteiros').limit(0)
+        : FirebasePaths.canteirosCol(appSession.tenantId);
 
     if (_filtroAtivo == 'ativos') {
       q = q.where('ativo', isEqualTo: true);
@@ -251,11 +254,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     final user = _user;
     if (user == null) return;
 
-    final db = FirebaseFirestore.instance;
-    final q = await db
-        .collection('canteiros')
-        .where('uid_usuario', isEqualTo: user.uid)
-        .get();
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) return;
+
+    final q = await FirebasePaths.canteirosCol(appSession.tenantId).get();
 
     int count = 0;
     final batch = db.batch();
@@ -438,12 +440,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   payload['ativo'] = true;
                   payload['status'] = 'livre';
 
-                  await FirebaseFirestore.instance
-                      .collection('canteiros')
-                      .add(payload);
+                  final appSession = SessionScope.of(context).session;
+                  if (appSession == null) throw Exception('Sem tenant selecionado');
+
+                  await FirebasePaths.canteirosCol(appSession.tenantId).add(payload);
                 } else {
-                  await FirebaseFirestore.instance
-                      .collection('canteiros')
+                  final appSession = SessionScope.of(context).session;
+                  if (appSession == null) throw Exception('Sem tenant selecionado');
+
+                  await FirebasePaths.canteirosCol(appSession.tenantId)
                       .doc(doc!.id)
                       .update(payload);
                 }
@@ -809,7 +814,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   }
 
   Future<void> _toggleAtivo(String id, bool ativoAtual) async {
-    await FirebaseFirestore.instance.collection('canteiros').doc(id).update({
+    await FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId).doc(id).update({
       'ativo': !ativoAtual,
       'data_atualizacao': FieldValue.serverTimestamp(),
     });
@@ -837,8 +842,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             label: 'DESFAZER',
             onPressed: () async {
               try {
-                await FirebaseFirestore.instance
-                    .collection('canteiros')
+                final appSession = SessionScope.of(context).session;
+                if (appSession == null) throw Exception('Sem tenant selecionado');
+
+                await FirebasePaths.canteirosCol(appSession.tenantId)
                     .doc(id)
                     .update({
                   'ativo': ativoAtual,
@@ -858,7 +865,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   }
 
   Future<void> _excluirHard(String id) async {
-    await FirebaseFirestore.instance.collection('canteiros').doc(id).delete();
+    await FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId).doc(id).delete();
   }
 
   Future<void> _confirmarExcluirHard(String id, String nome) async {

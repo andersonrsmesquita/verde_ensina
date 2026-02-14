@@ -6,40 +6,67 @@ import 'firebase_options.dart';
 import 'core/routing/app_router.dart';
 import 'core/ui/app_ui.dart';
 
+import 'core/session/session_controller.dart';
+import 'core/session/session_scope.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  runApp(const VerdeEnsinaApp());
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('🔥 Firebase init error: $e');
+  }
+
+  final sessionController = SessionController();
+  await sessionController.init();
+
+  runApp(VerdeEnsinaApp(sessionController: sessionController));
 }
 
-class VerdeEnsinaApp extends StatelessWidget {
-  const VerdeEnsinaApp({super.key});
+class VerdeEnsinaApp extends StatefulWidget {
+  final SessionController sessionController;
+  const VerdeEnsinaApp({super.key, required this.sessionController});
+
+  @override
+  State<VerdeEnsinaApp> createState() => _VerdeEnsinaAppState();
+}
+
+class _VerdeEnsinaAppState extends State<VerdeEnsinaApp> {
+  late final router = AppRouter.buildRouter(widget.sessionController);
+
+  @override
+  void dispose() {
+    widget.sessionController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Verde Ensina Pro',
-      debugShowCheckedModeBanner: false,
+    return SessionScope(
+      controller: widget.sessionController,
+      child: MaterialApp.router(
+        title: 'Verde Ensina Pro',
+        debugShowCheckedModeBanner: false,
 
-      // ✅ SnackBar global
-      scaffoldMessengerKey: AppMessenger.key,
+        scaffoldMessengerKey: AppMessenger.key,
+        routerConfig: router,
 
-      routerConfig: AppRouter.router,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('pt', 'BR'),
+        ],
 
-      // PT-BR
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('pt', 'BR'),
-      ],
-
-      // ✅ Tema global premium
-      theme: AppTheme.light(),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
+      ),
     );
   }
 }

@@ -3,6 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/app_session.dart';
+import '../../core/session/session_scope.dart';
 
 class TelaDiarioManejo extends StatefulWidget {
   const TelaDiarioManejo({super.key});
@@ -12,6 +15,17 @@ class TelaDiarioManejo extends StatefulWidget {
 }
 
 class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
+  // SaaS / Multi-tenant
+  AppSession? get _sessionOrNull => SessionScope.of(context).session;
+  AppSession get appSession {
+    final s = _sessionOrNull;
+    if (s == null) {
+      throw StateError('Sessão indisponível (tenant não selecionado)');
+    }
+    return s;
+  }
+
+  String? get tenantId => _sessionOrNull?.tenantId;
   String? _canteiroIdSelecionado;
 
   // ---------------------------
@@ -124,21 +138,25 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
   // ---------------------------
   // Queries
   // ---------------------------
-  Stream<QuerySnapshot<Map<String, dynamic>>> _watchCanteirosDoUsuario(
-      String uid) {
-    return FirebaseFirestore.instance
-        .collection('canteiros')
-        .where('uid_usuario', isEqualTo: uid)
+    Stream<QuerySnapshot<Map<String, dynamic>>> _watchCanteirosDoUsuario(
+      String tenantId) {
+    return FirebasePaths.canteirosCol(tenantId)
         .where('ativo', isEqualTo: true)
-        .orderBy('data_criacao', descending: true)
+        .orderBy('nome')
         .snapshots();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _watchHistorico(String uid,
-      {String? canteiroId}) {
-    var q = FirebaseFirestore.instance
-        .collection('historico_manejo')
-        .where('uid_usuario', isEqualTo: uid);
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _watchHistorico(
+    String uid, {
+    String? canteiroId,
+  }) {
+    final tId = tenantId;
+    if (tId == null) {
+      return Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
+    }
+
+    Query<Map<String, dynamic>> q = FirebasePaths.historicoManejoCol(tId);
 
     if (canteiroId != null && canteiroId.trim().isNotEmpty) {
       q = q.where('canteiro_id', isEqualTo: canteiroId.trim());
@@ -198,9 +216,10 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
               setModal(() => salvando = true);
 
               try {
-                final docRef = FirebaseFirestore.instance
-                    .collection('historico_manejo')
-                    .doc();
+                final appSession = SessionScope.of(context).session;
+                if (appSession == null) throw Exception('Sem tenant selecionado');
+
+                final docRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
                 final payload = <String, dynamic>{
                   'canteiro_id': canteiroId,
@@ -475,8 +494,10 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
 
   Future<void> _toggleConcluido(String docId, bool atual) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('historico_manejo')
+      final appSession = SessionScope.of(context).session;
+      if (appSession == null) return;
+
+      await FirebasePaths.historicoManejoCol(appSession.tenantId)
           .doc(docId)
           .update(
             _sanitizeMap(<String, dynamic>{
@@ -530,7 +551,7 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _watchCanteirosDoUsuario(user.uid),
+        stream: _watchCanteirosDoUsuario(appSession.tenantId),
         builder: (context, snapCanteiros) {
           final docsCanteiros = snapCanteiros.data?.docs ?? [];
           final canteirosMap = <String, String>{
@@ -781,7 +802,7 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
         },
       ),
       floatingActionButton: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _watchCanteirosDoUsuario(user.uid),
+        stream: _watchCanteirosDoUsuario(appSession.tenantId),
         builder: (context, snap) {
           final docs = snap.data?.docs ?? [];
           final canteirosMap = <String, String>{

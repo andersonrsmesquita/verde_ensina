@@ -1,15 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../firebase/firebase_paths.dart';
 import 'firestore_sanitizer.dart';
 
 class ManejoRepository {
   final FirebaseFirestore _fs;
-  ManejoRepository({FirebaseFirestore? fs})
-      : _fs = fs ?? FirebaseFirestore.instance;
+  ManejoRepository({FirebaseFirestore? fs}) : _fs = fs ?? FirebaseFirestore.instance;
 
-  CollectionReference<Map<String, dynamic>> get _col =>
-      _fs.collection('historico_manejo');
+  CollectionReference<Map<String, dynamic>> _tenantCol(String tenantId) =>
+      FirebasePaths.tenantSubCol(tenantId, 'historico_manejo');
 
+  /// Cria um registro de manejo no escopo do tenant.
   Future<String> criarManejo({
+    required String tenantId,
     required String uidUsuario,
     required String canteiroId,
     required String tipoManejo,
@@ -20,6 +23,9 @@ class ManejoRepository {
     bool concluido = false,
     DateTime? dataColheitaPrevista,
   }) async {
+    if (tenantId.trim().isEmpty) {
+      throw ArgumentError('tenantId vazio');
+    }
     if (uidUsuario.trim().isEmpty) {
       throw ArgumentError('uidUsuario vazio');
     }
@@ -27,11 +33,11 @@ class ManejoRepository {
       throw ArgumentError('canteiroId vazio');
     }
 
-    final ref = _col.doc();
+    final ref = _tenantCol(tenantId).doc();
 
     final payload = <String, dynamic>{
       'canteiro_id': canteiroId,
-      'uid_usuario': uidUsuario,
+      'uid_usuario': uidUsuario, // mantém como "criado por"
       'tipo_manejo': tipoManejo,
       'produto': produto,
       'detalhes': detalhes,

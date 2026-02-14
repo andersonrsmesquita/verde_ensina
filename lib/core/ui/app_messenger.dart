@@ -3,33 +3,97 @@ import 'package:flutter/material.dart';
 class AppMessenger {
   AppMessenger._();
 
-  /// ✅ Use no MaterialApp.router(scaffoldMessengerKey: AppMessenger.key)
-  static final GlobalKey<ScaffoldMessengerState> _messengerKey =
+  /// Use no MaterialApp: scaffoldMessengerKey: AppMessenger.key
+  static final GlobalKey<ScaffoldMessengerState> key =
       GlobalKey<ScaffoldMessengerState>();
 
-  /// ✅ Mantém compatibilidade com teu main.dart (AppMessenger.key)
-  static GlobalKey<ScaffoldMessengerState> get key => _messengerKey;
+  static void _show(
+    String message, {
+    required Color backgroundColor,
+    IconData? icon,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    final messenger = key.currentState;
+    if (messenger == null) return;
 
-  static void success(String msg) => _show(msg, bg: Colors.green.shade700);
-  static void info(String msg) => _show(msg, bg: Colors.blue.shade700);
+    messenger.clearSnackBars();
 
-  /// ✅ TelaHome usa warn() -> agora existe
-  static void warn(String msg) => _show(msg, bg: Colors.orange.shade800);
-
-  static void error(String msg) => _show(msg, bg: Colors.red.shade700);
-
-  static void _show(String msg, {required Color bg}) {
-    final state = _messengerKey.currentState;
-    if (state == null) return;
-
-    state.clearSnackBars();
-    state.showSnackBar(
+    messenger.showSnackBar(
       SnackBar(
-        content: Text(msg),
-        backgroundColor: bg,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.all(12),
+        duration: duration,
+        backgroundColor: backgroundColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        content: Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  static void success(String message) {
+    _show(
+      message,
+      backgroundColor: const Color(0xFF1B8A5A),
+      icon: Icons.check_circle_outline,
+    );
+  }
+
+  static void info(String message) {
+    _show(
+      message,
+      backgroundColor: const Color(0xFF2D6CDF),
+      icon: Icons.info_outline,
+    );
+  }
+
+  static void warn(String message) {
+    _show(
+      message,
+      backgroundColor: const Color(0xFFE28A00),
+      icon: Icons.warning_amber_outlined,
+    );
+  }
+
+  static void error(String message) {
+    _show(
+      message,
+      backgroundColor: const Color(0xFFD64545),
+      icon: Icons.error_outline,
+    );
+  }
+
+  /// Compat: telas antigas chamam `AppMessenger.show("...")`.
+  ///
+  /// Heurística simples:
+  /// - começa com "✅" => success
+  /// - começa com "⚠" => warn
+  /// - começa com "❌" => error
+  /// - senão => info
+  static void show(String message) {
+    final trimmed = message.trimLeft();
+    if (trimmed.startsWith('✅')) return success(message);
+    if (trimmed.startsWith('⚠')) return warn(message);
+    if (trimmed.startsWith('❌')) return error(message);
+    return info(message);
   }
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
 import 'package:go_router/go_router.dart';
 
 // Imports das telas (mantive porque você usa as telas também)
@@ -98,9 +101,7 @@ class _TelaTrilhaState extends State<TelaTrilha> {
                     const SizedBox(height: 16),
                     Expanded(
                       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('canteiros')
-                            .where('uid_usuario', isEqualTo: user.uid)
+                        stream: FirebasePaths.canteirosCol(appSession.tenantId)
                             .where('ativo', isEqualTo: true)
                             .snapshots(),
                         builder: (sbContext, snapshot) {

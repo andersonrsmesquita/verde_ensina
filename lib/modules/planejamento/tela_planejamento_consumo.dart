@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/app_session.dart';
+import '../../core/session/session_scope.dart';
 
 import 'tela_gerador_canteiros.dart';
 
@@ -17,6 +20,16 @@ class TelaPlanejamentoConsumo extends StatefulWidget {
 
 class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   User? get _user => FirebaseAuth.instance.currentUser;
+
+  // SaaS / Multi-tenant
+  AppSession? get _sessionOrNull => SessionScope.of(context).session;
+  AppSession get appSession {
+    final s = _sessionOrNull;
+    if (s == null) {
+      throw StateError('Sessão indisponível (tenant não selecionado)');
+    }
+    return s;
+  }
 
   // =========================
   // DADOS (seu mapa original)
@@ -338,9 +351,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('canteiros')
-                        .where('uid_usuario', isEqualTo: user.uid)
+                    stream: FirebasePaths.canteirosCol(appSession.tenantId)
                         .where('ativo', isEqualTo: true)
                         .snapshots(),
                     builder: (sbContext, snapshot) {
@@ -460,10 +471,11 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     final user = _user;
     if (user == null) throw Exception('Usuário não autenticado.');
 
-    final canteiroRef = FirebaseFirestore.instance
-        .collection('canteiros')
-        .doc(canteiroId);
-    final planejamentoRef = canteiroRef.collection('planejamentos').doc();
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) throw Exception('Sem tenant selecionado');
+
+    final canteiroRef = FirebasePaths.canteiroRef(appSession.tenantId, canteiroId);
+    final planejamentoRef = FirebasePaths.canteiroPlanejamentosCol(appSession.tenantId, canteiroId).doc();
 
     final resumo = {
       'itens': itensDesejados,

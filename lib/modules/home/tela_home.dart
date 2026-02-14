@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
+
 import '../../core/ui/app_ui.dart';
 import '../../core/repositories/user_profile_repository.dart';
 
-// Imports das suas telas funcionais
+// Telas
 import '../canteiros/tela_canteiros.dart';
 import '../canteiros/tela_planejamento_canteiro.dart';
 import '../solo/tela_diagnostico.dart';
@@ -36,23 +39,30 @@ class _TelaHomeState extends State<TelaHome> {
     setState(() => _indiceAtual = index);
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+  void _push(BuildContext context, Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
 
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    // AppBar premium: sempre coerente com o tema, sem “cor jogada”.
+    // A diferença entre abas fica no título e ações, não em cor estranha.
     switch (_indiceAtual) {
       case 0:
         return AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: primary,
-          foregroundColor: Colors.white,
+          backgroundColor: cs.surface,
+          foregroundColor: cs.onSurface,
           elevation: 0,
-          title: const Row(
+          scrolledUnderElevation: 0.5,
+          title: Row(
             children: [
-              Icon(Icons.eco, color: Colors.white),
-              SizedBox(width: 10),
-              Text(
+              Icon(Icons.eco, color: cs.primary),
+              const SizedBox(width: 10),
+              const Text(
                 'Verde Ensina',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.w900),
               ),
             ],
           ),
@@ -60,44 +70,41 @@ class _TelaHomeState extends State<TelaHome> {
             IconButton(
               tooltip: 'Alertas',
               icon: const Icon(Icons.notifications_none),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TelaAlertas()),
-              ),
+              onPressed: () => _push(context, const TelaAlertas()),
             ),
             IconButton(
               tooltip: 'Configurações',
               icon: const Icon(Icons.settings_outlined),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TelaConfiguracoes()),
-              ),
+              onPressed: () => _push(context, const TelaConfiguracoes()),
             ),
+            const SizedBox(width: 4),
           ],
         );
 
       case 1:
         return AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: primary,
-          foregroundColor: Colors.white,
+          backgroundColor: cs.surface,
+          foregroundColor: cs.onSurface,
           elevation: 0,
+          scrolledUnderElevation: 0.5,
           centerTitle: true,
           title: const Text(
             'Trilha do Cultivo',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.w900),
           ),
         );
 
       default:
         return AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          backgroundColor: cs.surface,
+          foregroundColor: cs.onSurface,
           elevation: 0,
+          scrolledUnderElevation: 0.5,
           title: const Text(
             'Meu Perfil',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: FontWeight.w900),
           ),
         );
     }
@@ -105,10 +112,10 @@ class _TelaHomeState extends State<TelaHome> {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: cs.surface,
       appBar: _buildAppBar(context),
       body: IndexedStack(
         index: _indiceAtual,
@@ -118,39 +125,37 @@ class _TelaHomeState extends State<TelaHome> {
           AbaPerfilPage(),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 12,
-              offset: const Offset(0, -6),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _indiceAtual,
-          onTap: _setAba,
-          backgroundColor: Colors.white,
-          selectedItemColor: primary,
-          unselectedItemColor: Colors.grey,
-          type: BottomNavigationBarType.fixed,
-          showUnselectedLabels: true,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_filled),
-              label: 'Início',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: 'Jornada',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Perfil',
-            ),
-          ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          decoration: BoxDecoration(
+            color: cs.surface,
+            border: Border(top: BorderSide(color: cs.outlineVariant)),
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _indiceAtual,
+            onTap: _setAba,
+            backgroundColor: cs.surface,
+            selectedItemColor: cs.primary,
+            unselectedItemColor: cs.onSurfaceVariant,
+            type: BottomNavigationBarType.fixed,
+            showUnselectedLabels: true,
+            elevation: 0,
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home_filled),
+                label: 'Início',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.map),
+                label: 'Jornada',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: 'Perfil',
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -158,7 +163,7 @@ class _TelaHomeState extends State<TelaHome> {
 }
 
 // ============================================================================
-// ABA 1: INÍCIO (DASHBOARD) — AJUSTADA PARA DESKTOP + SEM REDUNDÂNCIA DA JORNADA
+// ABA 1: INÍCIO (DASHBOARD) — premium: responsivo, limpo, sem “boxDecoration” repetida
 // ============================================================================
 class _AbaInicioDashboard extends StatelessWidget {
   const _AbaInicioDashboard();
@@ -168,30 +173,33 @@ class _AbaInicioDashboard extends StatelessWidget {
     required String titulo,
     required String subtitulo,
     required String uid,
+    required String tenantId,
   }) async {
-    final result = await showModalBottomSheet<_CanteiroPickResult>(
+    return showModalBottomSheet<_CanteiroPickResult>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => _SheetSelecionarCanteiro(
+        tenantId: tenantId,
         uid: uid,
         titulo: titulo,
         subtitulo: subtitulo,
       ),
     );
-    return result;
   }
 
   Future<void> _abrirPlanejamentoPorCanteiro(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      AppMessenger.warn('Faça login para selecionar canteiro.');
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      AppMessenger.warn('Você precisa estar logado e com um espaço (tenant) selecionado.');
       return;
     }
 
     final result = await _abrirSheetCanteiros(
       context,
-      uid: user.uid,
+      uid: appSession.uid,
+      tenantId: appSession.tenantId,
       titulo: 'Planejamento por Canteiro',
       subtitulo: 'Selecione o canteiro para calcular o plantio certinho.',
     );
@@ -200,9 +208,7 @@ class _AbaInicioDashboard extends StatelessWidget {
 
     if (result.cadastrarNovo) {
       Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-      );
+          context, MaterialPageRoute(builder: (_) => const TelaCanteiros()));
       return;
     }
 
@@ -212,21 +218,21 @@ class _AbaInicioDashboard extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => TelaPlanejamentoCanteiro(canteiroIdOrigem: id),
-      ),
+          builder: (_) => TelaPlanejamentoCanteiro(canteiroIdOrigem: id)),
     );
   }
 
   Future<void> _abrirDiagnostico(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      AppMessenger.warn('Faça login para selecionar canteiro.');
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      AppMessenger.warn('Você precisa estar logado e com um espaço (tenant) selecionado.');
       return;
     }
 
     final result = await _abrirSheetCanteiros(
       context,
-      uid: user.uid,
+      uid: appSession.uid,
+      tenantId: appSession.tenantId,
       titulo: 'Diagnóstico do Solo',
       subtitulo: 'Escolha o canteiro para analisar o solo.',
     );
@@ -235,9 +241,7 @@ class _AbaInicioDashboard extends StatelessWidget {
 
     if (result.cadastrarNovo) {
       Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-      );
+          context, MaterialPageRoute(builder: (_) => const TelaCanteiros()));
       return;
     }
 
@@ -245,21 +249,22 @@ class _AbaInicioDashboard extends StatelessWidget {
     if (id == null) return;
 
     Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => TelaDiagnostico(canteiroIdOrigem: id)),
-    );
+        context,
+        MaterialPageRoute(
+            builder: (_) => TelaDiagnostico(canteiroIdOrigem: id)));
   }
 
   Future<void> _abrirCalagem(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      AppMessenger.warn('Faça login para selecionar canteiro.');
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      AppMessenger.warn('Você precisa estar logado e com um espaço (tenant) selecionado.');
       return;
     }
 
     final result = await _abrirSheetCanteiros(
       context,
-      uid: user.uid,
+      uid: appSession.uid,
+      tenantId: appSession.tenantId,
       titulo: 'Calagem',
       subtitulo: 'Escolha o canteiro para calcular a correção.',
     );
@@ -268,286 +273,307 @@ class _AbaInicioDashboard extends StatelessWidget {
 
     if (result.cadastrarNovo) {
       Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-      );
+          context, MaterialPageRoute(builder: (_) => const TelaCanteiros()));
       return;
     }
 
     final id = result.canteiroId;
     if (id == null) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => TelaCalagem(canteiroIdOrigem: id)),
-    );
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => TelaCalagem(canteiroIdOrigem: id)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final cs = Theme.of(context).colorScheme;
 
-    return SingleChildScrollView(
-      child: Center(
-        // ✅ trava a largura no desktop pra não esticar tudo
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user == null ? 'Olá! 👋' : 'Olá, Produtor! 👋',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnap) {
+        final user = authSnap.data;
+
+        return LayoutBuilder(
+          builder: (context, c) {
+            final maxW = c.maxWidth;
+            final contentMax =
+                maxW >= 1200 ? 1100.0 : (maxW >= 980 ? 960.0 : maxW);
+
+            return SingleChildScrollView(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: contentMax),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _HeaderBlock(
+                          title: user == null ? 'Olá! 👋' : 'Olá, Produtor! 👋',
+                          subtitle: user == null
+                              ? 'Faça login para ver sua visão geral.'
+                              : 'Visão geral da sua produção.',
+                        ),
+                        const SizedBox(height: 14),
+                        _SectionTitle('Ações rápidas'),
+                        const SizedBox(height: 10),
+                        _QuickActionsRow(
+                          onPlanejar: () =>
+                              _abrirPlanejamentoPorCanteiro(context),
+                          onCanteiros: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaCanteiros()),
+                          ),
+                          onDiario: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaDiarioManejo()),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (user != null && SessionScope.of(context).session != null) ...[
+                          _SectionTitle('Resumo'),
+                          const SizedBox(height: 10),
+                          _ResumoDashboard(
+                            tenantId: SessionScope.of(context).session!.tenantId,
+                            uid: user.uid,
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+                        _SectionTitle('Módulos'),
+                        const SizedBox(height: 10),
+                        _ModulesGrid(
+                          onPlanejamentoGeral: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const TelaPlanejamentoConsumo()),
+                          ),
+                          onPlanejamentoCanteiro: () =>
+                              _abrirPlanejamentoPorCanteiro(context),
+                          onCanteiros: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaCanteiros()),
+                          ),
+                          onDiagnostico: () => _abrirDiagnostico(context),
+                          onCalagem: () => _abrirCalagem(context),
+                          onAdubacao: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaAdubacaoOrgano15()),
+                          ),
+                          onDiario: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaDiarioManejo()),
+                          ),
+                          onConteudo: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaConteudo()),
+                          ),
+                          onAlertas: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaAlertas()),
+                          ),
+                          onPragas: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaPragas()),
+                          ),
+                          onIrrigacao: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaIrrigacao()),
+                          ),
+                          onFinanceiro: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaFinanceiro()),
+                          ),
+                          onMercado: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaMercado()),
+                          ),
+                          onConfiguracoes: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const TelaConfiguracoes()),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (user == null)
+                          _InfoBanner(
+                            icon: Icons.lock_outline,
+                            title: 'Você está desconectado',
+                            message:
+                                'Algumas ações exigem login (ex: diagnóstico, calagem, planejamento por canteiro).',
+                            color: cs.tertiary,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  user == null
-                      ? 'Faça login para ver sua visão geral.'
-                      : 'Visão geral da sua produção.',
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
-                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
 
-                const SizedBox(height: 18),
+class _HeaderBlock extends StatelessWidget {
+  final String title;
+  final String subtitle;
 
-                // ✅ Ações rápidas responsivas (não explode no mobile e não fica gigante no desktop)
-                const Text(
-                  'Ações rápidas',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
+  const _HeaderBlock({required this.title, required this.subtitle});
 
-                LayoutBuilder(
-                  builder: (context, c) {
-                    final w = c.maxWidth;
-                    final bool three = w >= 900;
-                    final bool two = w >= 560;
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
 
-                    final tileW = three
-                        ? (w - 24) / 3
-                        : two
-                            ? (w - 12) / 2
-                            : w;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text(subtitle,
+            style: t.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      ],
+    );
+  }
+}
 
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        SizedBox(
-                          width: tileW,
-                          child: _QuickAction(
-                            icon: Icons.auto_awesome,
-                            label: 'Planejar\npor canteiro',
-                            color: Colors.blue,
-                            onTap: () => _abrirPlanejamentoPorCanteiro(context),
-                          ),
-                        ),
-                        SizedBox(
-                          width: tileW,
-                          child: _QuickAction(
-                            icon: Icons.grid_on,
-                            label: 'Meus\ncanteiros',
-                            color: Colors.green,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TelaCanteiros(),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          width: tileW,
-                          child: _QuickAction(
-                            icon: Icons.menu_book,
-                            label: 'Diário\nde manejo',
-                            color: Colors.teal,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TelaDiarioManejo(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
 
-                const SizedBox(height: 18),
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Text(text,
+        style: t.titleMedium?.copyWith(fontWeight: FontWeight.w900));
+  }
+}
 
-                if (user != null) _ResumoDashboard(uid: user.uid),
+// Ações rápidas premium: card simples, coerente com tema, sem “decoração duplicada”
+class _QuickActionsRow extends StatelessWidget {
+  final VoidCallback onPlanejar;
+  final VoidCallback onCanteiros;
+  final VoidCallback onDiario;
 
-                const SizedBox(height: 22),
+  const _QuickActionsRow({
+    required this.onPlanejar,
+    required this.onCanteiros,
+    required this.onDiario,
+  });
 
-                const Text(
-                  'Módulos',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final bool three = w >= 900;
+        final bool two = w >= 560;
 
-                // ✅ Grid “inteligente”: controla tamanho do card mesmo em tela grande
-                GridView.extent(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  maxCrossAxisExtent:
-                      360, // <- limite real (mata o “card gigante”)
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.35, // <- mais alto (evita overflow)
-                  children: [
-                    _CardMenuGrande(
-                      titulo: 'Planejamento',
-                      subtitulo: 'Geral (consumo)',
-                      icone: Icons.calculate,
-                      cor: Colors.blue,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaPlanejamentoConsumo(),
-                        ),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Planejar por Canteiro',
-                      subtitulo: 'Linhas e quantidades',
-                      icone: Icons.auto_awesome,
-                      cor: Colors.indigo,
-                      onTap: () => _abrirPlanejamentoPorCanteiro(context),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Canteiros',
-                      subtitulo: 'Minha área',
-                      icone: Icons.grid_on,
-                      cor: Colors.green,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const TelaCanteiros()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Diagnóstico do Solo',
-                      subtitulo: 'Analisar canteiro',
-                      icone: Icons.science,
-                      cor: Colors.brown,
-                      onTap: () => _abrirDiagnostico(context),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Calagem',
-                      subtitulo: 'Correção de acidez',
-                      icone: Icons.landscape,
-                      cor: Colors.blueGrey,
-                      onTap: () => _abrirCalagem(context),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Adubação',
-                      subtitulo: 'Organo15',
-                      icone: Icons.eco,
-                      cor: Colors.orange,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaAdubacaoOrgano15(),
-                        ),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Diário de Manejo',
-                      subtitulo: 'Rotina do produtor',
-                      icone: Icons.menu_book,
-                      cor: Colors.teal,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaDiarioManejo(),
-                        ),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Dicas & Receitas',
-                      subtitulo: 'Curadoria + comunidade',
-                      icone: Icons.restaurant,
-                      cor: Colors.deepOrange,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TelaConteudo()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Alertas/Agenda',
-                      subtitulo: 'Lembretes',
-                      icone: Icons.notifications_active,
-                      cor: Colors.amber,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TelaAlertas()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Pragas & Doenças',
-                      subtitulo: 'Base de conhecimento',
-                      icone: Icons.bug_report,
-                      cor: Colors.redAccent,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TelaPragas()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Irrigação',
-                      subtitulo: 'Regras + histórico',
-                      icone: Icons.water_drop,
-                      cor: Colors.lightBlue,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const TelaIrrigacao()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Financeiro',
-                      subtitulo: 'Custos e lucro',
-                      icone: Icons.attach_money,
-                      cor: Colors.indigo,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const TelaFinanceiro()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Mercado',
-                      subtitulo: 'Compra/Venda (futuro)',
-                      icone: Icons.storefront,
-                      cor: Colors.purple,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TelaMercado()),
-                      ),
-                    ),
-                    _CardMenuGrande(
-                      titulo: 'Configurações',
-                      subtitulo: 'Preferências',
-                      icone: Icons.settings,
-                      cor: Colors.grey,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TelaConfiguracoes(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+        final tileW = three
+            ? (w - 24) / 3
+            : two
+                ? (w - 12) / 2
+                : w;
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SizedBox(
+              width: tileW,
+              child: _ActionCard(
+                icon: Icons.auto_awesome,
+                title: 'Planejar\npor canteiro',
+                onTap: onPlanejar,
+              ),
             ),
+            SizedBox(
+              width: tileW,
+              child: _ActionCard(
+                icon: Icons.grid_on,
+                title: 'Meus\ncanteiros',
+                onTap: onCanteiros,
+              ),
+            ),
+            SizedBox(
+              width: tileW,
+              child: _ActionCard(
+                icon: Icons.menu_book,
+                title: 'Diário\nde manejo',
+                onTap: onDiario,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: cs.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+            ],
           ),
         ),
       ),
@@ -555,57 +581,48 @@ class _AbaInicioDashboard extends StatelessWidget {
   }
 }
 
-class _QuickAction extends StatelessWidget {
+class _InfoBanner extends StatelessWidget {
   final IconData icon;
-  final String label;
+  final String title;
+  final String message;
   final Color color;
-  final VoidCallback onTap;
 
-  const _QuickAction({
+  const _InfoBanner({
     required this.icon,
-    required this.label,
+    required this.title,
+    required this.message,
     required this.color,
-    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: Padding(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
+        child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: color),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style:
+                          t.bodyMedium?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text(message,
+                      style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ],
               ),
             ),
           ],
@@ -615,23 +632,224 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-class _ResumoDashboard extends StatelessWidget {
-  final String uid;
-  const _ResumoDashboard({required this.uid});
+// Grid de módulos premium: estrutura por lista, sem repetição
+class _ModulesGrid extends StatelessWidget {
+  final VoidCallback onPlanejamentoGeral;
+  final VoidCallback onPlanejamentoCanteiro;
+  final VoidCallback onCanteiros;
+  final VoidCallback onDiagnostico;
+  final VoidCallback onCalagem;
+  final VoidCallback onAdubacao;
+  final VoidCallback onDiario;
+  final VoidCallback onConteudo;
+  final VoidCallback onAlertas;
+  final VoidCallback onPragas;
+  final VoidCallback onIrrigacao;
+  final VoidCallback onFinanceiro;
+  final VoidCallback onMercado;
+  final VoidCallback onConfiguracoes;
+
+  const _ModulesGrid({
+    required this.onPlanejamentoGeral,
+    required this.onPlanejamentoCanteiro,
+    required this.onCanteiros,
+    required this.onDiagnostico,
+    required this.onCalagem,
+    required this.onAdubacao,
+    required this.onDiario,
+    required this.onConteudo,
+    required this.onAlertas,
+    required this.onPragas,
+    required this.onIrrigacao,
+    required this.onFinanceiro,
+    required this.onMercado,
+    required this.onConfiguracoes,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final items = <_ModuleItem>[
+      _ModuleItem(
+        title: 'Planejamento',
+        subtitle: 'Geral (consumo)',
+        icon: Icons.calculate,
+        onTap: onPlanejamentoGeral,
+      ),
+      _ModuleItem(
+        title: 'Planejar por Canteiro',
+        subtitle: 'Linhas e quantidades',
+        icon: Icons.auto_awesome,
+        onTap: onPlanejamentoCanteiro,
+      ),
+      _ModuleItem(
+        title: 'Canteiros',
+        subtitle: 'Minha área',
+        icon: Icons.grid_on,
+        onTap: onCanteiros,
+      ),
+      _ModuleItem(
+        title: 'Diagnóstico do Solo',
+        subtitle: 'Analisar canteiro',
+        icon: Icons.science,
+        onTap: onDiagnostico,
+      ),
+      _ModuleItem(
+        title: 'Calagem',
+        subtitle: 'Correção de acidez',
+        icon: Icons.landscape,
+        onTap: onCalagem,
+      ),
+      _ModuleItem(
+        title: 'Adubação',
+        subtitle: 'Organo15',
+        icon: Icons.eco,
+        onTap: onAdubacao,
+      ),
+      _ModuleItem(
+        title: 'Diário de Manejo',
+        subtitle: 'Rotina do produtor',
+        icon: Icons.menu_book,
+        onTap: onDiario,
+      ),
+      _ModuleItem(
+        title: 'Dicas & Receitas',
+        subtitle: 'Curadoria + comunidade',
+        icon: Icons.restaurant,
+        onTap: onConteudo,
+      ),
+      _ModuleItem(
+        title: 'Alertas/Agenda',
+        subtitle: 'Lembretes',
+        icon: Icons.notifications_active,
+        onTap: onAlertas,
+      ),
+      _ModuleItem(
+        title: 'Pragas & Doenças',
+        subtitle: 'Base de conhecimento',
+        icon: Icons.bug_report,
+        onTap: onPragas,
+      ),
+      _ModuleItem(
+        title: 'Irrigação',
+        subtitle: 'Regras + histórico',
+        icon: Icons.water_drop,
+        onTap: onIrrigacao,
+      ),
+      _ModuleItem(
+        title: 'Financeiro',
+        subtitle: 'Custos e lucro',
+        icon: Icons.attach_money,
+        onTap: onFinanceiro,
+      ),
+      _ModuleItem(
+        title: 'Mercado',
+        subtitle: 'Compra/Venda (futuro)',
+        icon: Icons.storefront,
+        onTap: onMercado,
+      ),
+      _ModuleItem(
+        title: 'Configurações',
+        subtitle: 'Preferências',
+        icon: Icons.settings,
+        onTap: onConfiguracoes,
+      ),
+    ];
 
-    final canteirosStream = FirebaseFirestore.instance
-        .collection('canteiros')
-        .where('uid_usuario', isEqualTo: uid)
+    return GridView.extent(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      maxCrossAxisExtent: 360,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.35,
+      children: items.map((m) => _ModuleCard(m)).toList(),
+    );
+  }
+}
+
+class _ModuleItem {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ModuleItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+}
+
+class _ModuleCard extends StatelessWidget {
+  final _ModuleItem item;
+  const _ModuleCard(this.item);
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(item.icon, color: cs.primary),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                item.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: t.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                item.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ResumoDashboard extends StatelessWidget {
+  final String tenantId;
+  final String? uid;
+  const _ResumoDashboard({required this.tenantId, this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final canteirosStream = FirebasePaths.canteirosCol(tenantId)
         .where('ativo', isEqualTo: true)
         .snapshots();
 
-    final ultManejoStream = FirebaseFirestore.instance
-        .collection('historico_manejo')
-        .where('uid_usuario', isEqualTo: uid)
+    final ultManejoStream = FirebasePaths.historicoManejoCol(tenantId)
         .orderBy('data', descending: true)
         .limit(1)
         .snapshots();
@@ -642,12 +860,17 @@ class _ResumoDashboard extends StatelessWidget {
           child: StreamBuilder<QuerySnapshot>(
             stream: canteirosStream,
             builder: (context, snap) {
-              final qtd = snap.data?.docs.length ?? 0;
-              return _MiniMetricCard(
+              final waiting = snap.connectionState == ConnectionState.waiting;
+              final hasErr = snap.hasError;
+
+              final qtd =
+                  (!waiting && !hasErr) ? (snap.data?.docs.length ?? 0) : null;
+
+              return _MetricCard(
                 icon: Icons.grid_on,
-                color: primary,
                 title: 'Canteiros ativos',
-                value: qtd.toString(),
+                value: qtd == null ? '—' : qtd.toString(),
+                tone: cs.primary,
               );
             },
           ),
@@ -657,17 +880,27 @@ class _ResumoDashboard extends StatelessWidget {
           child: StreamBuilder<QuerySnapshot>(
             stream: ultManejoStream,
             builder: (context, snap) {
+              final waiting = snap.connectionState == ConnectionState.waiting;
+              final hasErr = snap.hasError;
+
               String value = '—';
-              if (snap.hasData && snap.data!.docs.isNotEmpty) {
-                final d = snap.data!.docs.first;
-                value = (d['tipo_manejo'] ?? 'Manejo').toString();
+
+              if (!waiting &&
+                  !hasErr &&
+                  snap.hasData &&
+                  snap.data!.docs.isNotEmpty) {
+                final raw = snap.data!.docs.first.data();
+                final data =
+                    (raw is Map<String, dynamic>) ? raw : <String, dynamic>{};
+                value = (data['tipo_manejo'] ?? 'Manejo').toString();
               }
-              return _MiniMetricCard(
+
+              return _MetricCard(
                 icon: Icons.history,
-                color: Colors.blueGrey,
                 title: 'Último manejo',
                 value: value,
-                isBigText: false,
+                tone: cs.secondary,
+                smallValue: true,
               );
             },
           ),
@@ -677,89 +910,86 @@ class _ResumoDashboard extends StatelessWidget {
   }
 }
 
-class _MiniMetricCard extends StatelessWidget {
+class _MetricCard extends StatelessWidget {
   final IconData icon;
-  final Color color;
   final String title;
   final String value;
-  final bool isBigText;
+  final Color tone;
+  final bool smallValue;
 
-  const _MiniMetricCard({
+  const _MetricCard({
     required this.icon,
-    required this.color,
     required this.title,
     required this.value,
-    this.isBigText = true,
+    required this.tone,
+    this.smallValue = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        side: BorderSide(color: cs.outlineVariant),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: tone.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: tone),
             ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: isBigText ? 18 : 13,
-                    color: Colors.black87,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: (smallValue ? t.bodyMedium : t.titleLarge)
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 // ============================================================================
-// ABA 2: JORNADA (mantive a sua, mas troquei o sheet pra retorno seguro)
+// ABA 2: JORNADA — mantida, mas com layout mais consistente com tema
 // ============================================================================
 class _AbaJornadaTrilha extends StatelessWidget {
   const _AbaJornadaTrilha();
 
   Future<void> _iniciarAcaoComCanteiro(
       BuildContext context, String acao) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      AppMessenger.warn('Faça login para selecionar canteiro.');
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      AppMessenger.warn('Você precisa estar logado e com um espaço (tenant) selecionado.');
       return;
     }
 
@@ -767,8 +997,10 @@ class _AbaJornadaTrilha extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => _SheetSelecionarCanteiro(
-        uid: user.uid,
+        tenantId: appSession.tenantId,
+        uid: appSession.uid,
         titulo: 'Para qual canteiro?',
         subtitulo: 'Escolha o canteiro onde você quer executar essa etapa.',
       ),
@@ -778,9 +1010,7 @@ class _AbaJornadaTrilha extends StatelessWidget {
 
     if (result.cadastrarNovo) {
       Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-      );
+          context, MaterialPageRoute(builder: (_) => const TelaCanteiros()));
       return;
     }
 
@@ -791,153 +1021,173 @@ class _AbaJornadaTrilha extends StatelessWidget {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              TelaPlanejamentoCanteiro(canteiroIdOrigem: canteiroId),
-        ),
+            builder: (_) =>
+                TelaPlanejamentoCanteiro(canteiroIdOrigem: canteiroId)),
       );
     } else if (acao == 'diagnostico') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => TelaDiagnostico(canteiroIdOrigem: canteiroId),
-        ),
+            builder: (_) => TelaDiagnostico(canteiroIdOrigem: canteiroId)),
       );
     } else if (acao == 'calagem') {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => TelaCalagem(canteiroIdOrigem: canteiroId),
-        ),
+            builder: (_) => TelaCalagem(canteiroIdOrigem: canteiroId)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final cs = Theme.of(context).colorScheme;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [primary.withOpacity(0.95), primary.withOpacity(0.75)],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: primary.withOpacity(0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final maxW = c.maxWidth;
+        final contentMax = maxW >= 1200 ? 1100.0 : (maxW >= 980 ? 960.0 : maxW);
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: contentMax),
+                child: Card(
+                  elevation: 0,
+                  color: cs.primaryContainer,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(color: cs.outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_awesome,
+                            color: cs.onPrimaryContainer, size: 38),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Siga o Passo a Passo',
+                                style: TextStyle(
+                                  color: cs.onPrimaryContainer,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Complete as fases para colher mais.',
+                                style: TextStyle(
+                                    color:
+                                        cs.onPrimaryContainer.withOpacity(0.8)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ],
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.white, size: 38),
-              SizedBox(width: 14),
-              Expanded(
+            ),
+            const SizedBox(height: 18),
+            Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: contentMax),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Siga o Passo a Passo',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                    _TimelineItem(
+                      fase: 1,
+                      titulo: 'Planejamento (por canteiro)',
+                      descricao: 'Quantidade e linhas',
+                      icone: Icons.auto_awesome,
+                      corIcone: cs.primary,
+                      onTap: () => _iniciarAcaoComCanteiro(
+                          context, 'planejamento_canteiro'),
+                    ),
+                    _TimelineItem(
+                      fase: 2,
+                      titulo: 'Planejamento (geral)',
+                      descricao: 'O que plantar?',
+                      icone: Icons.calculate,
+                      corIcone: cs.primary,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaPlanejamentoConsumo()),
                       ),
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Complete as fases para colher mais.',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    _TimelineItem(
+                      fase: 3,
+                      titulo: 'Meus Canteiros',
+                      descricao: 'Organize sua área.',
+                      icone: Icons.grid_on,
+                      corIcone: cs.primary,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaCanteiros()),
+                      ),
+                    ),
+                    _TimelineItem(
+                      fase: 4,
+                      titulo: 'Diagnóstico',
+                      descricao: 'Analise o solo.',
+                      icone: Icons.science,
+                      corIcone: cs.primary,
+                      onTap: () =>
+                          _iniciarAcaoComCanteiro(context, 'diagnostico'),
+                    ),
+                    _TimelineItem(
+                      fase: 5,
+                      titulo: 'Calagem',
+                      descricao: 'Corrija a acidez.',
+                      icone: Icons.landscape,
+                      corIcone: cs.primary,
+                      onTap: () => _iniciarAcaoComCanteiro(context, 'calagem'),
+                    ),
+                    _TimelineItem(
+                      fase: 6,
+                      titulo: 'Adubação',
+                      descricao: 'Nutrição Organo15.',
+                      icone: Icons.eco,
+                      corIcone: cs.primary,
+                      bloqueado: false,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const TelaAdubacaoOrgano15()),
+                      ),
+                    ),
+                    const _TimelineItem(
+                      fase: 7,
+                      titulo: 'Colheita',
+                      descricao: 'Venda (Em breve).',
+                      icone: Icons.shopping_basket,
+                      corIcone: Colors.grey,
+                      isLast: true,
+                      bloqueado: true,
+                      onTap: null,
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-        _TimelineItem(
-          fase: 1,
-          titulo: 'Planejamento (por canteiro)',
-          descricao: 'Quantidade e linhas',
-          icone: Icons.auto_awesome,
-          corIcone: Colors.indigo,
-          onTap: () =>
-              _iniciarAcaoComCanteiro(context, 'planejamento_canteiro'),
-        ),
-        _TimelineItem(
-          fase: 2,
-          titulo: 'Planejamento (geral)',
-          descricao: 'O que plantar?',
-          icone: Icons.calculate,
-          corIcone: Colors.blue,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaPlanejamentoConsumo()),
-          ),
-        ),
-        _TimelineItem(
-          fase: 3,
-          titulo: 'Meus Canteiros',
-          descricao: 'Organize sua área.',
-          icone: Icons.grid_on,
-          corIcone: Colors.green,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaCanteiros()),
-          ),
-        ),
-        _TimelineItem(
-          fase: 4,
-          titulo: 'Diagnóstico',
-          descricao: 'Analise o solo.',
-          icone: Icons.science,
-          corIcone: Colors.brown,
-          onTap: () => _iniciarAcaoComCanteiro(context, 'diagnostico'),
-        ),
-        _TimelineItem(
-          fase: 5,
-          titulo: 'Calagem',
-          descricao: 'Corrija a acidez.',
-          icone: Icons.landscape,
-          corIcone: Colors.blueGrey,
-          onTap: () => _iniciarAcaoComCanteiro(context, 'calagem'),
-        ),
-        _TimelineItem(
-          fase: 6,
-          titulo: 'Adubação',
-          descricao: 'Nutrição Organo15.',
-          icone: Icons.eco,
-          corIcone: Colors.orange,
-          bloqueado: false,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TelaAdubacaoOrgano15()),
-          ),
-        ),
-        const _TimelineItem(
-          fase: 7,
-          titulo: 'Colheita',
-          descricao: 'Venda (Em breve).',
-          icone: Icons.shopping_basket,
-          corIcone: Colors.purple,
-          isLast: true,
-          bloqueado: true,
-          onTap: null,
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
 // ============================================================================
-// RESULTADO DO SHEET (pra navegar sem gambiarra de pop+push no mesmo contexto)
+// RESULTADO DO SHEET
 // ============================================================================
 class _CanteiroPickResult {
   final String? canteiroId;
@@ -950,14 +1200,16 @@ class _CanteiroPickResult {
 }
 
 // ============================================================================
-// SHEET SELECIONAR CANTEIRO (agora retorna um result seguro)
+// SHEET SELECIONAR CANTEIRO — premium e estável
 // ============================================================================
 class _SheetSelecionarCanteiro extends StatefulWidget {
+  final String tenantId;
   final String uid;
   final String titulo;
   final String subtitulo;
 
   const _SheetSelecionarCanteiro({
+    required this.tenantId,
     required this.uid,
     required this.titulo,
     required this.subtitulo,
@@ -973,186 +1225,224 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
 
   @override
   Widget build(BuildContext context) {
-    final stream = FirebaseFirestore.instance
-        .collection('canteiros')
-        .where('uid_usuario', isEqualTo: widget.uid)
+    final cs = Theme.of(context).colorScheme;
+
+    final stream = FirebasePaths.canteirosCol(widget.tenantId)
         .where('ativo', isEqualTo: true)
         .snapshots();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.82,
+      initialChildSize: 0.86,
       minChildSize: 0.55,
-      maxChildSize: 0.95,
+      maxChildSize: 0.96,
       builder: (context, controller) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-          ),
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.titulo,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+        return Material(
+          color: cs.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: cs.outlineVariant,
+                      borderRadius: BorderRadius.circular(100),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  AppButtons.outlinedIcon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Novo'),
-                    onPressed: () => Navigator.pop(
-                        context, const _CanteiroPickResult.cadastrar()),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(widget.subtitulo,
-                  style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 12),
-              TextField(
-                onChanged: (v) =>
-                    setState(() => _busca = v.trim().toLowerCase()),
-                decoration: InputDecoration(
-                  hintText: 'Buscar canteiro...',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.titulo,
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w900),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AppButtons.outlinedIcon(
+                      icon: const Icon(Icons.add),
+                      label: const Text('Novo'),
+                      onPressed: () => Navigator.pop(
+                        context,
+                        const _CanteiroPickResult.cadastrar(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(widget.subtitulo,
+                    style: TextStyle(color: cs.onSurfaceVariant)),
+                const SizedBox(height: 12),
+                TextField(
+                  onChanged: (v) =>
+                      setState(() => _busca = v.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar canteiro...',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: cs.outlineVariant),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: cs.outlineVariant),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: cs.primary, width: 1.4),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: stream,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+                const SizedBox(height: 12),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: stream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                    final docsAll = snapshot.data?.docs ?? [];
-                    if (docsAll.isEmpty) {
-                      return Column(
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.orange.shade100),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.info_outline, color: Colors.orange),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'Você ainda não tem canteiros ativos. Cadastre um para continuar.',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            width: double.infinity,
-                            child: AppButtons.elevatedIcon(
-                              icon: const Icon(Icons.grid_on),
-                              label: const Text('Cadastrar Canteiro'),
-                              onPressed: () => Navigator.pop(
-                                context,
-                                const _CanteiroPickResult.cadastrar(),
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Fechar'),
-                          ),
-                        ],
-                      );
-                    }
-
-                    final docs = docsAll.where((d) {
-                      final nome =
-                          ((d['nome'] ?? 'Canteiro').toString()).toLowerCase();
-                      if (_busca.isEmpty) return true;
-                      return nome.contains(_busca);
-                    }).toList()
-                      ..sort((a, b) {
-                        final na = (a['nome'] ?? '').toString().toLowerCase();
-                        final nb = (b['nome'] ?? '').toString().toLowerCase();
-                        return na.compareTo(nb);
-                      });
-
-                    return ListView.separated(
-                      controller: controller,
-                      itemCount: docs.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final doc = docs[index] as QueryDocumentSnapshot;
-                        final nome = (doc['nome'] ?? 'Canteiro').toString();
-
-                        final data = doc.data() is Map<String, dynamic>
-                            ? (doc.data() as Map<String, dynamic>)
-                            : {};
-                        final area = data['area_m2'];
-                        double areaM2 = 0;
-                        if (area is num) areaM2 = area.toDouble();
-                        if (area is String) {
-                          areaM2 =
-                              double.tryParse(area.replaceAll(',', '.')) ?? 0;
-                        }
-
-                        return ListTile(
-                          leading:
-                              const Icon(Icons.grid_on, color: Colors.green),
-                          title: Text(
-                            nome,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle:
-                              Text('Área: ${areaM2.toStringAsFixed(2)} m²'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.pop(
-                            context,
-                            _CanteiroPickResult.selecionar(doc.id),
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Erro ao carregar canteiros.',
+                            style: TextStyle(color: cs.error),
                           ),
                         );
-                      },
-                    );
-                  },
+                      }
+
+                      final docsAll = snapshot.data?.docs ?? [];
+                      if (docsAll.isEmpty) {
+                        return Column(
+                          children: [
+                            Card(
+                              elevation: 0,
+                              color: cs.tertiaryContainer,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: BorderSide(color: cs.outlineVariant),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        color: cs.onTertiaryContainer),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Você ainda não tem canteiros ativos. Cadastre um para continuar.',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: cs.onTertiaryContainer,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: AppButtons.elevatedIcon(
+                                icon: const Icon(Icons.grid_on),
+                                label: const Text('Cadastrar Canteiro'),
+                                onPressed: () => Navigator.pop(
+                                  context,
+                                  const _CanteiroPickResult.cadastrar(),
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Fechar'),
+                            ),
+                          ],
+                        );
+                      }
+
+                      final docs = docsAll.where((d) {
+                        final raw = d.data();
+                        final data = (raw is Map<String, dynamic>)
+                            ? raw
+                            : <String, dynamic>{};
+                        final nome = ((data['nome'] ?? 'Canteiro').toString())
+                            .toLowerCase();
+                        if (_busca.isEmpty) return true;
+                        return nome.contains(_busca);
+                      }).toList()
+                        ..sort((a, b) {
+                          final da = (a.data() is Map<String, dynamic>)
+                              ? a.data() as Map<String, dynamic>
+                              : {};
+                          final db = (b.data() is Map<String, dynamic>)
+                              ? b.data() as Map<String, dynamic>
+                              : {};
+                          final na =
+                              (da['nome'] ?? '').toString().toLowerCase();
+                          final nb =
+                              (db['nome'] ?? '').toString().toLowerCase();
+                          return na.compareTo(nb);
+                        });
+
+                      return ListView.separated(
+                        controller: controller,
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: cs.outlineVariant),
+                        itemBuilder: (context, index) {
+                          final doc = docs[index] as QueryDocumentSnapshot;
+                          final raw = doc.data();
+                          final data = (raw is Map<String, dynamic>)
+                              ? raw
+                              : <String, dynamic>{};
+
+                          final nome = (data['nome'] ?? 'Canteiro').toString();
+
+                          final area = data['area_m2'];
+                          double areaM2 = 0;
+                          if (area is num) areaM2 = area.toDouble();
+                          if (area is String) {
+                            areaM2 =
+                                double.tryParse(area.replaceAll(',', '.')) ?? 0;
+                          }
+
+                          return ListTile(
+                            leading: Icon(Icons.grid_on, color: cs.primary),
+                            title: Text(
+                              nome,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w900),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle:
+                                Text('Área: ${areaM2.toStringAsFixed(2)} m²'),
+                            trailing: Icon(Icons.chevron_right,
+                                color: cs.onSurfaceVariant),
+                            onTap: () => Navigator.pop(
+                              context,
+                              _CanteiroPickResult.selecionar(doc.id),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -1161,7 +1451,7 @@ class _SheetSelecionarCanteiroState extends State<_SheetSelecionarCanteiro> {
 }
 
 // ============================================================================
-// PERFIL (seu mesmo)
+// PERFIL — premium (mais reativo, sem “peguei user uma vez e pronto”)
 // ============================================================================
 class AbaPerfilPage extends StatelessWidget {
   const AbaPerfilPage({super.key});
@@ -1197,156 +1487,173 @@ class AbaPerfilPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final cs = Theme.of(context).colorScheme;
     final repo = UserProfileRepository();
 
-    if (user == null) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(20, 18, 20, 24),
-        child: _InfoBox(
-          icon: Icons.lock_outline,
-          cor: Colors.orange,
-          texto: 'Você está desconectado. Faça login para acessar o perfil.',
-        ),
-      );
-    }
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snap) {
+        final user = snap.data;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      children: [
-        StreamBuilder(
-          stream: repo.watch(user.uid),
-          builder: (context, snapshot) {
-            final data = snapshot.data?.data() as Map<String, dynamic>?;
-            final displayName = (data?['displayName'] ?? '').toString().trim();
-            final plan = (data?['plan'] ?? 'free').toString();
-
-            final titulo = displayName.isNotEmpty
-                ? displayName
-                : (user.email ?? 'Produtor');
-            final subtitulo = 'Plano: ${plan.toUpperCase()}';
-
-            return Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.grey.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+        if (user == null) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+            child: Card(
+              elevation: 0,
+              color: cs.tertiaryContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: cs.outlineVariant),
               ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 34,
-                    backgroundColor: Colors.green.shade100,
-                    child: Text(
-                      titulo.isNotEmpty ? titulo[0].toUpperCase() : 'U',
-                      style: TextStyle(
-                        fontSize: 28,
-                        color: Colors.green.shade800,
-                        fontWeight: FontWeight.bold,
+              child: const Padding(
+                padding: EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Você está desconectado. Faça login para acessar o perfil.',
+                        style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+          children: [
+            StreamBuilder(
+              stream: repo.watch(user.uid),
+              builder: (context, snapshot) {
+                final raw = snapshot.data?.data();
+                final data =
+                    (raw is Map<String, dynamic>) ? raw : <String, dynamic>{};
+                final displayName =
+                    (data['displayName'] ?? '').toString().trim();
+                final plan = (data['plan'] ?? 'free').toString();
+
+                final titulo = displayName.isNotEmpty
+                    ? displayName
+                    : (user.email ?? 'Produtor');
+                final subtitulo = 'Plano: ${plan.toUpperCase()}';
+
+                return Card(
+                  elevation: 0,
+                  color: cs.surfaceContainerHighest,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(color: cs.outlineVariant),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
                       children: [
-                        Text(
-                          titulo,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                        CircleAvatar(
+                          radius: 32,
+                          backgroundColor: cs.primary.withOpacity(0.12),
+                          child: Text(
+                            titulo.isNotEmpty ? titulo[0].toUpperCase() : 'U',
+                            style: TextStyle(
+                              fontSize: 26,
+                              color: cs.primary,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitulo,
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                titulo,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                subtitulo,
+                                style: TextStyle(
+                                    color: cs.onSurfaceVariant, fontSize: 12),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 14),
-        _CardSection(
-          title: 'Conta',
-          children: [
-            ListTile(
-              leading: const Icon(Icons.help_outline),
-              title: const Text('Ajuda & Suporte'),
-              onTap: () => AppMessenger.info('Suporte: em breve 😉'),
+                );
+              },
             ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('Privacidade'),
-              onTap: () => AppMessenger.info('Privacidade: em breve'),
+            const SizedBox(height: 12),
+            _ProfileSection(
+              title: 'Conta',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text('Ajuda & Suporte'),
+                  onTap: () => AppMessenger.info('Suporte: em breve 😉'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text('Privacidade'),
+                  onTap: () => AppMessenger.info('Privacidade: em breve'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: const Text('Configurações'),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const TelaConfiguracoes()),
+                  ),
+                ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('Configurações'),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TelaConfiguracoes()),
-              ),
+            const SizedBox(height: 12),
+            _ProfileSection(
+              title: 'Sessão',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text('Sair do App',
+                      style: TextStyle(color: Colors.red)),
+                  onTap: () => _confirmarLogout(context),
+                ),
+              ],
             ),
           ],
-        ),
-        const SizedBox(height: 14),
-        _CardSection(
-          title: 'Sessão',
-          children: [
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text(
-                'Sair do App',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () => _confirmarLogout(context),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 }
 
-class _CardSection extends StatelessWidget {
+class _ProfileSection extends StatelessWidget {
   final String title;
   final List<Widget> children;
 
-  const _CardSection({required this.title, required this.children});
+  const _ProfileSection({required this.title, required this.children});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        side: BorderSide(color: cs.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1354,7 +1661,7 @@ class _CardSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+                style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
           ...children,
         ],
@@ -1363,80 +1670,9 @@ class _CardSection extends StatelessWidget {
   }
 }
 
-class _CardMenuGrande extends StatelessWidget {
-  final String titulo;
-  final String? subtitulo;
-  final IconData icone;
-  final Color cor;
-  final VoidCallback onTap;
-
-  const _CardMenuGrande({
-    required this.titulo,
-    this.subtitulo,
-    required this.icone,
-    required this.cor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: cor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icone, color: cor, size: 24),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              titulo,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            if (subtitulo != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                subtitulo!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+// ============================================================================
+// Timeline Item — refinado (usa tema, sem card “old school”)
+// ============================================================================
 class _TimelineItem extends StatelessWidget {
   final int fase;
   final String titulo;
@@ -1460,6 +1696,8 @@ class _TimelineItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1470,23 +1708,16 @@ class _TimelineItem extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: bloqueado ? Colors.grey[300] : corIcone,
+                  color: bloqueado ? cs.surfaceContainerHighest : corIcone,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+                  border: Border.all(color: cs.surface, width: 2),
                 ),
                 child: Center(
                   child: Text(
                     fase.toString(),
                     style: TextStyle(
-                      color: bloqueado ? Colors.grey : Colors.white,
-                      fontWeight: FontWeight.bold,
+                      color: bloqueado ? cs.onSurfaceVariant : Colors.white,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
@@ -1495,7 +1726,7 @@ class _TimelineItem extends StatelessWidget {
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: Colors.grey[300],
+                    color: cs.outlineVariant,
                     margin: const EdgeInsets.symmetric(vertical: 4),
                   ),
                 ),
@@ -1504,32 +1735,33 @@ class _TimelineItem extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.only(bottom: 16),
               child: Card(
                 elevation: 0,
-                margin: EdgeInsets.zero,
+                color: cs.surfaceContainerHighest,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(color: Colors.grey.shade200),
+                  side: BorderSide(color: cs.outlineVariant),
                 ),
                 child: InkWell(
                   onTap: bloqueado ? null : onTap,
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          width: 52,
+                          height: 52,
                           decoration: BoxDecoration(
                             color: bloqueado
-                                ? Colors.grey[100]
+                                ? cs.surface
                                 : corIcone.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                           child: Icon(
                             icone,
-                            color: bloqueado ? Colors.grey : corIcone,
+                            color: bloqueado ? cs.onSurfaceVariant : corIcone,
                             size: 28,
                           ),
                         ),
@@ -1544,75 +1776,33 @@ class _TimelineItem extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color:
-                                      bloqueado ? Colors.grey : Colors.black87,
+                                  fontWeight: FontWeight.w900,
+                                  color: bloqueado
+                                      ? cs.onSurfaceVariant
+                                      : cs.onSurface,
                                 ),
                               ),
-                              const SizedBox(height: 5),
+                              const SizedBox(height: 6),
                               Text(
                                 descricao,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey[600],
+                                  color: cs.onSurfaceVariant,
                                 ),
                               ),
                             ],
                           ),
                         ),
                         Icon(
-                          bloqueado
-                              ? Icons.lock_outline
-                              : Icons.arrow_forward_ios,
-                          color: Colors.grey[400],
-                          size: 16,
+                          bloqueado ? Icons.lock_outline : Icons.chevron_right,
+                          color: cs.onSurfaceVariant,
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoBox extends StatelessWidget {
-  final IconData icon;
-  final Color cor;
-  final String texto;
-
-  const _InfoBox({
-    required this.icon,
-    required this.cor,
-    required this.texto,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: cor.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cor.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: cor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              texto,
-              style: TextStyle(
-                color: cor.withOpacity(0.90),
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
               ),
             ),
           ),

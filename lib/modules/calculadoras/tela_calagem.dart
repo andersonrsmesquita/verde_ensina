@@ -4,10 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
-import '../../core/ui/widgets/page_container.dart';
-import '../../core/ui/widgets/section_card.dart';
-import '../../core/ui/widgets/app_button.dart';
-import '../../core/ui/widgets/app_text_field.dart';
+import '../../core/firebase/firebase_paths.dart';
+import '../../core/session/session_scope.dart';
 
 class TelaCalagem extends StatefulWidget {
   final String? canteiroIdOrigem;
@@ -44,6 +42,11 @@ class _TelaCalagemState extends State<TelaCalagem> {
   double? _doseGramasM2;
   double? _ncTonHa;
 
+  List<TextInputFormatter> get _numFormatters => [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+        LengthLimitingTextInputFormatter(10),
+      ];
+
   double _toDouble(dynamic v) {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
@@ -57,8 +60,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
     return double.tryParse(t) ?? def;
   }
 
-  String _fmt(num v, {int dec = 2}) =>
-      v.toStringAsFixed(dec).replaceAll('.', ',');
+  String _fmt(num v, {int dec = 2}) => v.toStringAsFixed(dec).replaceAll('.', ',');
 
   @override
   void initState() {
@@ -66,7 +68,9 @@ class _TelaCalagemState extends State<TelaCalagem> {
     if (widget.canteiroIdOrigem != null) {
       _canteiroSelecionadoId = widget.canteiroIdOrigem;
       _bloquearSelecaoCanteiro = true;
-      _carregarDadosCanteiro(widget.canteiroIdOrigem!);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _carregarDadosCanteiro(widget.canteiroIdOrigem!);
+      });
     }
   }
 
@@ -86,10 +90,10 @@ class _TelaCalagemState extends State<TelaCalagem> {
     setState(() => _carregandoCanteiro = true);
 
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('canteiros')
-          .doc(id)
-          .get();
+      final sess = SessionScope.of(context).session;
+      if (sess == null) return;
+
+      final doc = await FirebasePaths.canteirosCol(sess.tenantId).doc(id).get();
       if (!doc.exists || !mounted) return;
 
       final data = doc.data() ?? {};
@@ -142,7 +146,8 @@ class _TelaCalagemState extends State<TelaCalagem> {
       v1 = _parseCtrl(_vAtualController);
       ctc = _parseCtrl(_ctcController);
     } else {
-      v1 = 40; // estimativa conservadora
+      // estimativa conservadora
+      v1 = 40;
       if (_texturaEstimada == 'Arenoso') {
         ctc = 6.0;
       } else if (_texturaEstimada == 'Argiloso') {
@@ -155,7 +160,6 @@ class _TelaCalagemState extends State<TelaCalagem> {
     v2 = _parseCtrl(_vDesejadoController, def: 70);
     prnt = _parseCtrl(_prntController, def: 80);
 
-    // clamp
     v2 = v2.clamp(0, 100);
     prnt = prnt.clamp(1, 100);
 
@@ -173,6 +177,8 @@ class _TelaCalagemState extends State<TelaCalagem> {
       _resultadoGramas = totalG;
       _resultadoKg = totalKg;
     });
+
+    AppMessenger.success('Cálculo pronto ✅');
   }
 
   Future<void> _registrarAplicacao() async {
@@ -190,6 +196,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
       return;
     }
 
+    if (_salvando) return;
     setState(() => _salvando = true);
 
     try {
@@ -208,16 +215,29 @@ class _TelaCalagemState extends State<TelaCalagem> {
       final vMeta = _parseCtrl(_vDesejadoController, def: 70);
       final prnt = _parseCtrl(_prntController, def: 80);
 
-      final histRef = fs.collection('historico_manejo').doc();
+      final sess = SessionScope.of(context).session;
+      if (sess == null) throw Exception('Sem tenant selecionado');
 
-      final detalhes = _temLaudo
-          ? 'Via Laudo Técnico'
-          : 'Via Estimativa Manual ($_texturaEstimada)';
+      final histRef = FirebasePaths.historicoManejoCol(sess.tenantId).doc();
+
+      final detalhes = _temLaudo ? 'Via Laudo Técnico' : 'Via Estimativa Manual ($_texturaEstimada)';
 
       final totalG = double.parse(_resultadoGramas!.toStringAsFixed(2));
       final totalKg = double.parse((_resultadoKg ?? 0).toStringAsFixed(3));
       final dose = double.parse(_doseGramasM2!.toStringAsFixed(2));
       final nc = double.parse(_ncTonHa!.toStringAsFixed(3));
+
+      final parametros = <String, dynamic>{
+        'tem_laudo': _temLaudo,
+        'v_atual': double.parse(vAtual.toStringAsFixed(2)),
+        'v_meta': double.parse(vMeta.toStringAsFixed(2)),
+        'ctc_t': double.parse(ctc.toStringAsFixed(2)),
+        'prnt': double.parse(prnt.toStringAsFixed(2)),
+        'area_m2': double.parse(_areaCanteiro.toStringAsFixed(2)),
+      };
+      if (!_temLaudo) {
+        parametros['textura_estimada'] = _texturaEstimada;
+      }
 
       batch.set(histRef, {
         'uid_usuario': user.uid,
@@ -230,15 +250,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
         'quantidade_kg': totalKg,
         'dose_g_m2': dose,
         'nc_ton_ha': nc,
-        'parametros': {
-          'tem_laudo': _temLaudo,
-          'textura_estimada': _temLaudo ? null : _texturaEstimada,
-          'v_atual': double.parse(vAtual.toStringAsFixed(2)),
-          'v_meta': double.parse(vMeta.toStringAsFixed(2)),
-          'ctc_t': double.parse(ctc.toStringAsFixed(2)),
-          'prnt': double.parse(prnt.toStringAsFixed(2)),
-          'area_m2': double.parse(_areaCanteiro.toStringAsFixed(2)),
-        },
+        'parametros': parametros,
         'detalhes': detalhes,
         'concluido': true,
         'createdAt': agora,
@@ -246,32 +258,28 @@ class _TelaCalagemState extends State<TelaCalagem> {
         'origem': 'calagem',
       });
 
-      // atualiza o canteiro (merge)
-      final canteiroRef =
-          fs.collection('canteiros').doc(_canteiroSelecionadoId);
+      // Premium: update canteiro sem risco de sobrescrever mapas
+      final canteiroRef = FirebasePaths.canteirosCol(sess.tenantId).doc(_canteiroSelecionadoId);
       batch.set(
-          canteiroRef,
-          {
-            'updatedAt': agora,
-            'data_atualizacao': agora,
-            'totais_insumos': {
-              'calcario_g': FieldValue.increment(totalG),
-              'aplicacoes_calagem': FieldValue.increment(1),
-            },
-            'ult_manejo': {
-              'tipo': 'Calagem',
-              'hist_id': histRef.id,
-              'resumo': detalhes,
-              'atualizadoEm': agora,
-            },
-          },
-          SetOptions(merge: true));
+        canteiroRef,
+        {
+          'updatedAt': agora,
+          'data_atualizacao': agora,
+          'totais_insumos.calcario_g': FieldValue.increment(totalG),
+          'totais_insumos.aplicacoes_calagem': FieldValue.increment(1),
+          'ult_manejo.tipo': 'Calagem',
+          'ult_manejo.hist_id': histRef.id,
+          'ult_manejo.resumo': detalhes,
+          'ult_manejo.atualizadoEm': agora,
+        },
+        SetOptions(merge: true),
+      );
 
       await batch.commit();
 
       if (!mounted) return;
       AppMessenger.success('Aplicação registrada no Caderno de Campo! 📖✅');
-      Navigator.pop(context);
+      Navigator.of(context).maybePop();
     } catch (e) {
       AppMessenger.error('Erro ao registrar: $e');
     } finally {
@@ -281,131 +289,82 @@ class _TelaCalagemState extends State<TelaCalagem> {
 
   @override
   Widget build(BuildContext context) {
-    final user = _user;
-    if (user == null) {
-      return const PageContainer(
-        title: 'Calagem',
-        child: Center(child: Text('Faça login para usar a calagem.')),
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      return const Scaffold(
+        body: Center(child: Text('Selecione um espaço (tenant) para continuar.')),
       );
     }
 
-    return PageContainer(
-      title: 'Calculadora de Calagem',
-      child: Form(
+    final user = _user;
+    final theme = Theme.of(context);
+
+    if (user == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Calagem')),
+        body: const Center(child: Text('Faça login para usar a calagem.')),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Calculadora de Calagem'),
+      ),
+      body: Form(
         key: _formKey,
-        child: Column(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
           children: [
-            SectionCard(
+            _buildCard(
+              context,
               title: 'Como usar',
-              subtitle:
-                  'Com laudo (melhor) ou estimativa por textura (cautela).',
+              subtitle: 'Com laudo (melhor) ou estimativa por textura (cautela).',
               child: Row(
-                children: const [
-                  Icon(Icons.info_outline),
-                  SizedBox(width: 10),
-                  Expanded(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, color: theme.colorScheme.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(
                     child: Text(
                       'Se tiver laudo, preencha V% atual e CTC (T). Se não tiver, selecione a textura do solo.',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w600, height: 1.2),
+                      style: TextStyle(fontWeight: FontWeight.w600, height: 1.2),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            SectionCard(
+
+            _buildCard(
+              context,
               title: '1) Local da aplicação',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_carregandoCanteiro) const LinearProgressIndicator(),
-                  const SizedBox(height: 10),
+                  if (_carregandoCanteiro) const SizedBox(height: 10),
+
                   if (_bloquearSelecaoCanteiro)
-                    _canteiroTravado()
+                    _canteiroTravado(theme)
                   else
-                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: FirebaseFirestore.instance
-                          .collection('canteiros')
-                          .where('uid_usuario', isEqualTo: user.uid)
-                          .where('ativo', isEqualTo: true)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Text(
-                              'Erro ao carregar canteiros: ${snapshot.error}');
-                        }
-                        if (!snapshot.hasData)
-                          return const LinearProgressIndicator();
+                    _buildCanteiroDropdown(user.uid),
 
-                        final docs = snapshot.data!.docs;
-                        if (docs.isEmpty) {
-                          return const Text(
-                              'Nenhum canteiro ativo. Crie um primeiro.');
-                        }
-
-                        final hasSelected = _canteiroSelecionadoId != null &&
-                            docs.any((d) => d.id == _canteiroSelecionadoId);
-                        final currentValue =
-                            hasSelected ? _canteiroSelecionadoId : null;
-
-                        if (!hasSelected && _canteiroSelecionadoId != null) {
-                          // evita assert do dropdown quando o item some da lista
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            setState(() {
-                              _canteiroSelecionadoId = null;
-                              _nomeCanteiro = '';
-                              _areaCanteiro = 0;
-                              _zerarResultado();
-                            });
-                          });
-                        }
-
-                        return DropdownButtonFormField<String>(
-                          value: currentValue,
-                          decoration: const InputDecoration(
-                            labelText: 'Canteiro',
-                            prefixIcon: Icon(Icons.place_outlined),
-                          ),
-                          items: docs.map((d) {
-                            final data = d.data();
-                            final nome =
-                                (data['nome'] ?? 'Canteiro').toString();
-                            final area = _toDouble(data['area_m2']);
-                            return DropdownMenuItem(
-                              value: d.id,
-                              child: Text('$nome (${_fmt(area)} m²)'),
-                            );
-                          }).toList(),
-                          onChanged: (id) {
-                            if (id == null) return;
-                            final doc = docs.firstWhere((d) => d.id == id);
-                            final data = doc.data();
-                            setState(() {
-                              _canteiroSelecionadoId = id;
-                              _nomeCanteiro =
-                                  (data['nome'] ?? 'Canteiro').toString();
-                              _areaCanteiro = _toDouble(data['area_m2']);
-                              _zerarResultado();
-                            });
-                          },
-                        );
-                      },
-                    ),
                   const SizedBox(height: 10),
                   if (_nomeCanteiro.isNotEmpty)
                     Text(
                       'Área do canteiro: ${_fmt(_areaCanteiro)} m²',
                       style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontWeight: FontWeight.w700),
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            SectionCard(
+
+            _buildCard(
+              context,
               title: '2) Dados do solo',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,8 +372,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Tenho análise de solo'),
-                    subtitle: Text(
-                        _temLaudo ? 'V% e CTC (T)' : 'Estimativa por textura'),
+                    subtitle: Text(_temLaudo ? 'V% e CTC (T)' : 'Estimativa por textura'),
                     value: _temLaudo,
                     onChanged: (v) {
                       setState(() {
@@ -424,33 +382,32 @@ class _TelaCalagemState extends State<TelaCalagem> {
                     },
                   ),
                   const SizedBox(height: 10),
+
                   if (_temLaudo) ...[
                     Row(
                       children: [
                         Expanded(
-                          child: AppTextField.number(
+                          child: _numField(
                             controller: _vAtualController,
                             label: 'V% Atual',
                             hint: 'Ex: 45',
                             validator: (v) => _valNum(v, min: 0, max: 100),
-                            suffixIcon: IconButton(
+                            suffix: IconButton(
                               icon: const Icon(Icons.help_outline),
-                              onPressed: () => AppMessenger.info(
-                                  'Procure “V%” no laudo. Ex: 45.'),
+                              onPressed: () => AppMessenger.info('Procure “V%” no laudo. Ex: 45.'),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: AppTextField.number(
+                          child: _numField(
                             controller: _ctcController,
                             label: 'CTC (T)',
                             hint: 'Ex: 7,5',
                             validator: (v) => _valNum(v, min: 0, max: 100),
-                            suffixIcon: IconButton(
+                            suffix: IconButton(
                               icon: const Icon(Icons.help_outline),
-                              onPressed: () => AppMessenger.info(
-                                  'Procure “CTC” ou “T” no laudo.'),
+                              onPressed: () => AppMessenger.info('Procure “CTC” ou “T” no laudo.'),
                             ),
                           ),
                         ),
@@ -464,13 +421,9 @@ class _TelaCalagemState extends State<TelaCalagem> {
                         prefixIcon: Icon(Icons.grass_outlined),
                       ),
                       items: const [
-                        DropdownMenuItem(
-                            value: 'Arenoso',
-                            child: Text('Arenoso (Esfarela)')),
-                        DropdownMenuItem(
-                            value: 'Médio', child: Text('Médio / Franco')),
-                        DropdownMenuItem(
-                            value: 'Argiloso', child: Text('Argiloso (Barro)')),
+                        DropdownMenuItem(value: 'Arenoso', child: Text('Arenoso (Esfarela)')),
+                        DropdownMenuItem(value: 'Médio', child: Text('Médio / Franco')),
+                        DropdownMenuItem(value: 'Argiloso', child: Text('Argiloso (Barro)')),
                       ],
                       onChanged: (v) {
                         setState(() {
@@ -483,20 +436,23 @@ class _TelaCalagemState extends State<TelaCalagem> {
                     Text(
                       '⚠️ Estimativa baseada em média. Use com cautela.',
                       style: TextStyle(
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w700),
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            SectionCard(
+
+            _buildCard(
+              context,
               title: '3) Parâmetros',
               child: Row(
                 children: [
                   Expanded(
-                    child: AppTextField.number(
+                    child: _numField(
                       controller: _vDesejadoController,
                       label: 'V% Meta',
                       hint: '70',
@@ -505,7 +461,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: AppTextField.number(
+                    child: _numField(
                       controller: _prntController,
                       label: 'PRNT (%)',
                       hint: '80',
@@ -515,40 +471,128 @@ class _TelaCalagemState extends State<TelaCalagem> {
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-            AppButton.primary(
-              label: 'CALCULAR QUANTIDADE',
-              icon: Icons.calculate_outlined,
-              onPressed: _calcular,
-            ),
+
+            const SizedBox(height: 12),
+
             if (_resultadoGramas != null) ...[
-              const SizedBox(height: 14),
-              _resultadoCard(),
+              _resultadoCard(theme),
             ],
           ],
+        ),
+      ),
+
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: AppButtons.elevatedIcon(
+                    onPressed: _salvando ? null : _calcular,
+                    icon: const Icon(Icons.calculate_outlined),
+                    label: const Text('CALCULAR'),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: AppButtons.elevatedIcon(
+                    onPressed: (_resultadoGramas == null || _salvando) ? null : _registrarAplicacao,
+                    icon: Icon(_salvando ? Icons.hourglass_top : Icons.save_alt_outlined),
+                    label: Text(_salvando ? 'SALVANDO...' : 'REGISTRAR'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _canteiroTravado() {
+  Widget _buildCanteiroDropdown(String uid) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId)
+          .where('ativo', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Text('Erro ao carregar canteiros: ${snapshot.error}');
+        }
+        if (!snapshot.hasData) return const LinearProgressIndicator();
+
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return const Text('Nenhum canteiro ativo. Crie um primeiro.');
+        }
+
+        final hasSelected = _canteiroSelecionadoId != null && docs.any((d) => d.id == _canteiroSelecionadoId);
+        final currentValue = hasSelected ? _canteiroSelecionadoId : null;
+
+        if (!hasSelected && _canteiroSelecionadoId != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() {
+              _canteiroSelecionadoId = null;
+              _nomeCanteiro = '';
+              _areaCanteiro = 0;
+              _zerarResultado();
+            });
+          });
+        }
+
+        return DropdownButtonFormField<String>(
+          value: currentValue,
+          decoration: const InputDecoration(
+            labelText: 'Canteiro',
+            prefixIcon: Icon(Icons.place_outlined),
+          ),
+          items: docs.map((d) {
+            final data = d.data();
+            final nome = (data['nome'] ?? 'Canteiro').toString();
+            final area = _toDouble(data['area_m2']);
+            return DropdownMenuItem(
+              value: d.id,
+              child: Text('$nome (${_fmt(area)} m²)'),
+            );
+          }).toList(),
+          onChanged: (id) {
+            if (id == null) return;
+            final doc = docs.firstWhere((d) => d.id == id);
+            final data = doc.data();
+            setState(() {
+              _canteiroSelecionadoId = id;
+              _nomeCanteiro = (data['nome'] ?? 'Canteiro').toString();
+              _areaCanteiro = _toDouble(data['area_m2']);
+              _zerarResultado();
+            });
+          },
+        );
+      },
+    );
+  }
+
+  Widget _canteiroTravado(ThemeData theme) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.8)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline),
+          Icon(Icons.lock_outline, color: theme.colorScheme.primary),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              _nomeCanteiro.isNotEmpty
-                  ? '$_nomeCanteiro (${_fmt(_areaCanteiro)} m²)'
-                  : 'Carregando canteiro...',
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              _nomeCanteiro.isNotEmpty ? '$_nomeCanteiro (${_fmt(_areaCanteiro)} m²)' : 'Carregando canteiro...',
+              style: const TextStyle(fontWeight: FontWeight.w900),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -557,15 +601,16 @@ class _TelaCalagemState extends State<TelaCalagem> {
     );
   }
 
-  Widget _resultadoCard() {
+  Widget _resultadoCard(ThemeData theme) {
     final g = _resultadoGramas ?? 0;
     final kg = _resultadoKg ?? 0;
     final dose = _doseGramasM2 ?? 0;
     final nc = _ncTonHa ?? 0;
 
-    return SectionCard(
+    return _buildCard(
+      context,
       title: 'Recomendação',
-      subtitle: 'Isso aqui já vai pro Caderno de Campo quando você confirmar.',
+      subtitle: 'Confirme para registrar no Caderno de Campo.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -577,7 +622,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
                   style: TextStyle(
                     fontSize: 40,
                     fontWeight: FontWeight.w900,
-                    color: Colors.green.shade800,
+                    color: theme.colorScheme.primary,
                   ),
                 ),
                 Text(
@@ -588,24 +633,16 @@ class _TelaCalagemState extends State<TelaCalagem> {
             ),
           ),
           const SizedBox(height: 12),
-          Divider(color: Colors.grey.shade200),
+          Divider(color: theme.dividerColor.withOpacity(0.8)),
           const SizedBox(height: 12),
           _row('Local', _nomeCanteiro),
           _row('Área', '${_fmt(_areaCanteiro)} m²'),
           _row('Dose', '${_fmt(dose)} g/m²'),
           _row('NC', '${_fmt(nc, dec: 3)} t/ha'),
-          const SizedBox(height: 12),
-          AppButton.primary(
-            label: 'CONFIRMAR APLICAÇÃO',
-            icon: Icons.save_alt,
-            loading: _salvando,
-            onPressed: _registrarAplicacao,
-          ),
-          const SizedBox(height: 10),
-          AppButton.secondary(
-            label: 'RECALCULAR / AJUSTAR',
-            icon: Icons.refresh,
-            onPressed: () => setState(_zerarResultado),
+          const SizedBox(height: 8),
+          Text(
+            _temLaudo ? 'Fonte: Laudo técnico' : 'Fonte: Estimativa (${_texturaEstimada.toLowerCase()})',
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -617,8 +654,7 @@ class _TelaCalagemState extends State<TelaCalagem> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Expanded(
-              child: Text(k, style: TextStyle(color: Colors.grey.shade700))),
+          Expanded(child: Text(k, style: TextStyle(color: Colors.grey.shade700))),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -631,6 +667,60 @@ class _TelaCalagemState extends State<TelaCalagem> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCard(
+    BuildContext context, {
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(subtitle, style: theme.textTheme.bodySmall),
+            ],
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _numField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    String? Function(String?)? validator,
+    Widget? suffix,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: _numFormatters,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        suffixIcon: suffix,
+      ),
+      validator: validator,
+      onChanged: (_) {
+        if (_resultadoGramas != null) {
+          setState(() => _zerarResultado());
+        }
+      },
     );
   }
 }

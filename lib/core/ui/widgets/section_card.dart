@@ -1,44 +1,54 @@
 import 'package:flutter/material.dart';
+import '../app_tokens.dart';
+import '../app_context_ext.dart';
 
 class SectionCard extends StatelessWidget {
-  final String title;
-  final String? subtitle;
+  final String? title;
   final Widget child;
+  final Widget? trailing;
+  final EdgeInsets padding;
 
   const SectionCard({
     super.key,
-    required this.title,
-    this.subtitle,
+    this.title,
     required this.child,
+    this.trailing,
+    this.padding = const EdgeInsets.all(AppTokens.md),
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs = context.cs;
+
     return Container(
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(AppTokens.rLg),
+        border: Border.all(color: cs.outlineVariant.withOpacity(0.35)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-          if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(subtitle!, style: TextStyle(color: Colors.grey.shade700)),
+      child: Padding(
+        padding: padding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title != null || trailing != null) ...[
+              Row(
+                children: [
+                  if (title != null)
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: context.tt.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  if (trailing != null) trailing!,
+                ],
+              ),
+              const SizedBox(height: AppTokens.md),
+            ],
+            child,
           ],
-          const SizedBox(height: 12),
-          child,
-        ],
+        ),
       ),
     );
   }
