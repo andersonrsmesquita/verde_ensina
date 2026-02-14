@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-
 import '../app_tokens.dart';
-import '../app_responsive.dart';
-import '../app_context_ext.dart';
+import '../app_responsive.dart'; // Mantido se você usa para paddings específicos
 
 /// O esqueleto mestre de todas as páginas do aplicativo.
 /// Padrão de Excelência: Garante largura máxima (Desktop), scroll controlado,
@@ -17,6 +15,9 @@ class PageContainer extends StatelessWidget {
   final Widget? floatingActionButton;
   final Color? backgroundColor;
 
+  // Novo: Permite remover o padding padrão se necessário (ex: mapas, imagens full)
+  final bool usePadding;
+
   const PageContainer({
     super.key,
     this.title,
@@ -24,21 +25,31 @@ class PageContainer extends StatelessWidget {
     this.actions,
     this.bottom,
     this.scroll = true,
-    this.center = true,
+    this.center =
+        false, // Mudado para false por padrão (alinhamento topo é mais comum)
     this.floatingActionButton,
     this.backgroundColor,
+    this.usePadding = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final screenWidth = context.screenWidth;
-    final padding = AppResponsive.pagePadding(screenWidth);
+    // ✅ Padronização Nativa (Sem dependência de context.colors quebrada)
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final screenWidth = MediaQuery.of(context).size.width;
 
-    // Constrói o conteúdo base com restrição de largura máxima (PC/Tablet)
-    Widget content = body;
+    // Padding responsivo inteligente
+    final padding =
+        usePadding ? AppResponsive.pagePadding(screenWidth) : EdgeInsets.zero;
 
-    // Gerencia o scroll e o alinhamento vertical
+    // 1. Conteúdo Base com Restrições de Largura (Para Desktop/Tablet)
+    Widget content = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: AppTokens.maxWidth),
+      child: body,
+    );
+
+    // 2. Gerenciamento de Scroll e Alinhamento
     if (scroll) {
       content = LayoutBuilder(
         builder: (context, constraints) {
@@ -47,44 +58,47 @@ class PageContainer extends StatelessWidget {
             padding: padding,
             child: ConstrainedBox(
               constraints: BoxConstraints(
+                // Garante que o conteúdo tenha pelo menos a altura da tela
                 minHeight: constraints.maxHeight - padding.vertical,
-                maxWidth: AppTokens.maxWidth,
               ),
-              child: IntrinsicHeight(
-                child: center ? Center(child: content) : content,
-              ),
+              child: center
+                  ? Center(child: content)
+                  : content, // Se não for center, alinha ao topo (padrão)
             ),
           );
         },
       );
     } else {
+      // Sem scroll: Apenas padding e alinhamento
       content = Padding(
         padding: padding,
         child: center ? Center(child: content) : content,
       );
     }
 
-    // Aplica a restrição de largura máxima global para o conteúdo do body
-    content = Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppTokens.maxWidth),
-        child: content,
-      ),
-    );
+    // 3. Centralização Global (Para telas muito largas)
+    content = Center(child: content);
 
     return Scaffold(
-      backgroundColor: backgroundColor ?? colors.background,
+      backgroundColor: backgroundColor ??
+          colors.surface, // Usa surface por padrão (Material 3)
       appBar: title == null
           ? null
           : AppBar(
-              title: Text(title!),
+              title: Text(
+                title!,
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              centerTitle: true, // Padrão elegante
               actions: actions,
-              surfaceTintColor:
-                  Colors.transparent, // Mantém a cor sólida na rolagem
-              elevation: 0,
+              scrolledUnderElevation: 0, // Evita mudança brusca de cor
+              backgroundColor: colors.surface,
             ),
       body: content,
-      // Barra de ação inferior (Ex: Botão de Salvar)
+      floatingActionButton: floatingActionButton,
+
+      // 4. Barra Inferior Elevada (Design Premium)
       bottomNavigationBar: bottom == null
           ? null
           : Container(
@@ -96,32 +110,26 @@ class PageContainer extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
+                    color: Colors.black.withOpacity(0.05),
                     blurRadius: 10,
-                    offset: const Offset(0, -5),
+                    offset: const Offset(0, -4),
                   ),
                 ],
               ),
               child: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.all(AppTokens.md),
-                  child: Row(
-                    // Usamos Row para permitir que o Center funcione sem erro de parâmetro
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                              maxWidth: AppTokens.maxWidth),
-                          child: bottom!,
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.md, vertical: AppTokens.sm),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints:
+                          const BoxConstraints(maxWidth: AppTokens.maxWidth),
+                      child: bottom!,
+                    ),
                   ),
                 ),
               ),
             ),
-      floatingActionButton: floatingActionButton,
     );
   }
 }

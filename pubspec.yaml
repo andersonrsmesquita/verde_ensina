@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   flutter_localizations:
     sdk: flutter
 
@@ -22,6 +21,14 @@ dependencies:
 
   # Router (padrão profissional)
   go_router: ^14.0.0
+
+  # --- Adicionados e Corrigidos ---
+  # A versão do intl foi atualizada para evitar o conflito com o flutter_localizations
+  intl: ^0.20.2        
+  
+  # Geolocalização e API
+  geolocator: ^13.0.1  
+  http: ^1.2.2         
 
 dev_dependencies:
   flutter_test:
