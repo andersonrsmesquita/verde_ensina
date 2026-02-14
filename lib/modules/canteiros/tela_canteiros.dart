@@ -323,6 +323,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       return;
     }
 
+    // ✅ CORREÇÃO AQUI: Pegamos o tenantId ANTES de abrir o ModalBottomSheet
+    // Isso evita o erro de widget dependente na hora de salvar.
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      _snack('Sessão inválida. Verifique sua conexão.', cor: Colors.red);
+      return;
+    }
+    final tenantId = appSession.tenantId;
+
     final bool editando = doc != null;
     final dados = doc?.data() ?? <String, dynamic>{};
     final parentContext = context;
@@ -440,15 +449,11 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                   payload['ativo'] = true;
                   payload['status'] = 'livre';
 
-                  final appSession = SessionScope.of(context).session;
-                  if (appSession == null) throw Exception('Sem tenant selecionado');
-
-                  await FirebasePaths.canteirosCol(appSession.tenantId).add(payload);
+                  // ✅ CORREÇÃO AQUI: Usa a variável tenantId salva lá em cima
+                  await FirebasePaths.canteirosCol(tenantId).add(payload);
                 } else {
-                  final appSession = SessionScope.of(context).session;
-                  if (appSession == null) throw Exception('Sem tenant selecionado');
-
-                  await FirebasePaths.canteirosCol(appSession.tenantId)
+                  // ✅ CORREÇÃO AQUI: Usa a variável tenantId salva lá em cima
+                  await FirebasePaths.canteirosCol(tenantId)
                       .doc(doc!.id)
                       .update(payload);
                 }
@@ -813,20 +818,26 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     }
   }
 
-  Future<void> _toggleAtivo(String id, bool ativoAtual) async {
-    await FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId).doc(id).update({
+  // ✅ CORREÇÃO AQUI: Passamos o tenantId via parâmetro
+  Future<void> _toggleAtivo(String id, bool ativoAtual, String tenantId) async {
+    await FirebasePaths.canteirosCol(tenantId).doc(id).update({
       'ativo': !ativoAtual,
       'data_atualizacao': FieldValue.serverTimestamp(),
     });
   }
 
+  // ✅ CORREÇÃO AQUI: Lemos o tenantId antes das chamadas assíncronas
   Future<void> _toggleAtivoComUndo({
     required String id,
     required bool ativoAtual,
     required String nome,
   }) async {
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) return;
+    final tenantId = appSession.tenantId;
+
     try {
-      await _toggleAtivo(id, ativoAtual);
+      await _toggleAtivo(id, ativoAtual, tenantId);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -842,10 +853,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
             label: 'DESFAZER',
             onPressed: () async {
               try {
-                final appSession = SessionScope.of(context).session;
-                if (appSession == null) throw Exception('Sem tenant selecionado');
-
-                await FirebasePaths.canteirosCol(appSession.tenantId)
+                // ✅ CORREÇÃO AQUI: Usamos a variável salva, sem usar SessionScope.of() dentro do botão
+                await FirebasePaths.canteirosCol(tenantId)
                     .doc(id)
                     .update({
                   'ativo': ativoAtual,
@@ -864,12 +873,18 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     }
   }
 
-  Future<void> _excluirHard(String id) async {
-    await FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId).doc(id).delete();
+  // ✅ CORREÇÃO AQUI: Passamos o tenantId via parâmetro
+  Future<void> _excluirHard(String id, String tenantId) async {
+    await FirebasePaths.canteirosCol(tenantId).doc(id).delete();
   }
 
   Future<void> _confirmarExcluirHard(String id, String nome) async {
     if (!kDebugMode) return;
+
+    // ✅ CORREÇÃO AQUI: Pegamos o tenantId antes do showDialog
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) return;
+    final tenantId = appSession.tenantId;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -892,7 +907,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
 
     if (ok == true) {
-      await _excluirHard(id);
+      await _excluirHard(id, tenantId);
       _snack('Excluído (hard delete).', cor: Colors.red);
     }
   }

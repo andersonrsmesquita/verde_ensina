@@ -3,9 +3,6 @@
 // Guia “completo” (bem parrudo) pra:
 // - TelaPlanejamentoCanteiro (calendarioRegional, buscarCulturas, getCulturaInfo)
 // - TelaDetalhesCanteiro (guiaCompleto: Map com todos os detalhes)
-//
-// Observação: você pode ir refinando os dados depois.
-// O importante: não quebrar nada e ter base boa.
 
 class CulturaInfo {
   final String nome;
@@ -25,6 +22,10 @@ class CulturaInfo {
   final String? adubacao;
   final String? pragas;
   final String? observacoes;
+  
+  // ✅ Adicionado as propriedades de consórcio / alelopatia
+  final List<String> companheiras;
+  final List<String> evitar;
 
   const CulturaInfo({
     required this.nome,
@@ -38,10 +39,11 @@ class CulturaInfo {
     this.adubacao,
     this.pragas,
     this.observacoes,
+    this.companheiras = const [], // Valor padrão vazio
+    this.evitar = const [],       // Valor padrão vazio
   });
 
   /// Estimativa simples: área / (espacamentoLinha * espacamentoPlanta)
-  /// (é uma aproximação “grid”, boa pra planejamento rápido)
   int estimarQtdPlantasPorArea(double areaM2) {
     if (areaM2 <= 0) return 0;
     final areaPorPlanta = espacamentoLinhaM * espacamentoPlantaM;
@@ -64,27 +66,30 @@ class CulturaInfo {
       return int.tryParse(v.toString()) ?? def;
     }
 
+    List<String> _list(dynamic v) {
+      if (v is List) return v.map((e) => e.toString()).toList();
+      return [];
+    }
+
     return CulturaInfo(
       nome: nome,
       categoria: (m['categoria'] ?? 'Hortaliça').toString(),
       cicloDias: _i(m['ciclo_dias'], 60),
       espacamentoLinhaM: _d(m['espacamento_linha_m'], 0.30),
       espacamentoPlantaM: _d(m['espacamento_planta_m'], 0.30),
-      profundidadeCm:
-          m['profundidade_cm'] == null ? null : _d(m['profundidade_cm'], 0),
+      profundidadeCm: m['profundidade_cm'] == null ? null : _d(m['profundidade_cm'], 0),
       luminosidade: m['luminosidade']?.toString(),
       irrigacao: m['irrigacao']?.toString(),
       adubacao: m['adubacao']?.toString(),
       pragas: m['pragas']?.toString(),
       observacoes: m['observacoes']?.toString(),
+      companheiras: _list(m['companheiras']), // ✅ Carregando do mapa
+      evitar: _list(m['evitar']),             // ✅ Carregando do mapa
     );
   }
 }
 
-/// ✅ Esse é o “cara” que tua TelaDetalhesCanteiro está cobrando.
 /// Estrutura: nomeDaCultura -> mapa de detalhes.
-/// Dica: mantenha sempre as chaves básicas:
-/// categoria, ciclo_dias, espacamento_linha_m, espacamento_planta_m
 final Map<String, Map<String, dynamic>> guiaCompleto = {
   'Alface': {
     'categoria': 'Folhosa',
@@ -96,8 +101,9 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'irrigacao': 'Frequente, manter solo úmido sem encharcar',
     'adubacao': 'Rico em matéria orgânica; reforço leve a cada 15 dias',
     'pragas': 'Pulgões, lesmas, lagartas',
-    'observacoes':
-        'Prefere clima ameno. No calor forte, pode pendoar (subir flor).',
+    'observacoes': 'Prefere clima ameno. No calor forte, pode pendoar (subir flor).',
+    'companheiras': ['Alho', 'Alho poró', 'Batata', 'Cebola', 'Cenoura', 'Rabanete'],
+    'evitar': ['Beterraba', 'Couve', 'Nabo'],
   },
   'Rúcula': {
     'categoria': 'Folhosa',
@@ -110,6 +116,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura leve',
     'pragas': 'Pulgões, vaquinhas, lagartas',
     'observacoes': 'Cresce rápido. Colheita pode ser por corte.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Abóbora', 'Cenoura', 'Feijão', 'Melão', 'Pepino', 'Tomate'],
   },
   'Couve': {
     'categoria': 'Folhosa',
@@ -122,6 +130,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Responde bem a nitrogênio (sem exagero)',
     'pragas': 'Lagarta da couve, pulgões',
     'observacoes': 'Colheita contínua por folhas.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Abóbora', 'Cenoura', 'Feijão', 'Melão', 'Pepino', 'Tomate'],
   },
   'Espinafre': {
     'categoria': 'Folhosa',
@@ -134,6 +144,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura leve',
     'pragas': 'Pulgões, lesmas',
     'observacoes': 'Gosta de clima ameno.',
+    'companheiras': ['Couve', 'Rúcula', 'Repolho', 'Brócolis', 'Pepino', 'Abobrinha'],
+    'evitar': [],
   },
   'Repolho': {
     'categoria': 'Brássica',
@@ -146,6 +158,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Boa base orgânica + cobertura no pegamento',
     'pragas': 'Lagartas, pulgões',
     'observacoes': 'Clima ameno ajuda a formar cabeças melhores.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Abóbora', 'Cenoura', 'Feijão', 'Melão', 'Pepino', 'Tomate'],
   },
   'Brócolis': {
     'categoria': 'Brássica',
@@ -158,6 +172,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + reforço leve (K/Ca ajuda)',
     'pragas': 'Lagartas, pulgões',
     'observacoes': 'Prefere clima ameno.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Abóbora', 'Cenoura', 'Feijão', 'Melão', 'Pepino', 'Tomate'],
   },
   'Couve-flor': {
     'categoria': 'Brássica',
@@ -170,6 +186,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Rico em matéria orgânica',
     'pragas': 'Lagartas, pulgões',
     'observacoes': 'Exige mais regularidade de água.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Abóbora', 'Cenoura', 'Feijão', 'Melão', 'Pepino', 'Tomate'],
   },
   'Cebolinha': {
     'categoria': 'Temperos',
@@ -182,6 +200,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura mensal',
     'pragas': 'Trips',
     'observacoes': 'Pode ser replantada por touceira.',
+    'companheiras': ['Couve', 'Repolho', 'Brócolis', 'Tomate', 'Alface', 'Pepino'],
+    'evitar': ['Ervilha', 'Feijão', 'Vagem'],
   },
   'Salsinha': {
     'categoria': 'Temperos',
@@ -194,6 +214,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura leve',
     'pragas': 'Pulgões',
     'observacoes': 'Germinação pode ser lenta.',
+    'companheiras': ['Milho', 'Tomate'],
+    'evitar': ['Cenoura', 'Coentro'],
   },
   'Coentro': {
     'categoria': 'Temperos',
@@ -206,6 +228,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Leve',
     'pragas': 'Pulgões',
     'observacoes': 'No calor, pendoa rápido.',
+    'companheiras': ['Milho', 'Tomate'],
+    'evitar': ['Cenoura', 'Salsinha'],
   },
   'Manjericão': {
     'categoria': 'Temperos',
@@ -218,6 +242,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura leve',
     'pragas': 'Pulgões',
     'observacoes': 'Podas frequentes aumentam produção.',
+    'companheiras': ['Tomate', 'Pimentão'],
+    'evitar': ['Ruda'],
   },
   'Hortelã': {
     'categoria': 'Temperos',
@@ -230,6 +256,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto',
     'pragas': 'Pulgões',
     'observacoes': 'Se espalha rápido (controlar).',
+    'companheiras': ['Couve', 'Tomate'],
+    'evitar': [],
   },
   'Tomate': {
     'categoria': 'Frutífera',
@@ -242,6 +270,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Mais exigente: composto + reforços (K/Ca)',
     'pragas': 'Traça, mosca-branca, requeima',
     'observacoes': 'Tutoramento ajuda muito. Ventilação evita fungos.',
+    'companheiras': ['Abóbora', 'Melão', 'Pepino', 'Alho', 'Cebola', 'Manjericão'],
+    'evitar': ['Batata', 'Berinjela', 'Pimentão', 'Pimenta', 'Jiló'],
   },
   'Pimentão': {
     'categoria': 'Frutífera',
@@ -254,6 +284,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + reforço na floração',
     'pragas': 'Pulgões, trips, ácaros',
     'observacoes': 'Prefere calor moderado.',
+    'companheiras': ['Abóbora', 'Melão', 'Pepino', 'Alho', 'Cebola', 'Manjericão'],
+    'evitar': ['Batata', 'Berinjela', 'Tomate', 'Pimenta', 'Jiló'],
   },
   'Berinjela': {
     'categoria': 'Frutífera',
@@ -266,6 +298,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Boa base orgânica',
     'pragas': 'Pulgões, brocas',
     'observacoes': 'Calor ajuda. Tutoramento melhora.',
+    'companheiras': ['Abóbora', 'Melão', 'Pepino', 'Alho', 'Cebola'],
+    'evitar': ['Batata', 'Tomate', 'Pimentão', 'Pimenta', 'Jiló'],
   },
   'Pepino': {
     'categoria': 'Cucurbitácea',
@@ -278,6 +312,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + reforço no pegamento',
     'pragas': 'Oídio, pulgões',
     'observacoes': 'Treliça ajuda muito e economiza espaço.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre'],
+    'evitar': ['Beterraba', 'Milho', 'Abóbora', 'Melancia', 'Melão'],
   },
   'Abobrinha': {
     'categoria': 'Cucurbitácea',
@@ -290,6 +326,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Boa base orgânica',
     'pragas': 'Oídio, brocas',
     'observacoes': 'Ocupa espaço. Melhor em canteiro maior.',
+    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre', 'Milho', 'Feijão'],
+    'evitar': ['Beterraba', 'Abóbora', 'Melancia', 'Melão'],
   },
   'Cenoura': {
     'categoria': 'Raiz',
@@ -302,6 +340,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Solo fofo e bem curtido (evitar esterco fresco)',
     'pragas': 'Mosca-da-cenoura',
     'observacoes': 'Solo muito pesado entorta a raiz.',
+    'companheiras': ['Milho', 'Alface', 'Cebola', 'Alho'],
+    'evitar': ['Coentro', 'Salsinha'],
   },
   'Beterraba': {
     'categoria': 'Raiz',
@@ -314,6 +354,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + leve reforço',
     'pragas': 'Pulgões',
     'observacoes': 'Clima ameno ajuda.',
+    'companheiras': ['Cebola', 'Couve-rábano', 'Alho'],
+    'evitar': ['Alface', 'Tomate', 'Feijão'],
   },
   'Quiabo': {
     'categoria': 'Frutífera',
@@ -326,6 +368,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto',
     'pragas': 'Pulgões',
     'observacoes': 'Gosta de calor.',
+    'companheiras': ['Melancia', 'Abóbora', 'Batata doce'],
+    'evitar': [],
   },
   'Milho verde': {
     'categoria': 'Grão',
@@ -338,6 +382,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Exige N (matéria orgânica ajuda)',
     'pragas': 'Lagarta do cartucho',
     'observacoes': 'Plantio em bloco melhora polinização.',
+    'companheiras': ['Feijão', 'Abóbora', 'Pepino', 'Melancia', 'Vagem'],
+    'evitar': ['Tomate'],
   },
   'Feijão vagem': {
     'categoria': 'Leguminosa',
@@ -350,12 +396,11 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Boa base orgânica',
     'pragas': 'Pulgões, vaquinhas',
     'observacoes': 'Se trepador, use suporte.',
+    'companheiras': ['Mandioca', 'Milho', 'Abóbora'],
+    'evitar': ['Cebola', 'Alho', 'Alho-poró'],
   },
 };
 
-/// Calendário regional simples (você pode refinar com pesquisa depois).
-/// Estrutura:
-/// regiao -> mes -> lista de culturas sugeridas
 final Map<String, Map<String, List<String>>> calendarioRegional = {
   'Norte': {
     'Janeiro': ['Quiabo', 'Pepino', 'Abobrinha', 'Coentro', 'Cebolinha'],
@@ -433,7 +478,6 @@ List<String> culturasPorRegiaoMes(String regiao, String mes) {
   final m = calendarioRegional[regiao];
   if (m == null) return [];
   final list = m[mes] ?? [];
-  // remove duplicados e mantém ordem “bonitinha”
   final seen = <String>{};
   final out = <String>[];
   for (final c in list) {
@@ -450,7 +494,6 @@ CulturaInfo? getCulturaInfo(String nome) {
   return CulturaInfo.fromMap(resolved, data);
 }
 
-/// Busca por nome (com tolerância a acentos e caixa)
 List<String> buscarCulturas(String query) {
   final q = _norm(query);
   final all = guiaCompleto.keys.toList()..sort((a, b) => a.compareTo(b));
@@ -465,17 +508,14 @@ List<String> buscarCulturas(String query) {
   return matches;
 }
 
-/// Resolve cultura por nome aproximado (acentos/case)
 String? _resolveNomeCultura(String nome) {
   final alvo = _norm(nome);
   if (alvo.isEmpty) return null;
 
-  // match direto
   for (final k in guiaCompleto.keys) {
     if (_norm(k) == alvo) return k;
   }
 
-  // match “contém”
   for (final k in guiaCompleto.keys) {
     if (_norm(k).contains(alvo)) return k;
   }
@@ -483,20 +523,14 @@ String? _resolveNomeCultura(String nome) {
   return null;
 }
 
-/// Normaliza string (sem acento, minúscula, sem espaços extras)
 String _norm(String s) {
   var t = s.trim().toLowerCase();
-
-  // “tirar acento” na unha (sem depender de pacote)
-  t = t
-      .replaceAll(RegExp(r'[áàâãä]'), 'a')
+  t = t.replaceAll(RegExp(r'[áàâãä]'), 'a')
       .replaceAll(RegExp(r'[éèêë]'), 'e')
       .replaceAll(RegExp(r'[íìîï]'), 'i')
       .replaceAll(RegExp(r'[óòôõö]'), 'o')
       .replaceAll(RegExp(r'[úùûü]'), 'u')
       .replaceAll(RegExp(r'[ç]'), 'c');
-
-  // limpa duplicidades de espaços
   t = t.replaceAll(RegExp(r'\s+'), ' ');
   return t;
 }

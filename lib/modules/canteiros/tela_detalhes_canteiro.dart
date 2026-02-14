@@ -234,8 +234,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   Future<void> _atualizarStatusCanteiro(String novoStatus) async {
+    // ✅ CORREÇÃO: Lê o tenantId antes do await
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
     try {
-      await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
+      await FirebasePaths.canteiroRef(tId, widget.canteiroId).update({
         'status': novoStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -399,13 +402,16 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   // -----------------------
-  // DEV: recalcular agregados (BUG CORRIGIDO)
+  // DEV: recalcular agregados
   // -----------------------
   Future<void> _recalcularAgregadosDev() async {
     if (!_isLogado) {
       _snack('⚠️ Faça login primeiro.', bg: Colors.orange);
       return;
     }
+    // ✅ CORREÇÃO: Lê o tenantId antes do await
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
 
     showDialog(
       context: context,
@@ -422,7 +428,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     );
 
     try {
-      final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
+      final canteiroRef = FirebasePaths.canteiroRef(tId, widget.canteiroId);
 
       // pega tudo DESC (mais recente primeiro)
       final all = await _historicoQuery(_uid!).get();
@@ -505,6 +511,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // Renomear
   // -----------------------
   void _editarNomeCanteiro(String nomeAtual) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do showDialog e awaits
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     final controller = TextEditingController(text: nomeAtual);
 
     showDialog(
@@ -531,7 +541,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 return;
               }
               try {
-                await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
+                await FirebasePaths.canteiroRef(tId, widget.canteiroId).update({
                   'nome': novoNome,
                   'updatedAt': FieldValue.serverTimestamp(),
                 });
@@ -556,6 +566,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       _snack('⚠️ Você precisa estar logado.', bg: Colors.orange);
       return;
     }
+    // ✅ CORREÇÃO: Lê o tenantId antes do modal
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
 
     String metodo = 'Gotejamento';
     final tempoController = TextEditingController(text: '30');
@@ -651,7 +664,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         0.0;
 
                     Navigator.pop(ctx);
-                    await _salvarIrrigacaoPremium(metodo, tempo, chuva, custo);
+                    await _salvarIrrigacaoPremium(tId, metodo, tempo, chuva, custo);
                   },
                   child: const Text('SALVAR'),
                 ),
@@ -667,7 +680,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
   }
 
+  // ✅ CORREÇÃO: Recebe tId por parâmetro
   Future<void> _salvarIrrigacaoPremium(
+    String tId,
     String metodo,
     int tempo,
     double chuva,
@@ -676,8 +691,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (!_isLogado) return;
 
     final uid = _uid!;
-    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
-    final histRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
+    final canteiroRef = FirebasePaths.canteiroRef(tId, widget.canteiroId);
+    final histRef = FirebasePaths.historicoManejoCol(tId).doc();
 
     try {
       await _db.runTransaction((tx) async {
@@ -726,6 +741,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       _snack('⚠️ Você precisa estar logado.', bg: Colors.orange);
       return;
     }
+    // ✅ CORREÇÃO: Lê o tenantId antes do modal
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     if (cCanteiro <= 0 || lCanteiro <= 0) {
       _snack('⚠️ Medidas inválidas. Edite o canteiro e corrija as medidas.', bg: Colors.orange);
       return;
@@ -1007,6 +1026,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
                               try {
                                 await _registrarPlantioPremium(
+                                  tId: tId, // ✅ CORREÇÃO
                                   qtdPorPlanta: qtdPorPlanta,
                                   regiao: regiao,
                                   mes: mes,
@@ -1040,7 +1060,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
   }
 
+  // ✅ CORREÇÃO: Recebe tId por parâmetro
   Future<void> _registrarPlantioPremium({
+    required String tId,
     required Map<String, int> qtdPorPlanta,
     required String regiao,
     required String mes,
@@ -1050,8 +1072,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     if (!_isLogado) throw Exception('Usuário não logado.');
 
     final uid = _uid!;
-    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
-    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
+    final canteiroRef = FirebasePaths.canteiroRef(tId, widget.canteiroId);
+    final plantioRef = FirebasePaths.historicoManejoCol(tId).doc();
 
     String resumo = "Plantio ($regiao/$mes):\n";
     final nomes = <String>[];
@@ -1107,14 +1129,17 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   // -----------------------
-  // COLHEITA + PERDA
-  // (mantive igual, só ajustei casts/erros quando precisava)
+  // COLHEITA
   // -----------------------
   void _mostrarDialogoColheita({
     required String idPlantioAtivo,
     required Map<String, int> mapaPlantioAtual,
     required String finalidadeCanteiro,
   }) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do modal
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     final selecionados = <String, bool>{};
     final ctrlsQtd = <String, TextEditingController>{};
     final receitaCtrl = TextEditingController(text: '0,00');
@@ -1313,6 +1338,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                               Navigator.pop(ctx);
 
                               await _processarColheitaTransacaoPremium(
+                                tId: tId, // ✅ CORREÇÃO
                                 idPlantioAtivo: idPlantioAtivo,
                                 colhidos: colhidos,
                                 finalidadeCanteiro: finalidadeCanteiro,
@@ -1345,7 +1371,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
   }
 
+  // ✅ CORREÇÃO: Recebe tId por parâmetro
   Future<void> _processarColheitaTransacaoPremium({
+    required String tId,
     required String idPlantioAtivo,
     required Map<String, int> colhidos,
     required String finalidadeCanteiro,
@@ -1358,9 +1386,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     }
 
     final uid = _uid!;
-    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(idPlantioAtivo);
-    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
-    final colheitaRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
+    final plantioRef = FirebasePaths.historicoManejoCol(tId).doc(idPlantioAtivo);
+    final canteiroRef = FirebasePaths.canteiroRef(tId, widget.canteiroId);
+    final colheitaRef = FirebasePaths.historicoManejoCol(tId).doc();
 
     try {
       bool cicloFinalizado = false;
@@ -1461,6 +1489,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     required String idPlantioAtivo,
     required Map<String, int> mapaPlantioAtual,
   }) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do modal
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     final culturas = mapaPlantioAtual.keys.toList()..sort();
     if (culturas.isEmpty) {
       _snack('⚠️ Não há culturas ativas para dar baixa.', bg: Colors.orange);
@@ -1558,6 +1590,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
                     Navigator.pop(ctx);
                     await _processarPerdaTransacaoPremium(
+                      tId: tId, // ✅ CORREÇÃO
                       idPlantioAtivo: idPlantioAtivo,
                       cultura: culturaSel,
                       qtdPerdida: qtd,
@@ -1583,7 +1616,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
   }
 
+  // ✅ CORREÇÃO: Recebe tId por parâmetro
   Future<void> _processarPerdaTransacaoPremium({
+    required String tId,
     required String idPlantioAtivo,
     required String cultura,
     required int qtdPerdida,
@@ -1595,9 +1630,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     }
 
     final uid = _uid!;
-    final plantioRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(idPlantioAtivo);
-    final canteiroRef = FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId);
-    final perdaRef = FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc();
+    final plantioRef = FirebasePaths.historicoManejoCol(tId).doc(idPlantioAtivo);
+    final canteiroRef = FirebasePaths.canteiroRef(tId, widget.canteiroId);
+    final perdaRef = FirebasePaths.historicoManejoCol(tId).doc();
 
     try {
       bool cicloFinalizado = false;
@@ -2031,6 +2066,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // Editar canteiro (com finalidade)
   // -----------------------
   void _mostrarDialogoEditarCanteiro(Map<String, dynamic> d) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do showDialog
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     _nomeController.text = (d['nome'] ?? '').toString();
     _compController.text = _toDouble(d['comprimento']).toString();
     _largController.text = _toDouble(d['largura']).toString();
@@ -2108,7 +2147,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                 }
 
                 try {
-                  await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
+                  await FirebasePaths.canteiroRef(tId, widget.canteiroId).update({
                     'nome': nome,
                     'comprimento': comp,
                     'largura': larg,
@@ -2133,8 +2172,11 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   Future<void> _alternarStatus(bool ativoAtual) async {
+    // ✅ CORREÇÃO: Lê o tenantId antes do await
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
     try {
-      await FirebasePaths.canteiroRef(_tenantIdOrNull!, widget.canteiroId).update({
+      await FirebasePaths.canteiroRef(tId, widget.canteiroId).update({
         'ativo': !ativoAtual,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -2223,6 +2265,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   // Excluir item (DEV)
   void _confirmarExclusaoItem(String id) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do showDialog e awaits
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2234,7 +2280,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               try {
-                await FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(id).delete();
+                await FirebasePaths.historicoManejoCol(tId).doc(id).delete();
                 if (!mounted) return;
                 Navigator.pop(ctx);
                 _snack('✅ Registro excluído.', bg: Colors.green);
@@ -2251,6 +2297,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   }
 
   void _mostrarDialogoPerdaOuEditar(String id, String detalheAtual, String obsAtual) {
+    // ✅ CORREÇÃO: Lê o tenantId antes do showDialog
+    final tId = _tenantIdOrNull;
+    if (tId == null) return;
+
     final detalheCtrl = TextEditingController(text: detalheAtual);
     final obsCtrl = TextEditingController(text: obsAtual);
 
@@ -2291,7 +2341,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           ElevatedButton(
             onPressed: () async {
               try {
-                await FirebasePaths.historicoManejoCol(_tenantIdOrNull!).doc(id).update({
+                await FirebasePaths.historicoManejoCol(tId).doc(id).update({
                   'detalhes': detalheCtrl.text,
                   'observacao_extra': obsCtrl.text,
                 });

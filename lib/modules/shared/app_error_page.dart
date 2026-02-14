@@ -1,39 +1,67 @@
 import 'package:flutter/material.dart';
-import '../../core/session/session_scope.dart';
-import '../../core/ui/app_ui.dart';
 
 class AppErrorPage extends StatelessWidget {
   final Object? error;
-  const AppErrorPage({super.key, this.error});
+  final VoidCallback? onRetry;
+  final VoidCallback? onLogout;
+
+  const AppErrorPage({
+    super.key,
+    this.error,
+    this.onRetry,
+    this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final session = SessionScope.of(context);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Erro')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const Icon(Icons.error_outline, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'Deu ruim na sessão',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(error?.toString() ?? 'Erro desconhecido'),
-            const SizedBox(height: 16),
-            AppButtons.elevatedIcon(
-              onPressed: () async {
-                await session.signOut();
-                AppMessenger.show('Saindo para recuperar a sessão...');
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('Sair'),
-            ),
-          ],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 80, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'Ops! Algo deu errado.',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                error?.toString() ?? 'Erro desconhecido',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+
+              // Botões de ação
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 1. Botão de Sair
+                  if (onLogout != null)
+                    OutlinedButton.icon(
+                      onPressed: onLogout,
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Sair'),
+                    ),
+
+                  // 2. Espaçamento (só aparece se tivermos os DOIS botões)
+                  if (onLogout != null && onRetry != null)
+                    const SizedBox(width: 16),
+
+                  // 3. Botão de Tentar Novamente
+                  if (onRetry != null)
+                    ElevatedButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Tentar Novamente'),
+                    ),
+                ],
+              )
+            ],
+          ),
         ),
       ),
     );

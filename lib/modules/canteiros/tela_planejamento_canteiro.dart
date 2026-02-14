@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ui/app_ui.dart';
+import '../../core/ui/widgets/section_card.dart';
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
 import 'guia_culturas.dart';
@@ -51,7 +52,15 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
 
     if (widget.canteiroIdOrigem != null) {
       _canteiroId = widget.canteiroIdOrigem;
-      _carregarCanteiro(widget.canteiroIdOrigem!);
+      // Chamada segura após o frame inicial para garantir o context
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          final tenantId = SessionScope.of(context).session?.tenantId;
+          if (tenantId != null) {
+            _carregarCanteiro(widget.canteiroIdOrigem!, tenantId);
+          }
+        }
+      });
     }
   }
 
@@ -68,10 +77,11 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
   // =========================
   void _snack(String msg, {Color? cor}) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: cor,
+        backgroundColor: cor ?? Colors.blueGrey,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -113,17 +123,12 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
   // =========================
   // Canteiro
   // =========================
-  Future<void> _carregarCanteiro(String id) async {
+  Future<void> _carregarCanteiro(String id, String tenantId) async {
     final user = _user;
     if (user == null) return;
 
     try {
-      final appSession = SessionScope.of(context).session;
-      if (appSession == null) return;
-
-      final doc = await FirebasePaths.canteirosCol(appSession.tenantId)
-          .doc(id)
-          .get();
+      final doc = await FirebasePaths.canteirosCol(tenantId).doc(id).get();
       if (!doc.exists || !mounted) return;
 
       final data = doc.data() ?? {};
@@ -221,6 +226,14 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     }
     if (_salvandoDim) return;
 
+    // ✅ Lendo sessão de forma segura
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      _snack('Sessão inválida. Verifique sua conexão.', cor: Colors.red);
+      return;
+    }
+    final tenantId = appSession.tenantId;
+
     final larg = _larguraFinal();
     final comp = _comprimentoFinal();
 
@@ -233,16 +246,11 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     setState(() => _salvandoDim = true);
 
     try {
-      final appSession = SessionScope.of(context).session;
-      if (appSession == null) throw Exception('Sem tenant selecionado');
-
-      await FirebasePaths.canteirosCol(appSession.tenantId)
-          .doc(_canteiroId)
-          .set(
+      await FirebasePaths.canteirosCol(tenantId).doc(_canteiroId).set(
         {
-          // Canon: mantém consistente com o gerador de canteiros
           'largura': double.parse(larg.toStringAsFixed(2)),
           'comprimento': double.parse(comp.toStringAsFixed(2)),
+          'area_m2': double.parse((larg * comp).toStringAsFixed(2)),
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
@@ -253,6 +261,7 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
       setState(() {
         _larguraM = larg;
         _comprimentoM = comp;
+        _areaM2 = larg * comp;
       });
 
       _snack('✅ Dimensões salvas no canteiro!', cor: Colors.green);
@@ -272,37 +281,31 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    if (user == null) {
+    // Acesso seguro ao tenant para o Dropdown
+    final currentTenantId = SessionScope.of(context).session?.tenantId;
+
+    if (user == null || currentTenantId == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Planejamento do Canteiro')),
         body: Padding(
           padding: const EdgeInsets.all(16),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Login necessário',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Você precisa estar logado pra puxar seus canteiros e salvar dimensões.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 14),
-                  AppButtons.elevatedIcon(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('VOLTAR'),
-                  ),
-                ],
-              ),
+          child: SectionCard(
+            title: 'Autenticação necessária',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Você precisa estar logado e com um espaço selecionado para puxar seus canteiros.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 14),
+                AppButtons.elevatedIcon(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('VOLTAR'),
+                ),
+              ],
             ),
           ),
         ),
@@ -314,7 +317,12 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
       ..sort();
 
     final sugestoesMes = culturasPorRegiaoMes(_regiao, _mes);
-    final resultadosBusca = buscarCulturas(_buscaCtrl.text);
+    final resultadosBusca = buscarCulturas(_buscaCtrl.text).take(60).toList();
+
+    // Validação de segurança para o Dropdown da Cultura
+    final culturaDropdownValida = resultadosBusca.contains(_culturaSelecionada)
+        ? _culturaSelecionada
+        : null;
 
     final info = _infoSelecionada;
     final qtdPorArea = (info != null && _areaM2 > 0)
@@ -326,337 +334,338 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
         : (linhas: 0, plantasPorLinha: 0, total: 0);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text('Planejamento do Canteiro'),
+        title: const Text('Planejamento Agronômico'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
           // 1) Selecionar canteiro
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '1) Selecione o canteiro',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Puxa a área automaticamente. Se tiver largura/comprimento, usa também.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  _CanteiroPicker(
-                    selectedId: _canteiroId,
-                    onSelect: (id) async {
-                      await _carregarCanteiro(id);
-                    },
-                  ),
-                ],
-              ),
+          SectionCard(
+            title: '1) Área de Cultivo',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Puxa a área automaticamente. Se tiver largura/comprimento, usa também.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                _CanteiroPicker(
+                  tenantId: currentTenantId,
+                  selectedId: _canteiroId,
+                  onSelect: (id) async {
+                    await _carregarCanteiro(id, currentTenantId);
+                  },
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 12),
 
           // Dados do canteiro + dimensões
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Dados do canteiro',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+          SectionCard(
+            title: 'Dados do Canteiro',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _KeyValueRow(
+                  label: 'Nome',
+                  value: _nomeCanteiro.isEmpty ? '—' : _nomeCanteiro,
+                ),
+                _KeyValueRow(
+                  label: 'Área',
+                  value: _areaM2 > 0 ? '${_fmt(_areaM2)} m²' : '—',
+                ),
+                if (_areaM2 > 0)
                   _KeyValueRow(
-                    label: 'Nome',
-                    value: _nomeCanteiro.isEmpty ? '—' : _nomeCanteiro,
+                    label: 'Necessidade Hídrica (Média)',
+                    value: '${_fmt(_areaM2 * 5)} Litros/dia',
                   ),
-                  _KeyValueRow(
-                    label: 'Área',
-                    value: _areaM2 > 0 ? '${_fmt(_areaM2)} m²' : '—',
+                const SizedBox(height: 14),
+                Text(
+                  'Dimensões (opcional)',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
                   ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Dimensões (opcional)',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Melhora o “plano por linhas”. Se você salvar, fica automático.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _larguraCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9\.,]'),
-                            ),
-                            LengthLimitingTextInputFormatter(8),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText: 'Largura (m)',
-                            hintText: 'Ex: 1,20',
-                            prefixIcon: Icon(Icons.straighten),
-                          ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Melhora o cálculo do “plano por linhas”.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _larguraCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9\.,]')),
+                          LengthLimitingTextInputFormatter(8),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Largura (m)',
+                          hintText: 'Ex: 1,20',
+                          prefixIcon: Icon(Icons.straighten),
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _comprimentoCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9\.,]'),
-                            ),
-                            LengthLimitingTextInputFormatter(8),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText: 'Comprimento (m)',
-                            hintText: 'Ex: 4,00',
-                            prefixIcon: Icon(Icons.straighten),
-                          ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _comprimentoCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9\.,]')),
+                          LengthLimitingTextInputFormatter(8),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Compr. (m)',
+                          hintText: 'Ex: 4,00',
+                          prefixIcon: Icon(Icons.straighten),
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 48,
-                    child: AppButtons.elevatedIcon(
-                      onPressed: (_canteiroId == null || _salvandoDim)
-                          ? null
-                          : _salvarDimensoes,
-                      icon:
-                          Icon(_salvandoDim ? Icons.hourglass_top : Icons.save),
-                      label: Text(_salvandoDim
-                          ? 'SALVANDO...'
-                          : 'SALVAR DIMENSÕES NO CANTEIRO'),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 48,
+                  child: AppButtons.outlinedIcon(
+                    onPressed: (_canteiroId == null || _salvandoDim)
+                        ? null
+                        : _salvarDimensoes,
+                    icon: Icon(_salvandoDim ? Icons.hourglass_top : Icons.save),
+                    label: Text(_salvandoDim
+                        ? 'SALVANDO...'
+                        : 'SALVAR DIMENSÕES NO CANTEIRO'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 12),
 
           // 2) Região e mês
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '2) Região e mês',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+          SectionCard(
+            title: '2) Região e Mês',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Pra mostrar sugestões do calendário agronômico.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true, // ✅ EVITA O ERRO DE RENDERIZAÇÃO
+                  value: _regiao,
+                  decoration: const InputDecoration(
+                    labelText: 'Região',
+                    prefixIcon: Icon(Icons.map_outlined),
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Pra mostrar sugestões do calendário.',
-                    style: theme.textTheme.bodySmall,
+                  items: regioes
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                      .toList(),
+                  onChanged: _onChangeRegiao,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true, // ✅ EVITA O ERRO DE RENDERIZAÇÃO
+                  value: mesesDisponiveis.contains(_mes) ? _mes : null,
+                  decoration: const InputDecoration(
+                    labelText: 'Mês',
+                    prefixIcon: Icon(Icons.calendar_month_outlined),
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: _regiao,
-                    decoration: const InputDecoration(
-                      labelText: 'Região',
-                      prefixIcon: Icon(Icons.map_outlined),
-                    ),
-                    items: regioes
-                        .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                        .toList(),
-                    onChanged: _onChangeRegiao,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: mesesDisponiveis.contains(_mes) ? _mes : null,
-                    decoration: const InputDecoration(
-                      labelText: 'Mês',
-                      prefixIcon: Icon(Icons.calendar_month_outlined),
-                    ),
-                    items: mesesDisponiveis
-                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
-                    onChanged: _onChangeMes,
-                  ),
-                ],
-              ),
+                  items: mesesDisponiveis
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: _onChangeMes,
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 12),
 
           // 3) Cultura
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+          SectionCard(
+            title: '3) Escolha a cultura',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Filtre pelo calendário da sua região ou busque no guia completo.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                if (sugestoesMes.isNotEmpty) ...[
                   Text(
-                    '3) Escolha a cultura',
-                    style: theme.textTheme.titleMedium?.copyWith(
+                    'Recomendadas: $_regiao • $_mes',
+                    style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w900,
+                      color: Colors.green.shade800,
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Pode escolher do mês ou buscar qualquer uma do guia.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  if (sugestoesMes.isNotEmpty) ...[
-                    Text(
-                      'Sugestões: $_regiao • $_mes',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: sugestoesMes.map((nome) {
-                        final sel = _culturaSelecionada == nome;
-                        return ChoiceChip(
-                          selected: sel,
-                          label: Text(nome),
-                          onSelected: (_) =>
-                              setState(() => _culturaSelecionada = nome),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 14),
-                    Divider(color: Colors.black.withOpacity(0.08)),
-                    const SizedBox(height: 14),
-                  ],
-                  TextFormField(
-                    controller: _buscaCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Buscar cultura',
-                      hintText: 'Ex: Alface, Tomate, Berinjela…',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: (_buscaCtrl.text.trim().isEmpty)
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _buscaCtrl.clear();
-                                setState(() {});
-                              },
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: _culturaSelecionada,
-                    decoration: const InputDecoration(
-                      labelText: 'Resultado da busca',
-                      prefixIcon: Icon(Icons.eco_outlined),
-                    ),
-                    items: resultadosBusca
-                        .take(60)
-                        .map((n) => DropdownMenuItem(value: n, child: Text(n)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _culturaSelecionada = v),
                   ),
                   const SizedBox(height: 10),
-                  Text(
-                    'Dica: a busca filtra no guia inteiro.',
-                    style: theme.textTheme.bodySmall,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: sugestoesMes.map((nome) {
+                      final sel = _culturaSelecionada == nome;
+                      return ChoiceChip(
+                        selected: sel,
+                        label: Text(nome),
+                        selectedColor: scheme.primary.withOpacity(0.2),
+                        onSelected: (_) =>
+                            setState(() => _culturaSelecionada = nome),
+                      );
+                    }).toList(),
                   ),
+                  const SizedBox(height: 14),
+                  Divider(color: Colors.black.withOpacity(0.08)),
+                  const SizedBox(height: 14),
                 ],
-              ),
+                TextFormField(
+                  controller: _buscaCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Buscar cultura',
+                    hintText: 'Ex: Alface, Tomate, Berinjela…',
+                    prefixIcon: const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: (_buscaCtrl.text.trim().isEmpty)
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _buscaCtrl.clear();
+                              setState(() {});
+                            },
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true, // ✅ EVITA O ERRO DE RENDERIZAÇÃO
+                  value: culturaDropdownValida,
+                  decoration: const InputDecoration(
+                    labelText: 'Resultado da busca',
+                    prefixIcon: Icon(Icons.eco_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: resultadosBusca
+                      .map((n) => DropdownMenuItem(value: n, child: Text(n)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _culturaSelecionada = v),
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 12),
 
           // Resultado
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: info == null
-                  ? Text(
-                      'Escolha uma cultura acima pra calcular.',
-                      style: theme.textTheme.bodyMedium,
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Resultado / Plano',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
+          SectionCard(
+            title: 'Resultado / Plano',
+            child: info == null
+                ? Text(
+                    'Escolha uma cultura acima pra calcular o planejamento.',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.grey),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _KeyValueRow(label: 'Cultura', value: info.nome),
+                      _KeyValueRow(label: 'Categoria', value: info.categoria),
+                      _KeyValueRow(
+                          label: 'Luminosidade',
+                          value: info.luminosidade ?? 'Sol pleno'),
+                      _KeyValueRow(
+                          label: 'Ciclo', value: '${info.cicloDias} dias'),
+                      _KeyValueRow(
+                        label: 'Espaçamento',
+                        value:
+                            '${info.espacamentoLinhaM} m (linhas) × ${info.espacamentoPlantaM} m (plantas)',
+                      ),
+                      const SizedBox(height: 8),
+                      // Consórcio (Alelopatia)
+                      if (info.companheiras.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Plantas Companheiras (Consórcio):',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700)),
+                              Text(info.companheiras.join(', '),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.green)),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        _KeyValueRow(label: 'Cultura', value: info.nome),
-                        _KeyValueRow(label: 'Categoria', value: info.categoria),
-                        _KeyValueRow(
-                            label: 'Ciclo', value: '${info.cicloDias} dias'),
-                        _KeyValueRow(
-                          label: 'Espaçamento',
-                          value:
-                              '${info.espacamentoLinhaM} m (linhas) × ${info.espacamentoPlantaM} m (plantas)',
-                        ),
-                        const SizedBox(height: 12),
-                        Divider(color: Colors.black.withOpacity(0.08)),
-                        const SizedBox(height: 12),
-                        _KeyValueRow(
-                          label: 'Estimativa por área',
-                          value: _areaM2 > 0
-                              ? '~ $qtdPorArea plantas'
-                              : 'Selecione um canteiro válido',
-                        ),
-                        _KeyValueRow(
-                          label: 'Plano por dimensões',
-                          value: (planoDim.total > 0)
-                              ? '${planoDim.linhas} linhas × ${planoDim.plantasPorLinha} por linha = ${planoDim.total}'
-                              : 'Preencha largura/comprimento',
-                        ),
-                        if (planoDim.total > 0) ...[
-                          const SizedBox(height: 14),
-                          _PlantPreviewGrid(
-                            rows: planoDim.linhas,
-                            cols: planoDim.plantasPorLinha,
-                            color: scheme.primary,
+                      if (info.evitar.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Evitar plantar junto:',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700)),
+                              Text(info.evitar.join(', '),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.red)),
+                            ],
                           ),
-                        ],
+                        ),
+                      Divider(color: Colors.black.withOpacity(0.08)),
+                      const SizedBox(height: 12),
+                      _KeyValueRow(
+                        label: 'Estimativa por área',
+                        value: _areaM2 > 0
+                            ? '~ $qtdPorArea plantas'
+                            : 'Selecione um canteiro válido',
+                      ),
+                      _KeyValueRow(
+                        label: 'Plano por dimensões',
+                        value: (planoDim.total > 0)
+                            ? '${planoDim.linhas} linhas × ${planoDim.plantasPorLinha} por linha = ${planoDim.total}'
+                            : 'Preencha largura/comprimento',
+                      ),
+                      if (planoDim.total > 0) ...[
+                        const SizedBox(height: 14),
+                        _PlantPreviewGrid(
+                          rows: planoDim.linhas,
+                          cols: planoDim.plantasPorLinha,
+                          color: scheme.primary,
+                        ),
                       ],
-                    ),
-            ),
+                    ],
+                  ),
           ),
         ],
       ),
 
-      // Botão fixo pra “voltar” (UX mais limpa)
+      // Botão fixo pra “voltar”
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
@@ -665,8 +674,8 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
             height: 48,
             child: AppButtons.elevatedIcon(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('VOLTAR'),
+              icon: const Icon(Icons.check),
+              label: const Text('FINALIZAR PLANEJAMENTO'),
             ),
           ),
         ),
@@ -676,10 +685,15 @@ class _TelaPlanejamentoCanteiroState extends State<TelaPlanejamentoCanteiro> {
 }
 
 class _CanteiroPicker extends StatelessWidget {
+  final String tenantId;
   final String? selectedId;
   final void Function(String id) onSelect;
 
-  const _CanteiroPicker({required this.onSelect, this.selectedId});
+  const _CanteiroPicker({
+    required this.tenantId,
+    required this.onSelect,
+    this.selectedId,
+  });
 
   double _toDouble(dynamic v) {
     if (v == null) return 0;
@@ -690,13 +704,8 @@ class _CanteiroPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Text('Faça login.');
-    }
-
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebasePaths.canteirosCol(SessionScope.of(context).session!.tenantId)
+      stream: FirebasePaths.canteirosCol(tenantId)
           .where('ativo', isEqualTo: true)
           .snapshots(),
       builder: (context, snap) {
@@ -707,14 +716,21 @@ class _CanteiroPicker extends StatelessWidget {
 
         final docs = snap.data!.docs;
         if (docs.isEmpty) {
-          return const Text('Nenhum canteiro ativo. Crie um primeiro.');
+          return const Text(
+              'Nenhum canteiro ativo encontrado. Crie um primeiro na aba "Locais".');
         }
 
+        // Validação de segurança
+        final validSelectedId =
+            docs.any((doc) => doc.id == selectedId) ? selectedId : null;
+
         return DropdownButtonFormField<String>(
-          value: selectedId,
+          isExpanded: true, // ✅ EVITA O ERRO DE RENDERIZAÇÃO
+          value: validSelectedId,
           decoration: const InputDecoration(
-            labelText: 'Canteiro',
+            labelText: 'Selecione o Canteiro',
             prefixIcon: Icon(Icons.place),
+            border: OutlineInputBorder(),
           ),
           items: docs.map((d) {
             final data = d.data();
@@ -748,6 +764,7 @@ class _KeyValueRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
@@ -786,7 +803,6 @@ class _PlantPreviewGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // limites pra não travar
     final r = rows.clamp(1, 10);
     final c = cols.clamp(1, 14);
 
@@ -805,7 +821,7 @@ class _PlantPreviewGrid extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Visual (simplificado): ${r}×${c} (limitado)',
+            'Visualização Gráfica: ${r}x${c} (Amostra)',
             style:
                 TextStyle(color: Colors.black.withOpacity(0.65), fontSize: 12),
           ),

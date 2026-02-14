@@ -1,11 +1,31 @@
 import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import '../firebase/firebase_paths.dart';
 import 'app_session.dart';
+
+// ✅ Configurações padrão separadas (Fica fácil de alterar no futuro)
+class SaasConfig {
+  static const int trialDays = 14;
+  
+  static const Map<String, bool> defaultModules = {
+    'canteiros': true,
+    'solo': true,
+    'irrigacao': true,
+    'pragas': true,
+    'planejamento': true,
+    'mercado': false,
+    'financeiro': false,
+  };
+
+  static const List<String> ownerScopes = [
+    'tenant:admin',
+    'canteiros:edit', 'canteiros:view',
+    'manejo:edit', 'manejo:view',
+    'financeiro:view', 'financeiro:edit',
+  ];
+}
 
 class SessionController extends ChangeNotifier {
   final FirebaseAuth _auth;
@@ -17,6 +37,7 @@ class SessionController extends ChangeNotifier {
   })  : _auth = auth ?? FirebaseAuth.instance,
         _db = db ?? FirebaseFirestore.instance;
 
+  // ... (As variáveis de StreamSubscription continuam iguais) ...
   StreamSubscription<User?>? _authSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _memberSub;
@@ -36,14 +57,13 @@ class SessionController extends ChangeNotifier {
 
   Future<void> init() async {
     _authSub?.cancel();
-
-    // estado inicial
+    // Executa a primeira verificação manual
     _onAuth(_auth.currentUser);
-
-    // e depois escuta mudanças
+    // Escuta alterações
     _authSub = _auth.authStateChanges().listen(_onAuth);
   }
 
+  // ... (O método _resetAll continua igual) ...
   void _resetAll({bool notify = true}) {
     _userSub?.cancel();
     _memberSub?.cancel();
@@ -74,6 +94,7 @@ class SessionController extends ChangeNotifier {
     _userSub = uref.snapshots().listen((snap) async {
       try {
         if (!snap.exists) {
+          // Cria o doc do usuário se não existir
           await uref.set({
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -92,77 +113,62 @@ class SessionController extends ChangeNotifier {
             : (defaultTenantId.isNotEmpty ? defaultTenantId : '');
 
         if (tenantId.isEmpty) {
-          // logou, mas ainda não escolheu/criou tenant
           _session = null;
           _ready = true;
-          _error = null;
           notifyListeners();
           return;
         }
 
         _listenMembership(user.uid, tenantId);
       } catch (e) {
-        _error = e;
-        _session = null;
-        _ready = true;
-        notifyListeners();
+        _setError(e);
       }
-    });
+    }, onError: _setError); // ✅ Captura erros do stream
+  }
+
+  // ✅ Helper simples para setar erro
+  void _setError(Object e) {
+    _error = e;
+    _session = null;
+    _ready = true;
+    notifyListeners();
   }
 
   void _listenMembership(String uid, String tenantId) {
     _memberSub?.cancel();
-
-    _memberSub =
-        FirebasePaths.memberRef(tenantId, uid).snapshots().listen((snap) {
+    _memberSub = FirebasePaths.memberRef(tenantId, uid).snapshots().listen((snap) {
       try {
-        if (!snap.exists) {
+        if (!snap.exists || snap.data()?['active'] != true) {
+          // Se não é membro ou foi desativado
           _session = null;
           _ready = true;
           notifyListeners();
           return;
         }
 
-        final m = snap.data() ?? {};
-        final active = (m['active'] ?? true) == true;
-        if (!active) {
-          _session = null;
-          _ready = true;
-          notifyListeners();
-          return;
-        }
+        final m = snap.data()!;
+        final scopesRaw = (m['scopes'] is List) ? (m['scopes'] as List) : [];
+        
+        // ✅ Conversão para Set
+        final scopes = scopesRaw.map((e) => e.toString()).toSet();
 
-        final scopesRaw =
-            (m['scopes'] is List) ? (m['scopes'] as List) : <dynamic>[];
-        final scopes = scopesRaw.map((e) => e.toString()).toList();
-
-        // ✅ aqui é o pulo do gato: além do member, carrega o tenant doc
         _listenTenantDoc(uid: uid, tenantId: tenantId, scopes: scopes);
       } catch (e) {
-        _error = e;
-        _session = null;
-        _ready = true;
-        notifyListeners();
+        _setError(e);
       }
-    });
+    }, onError: _setError);
   }
 
   void _listenTenantDoc({
     required String uid,
     required String tenantId,
-    required List<String> scopes,
+    required Set<String> scopes, // Agora recebe Set
   }) {
     _tenantSub?.cancel();
-
-    final tRef = FirebasePaths.tenantsCol().doc(tenantId);
-
-    _tenantSub = tRef.snapshots().listen((snap) {
+    _tenantSub = FirebasePaths.tenantsCol().doc(tenantId).snapshots().listen((snap) {
       try {
         if (!snap.exists) {
-          _session = null;
-          _ready = true;
-          _error = Exception('Tenant não encontrado');
-          notifyListeners();
+          _setError(Exception('Tenant não encontrado'));
           return;
         }
 
@@ -192,12 +198,9 @@ class SessionController extends ChangeNotifier {
         _error = null;
         notifyListeners();
       } catch (e) {
-        _error = e;
-        _session = null;
-        _ready = true;
-        notifyListeners();
+        _setError(e);
       }
-    });
+    }, onError: _setError);
   }
 
   Future<void> selectTenant(String tenantId) async {
@@ -210,9 +213,7 @@ class SessionController extends ChangeNotifier {
     }, SetOptions(merge: true));
   }
 
-  Future<String> createTenant({
-    required String name,
-  }) async {
+  Future<String> createTenant({required String name}) async {
     final u = _auth.currentUser;
     if (u == null) throw Exception('Usuário não logado');
 
@@ -220,44 +221,29 @@ class SessionController extends ChangeNotifier {
     final uid = u.uid;
 
     await _db.runTransaction((tx) async {
+      // 1. Criar Tenant com dados da Config
       tx.set(tenantRef, {
         'name': name,
         'status': 'active',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'ownerUid': uid,
-
-        // SaaS baseline
         'subscriptionStatus': 'trial',
-        'trialEndsAt':
-            Timestamp.fromDate(DateTime.now().add(const Duration(days: 14))),
-        'modulesEnabled': {
-          'canteiros': true,
-          'solo': true,
-          'irrigacao': true,
-          'pragas': true,
-          'planejamento': true,
-          'mercado': false,
-          'financeiro': false,
-        },
+        'trialEndsAt': Timestamp.fromDate(
+            DateTime.now().add(const Duration(days: SaasConfig.trialDays))),
+        'modulesEnabled': SaasConfig.defaultModules, // ✅ Uso da constante
       });
 
+      // 2. Criar Membro Admin
       tx.set(tenantRef.collection('members').doc(uid), {
         'uid': uid,
         'role': 'owner',
         'active': true,
-        'scopes': [
-          'tenant:admin',
-          'canteiros:edit',
-          'canteiros:view',
-          'manejo:edit',
-          'manejo:view',
-          'financeiro:view',
-          'financeiro:edit',
-        ],
+        'scopes': SaasConfig.ownerScopes, // ✅ Uso da constante
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      // 3. Atualizar Referência no User
       tx.set(
         FirebasePaths.userRef(uid),
         {
@@ -274,24 +260,16 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    try {
-      await _auth.signOut();
-    } finally {
-      _resetAll(notify: false);
-      _ready = true;
-      notifyListeners();
-
-      // garante que volta a escutar auth após logout
-      init();
-    }
+    // ✅ O signOut dispara o authStateChanges, que chama _onAuth(null).
+    // Não precisamos chamar init() de novo nem resetar manualmente aqui, 
+    // pois o listener cuidará disso.
+    await _auth.signOut();
   }
 
   @override
   void dispose() {
+    _resetAll(notify: false);
     _authSub?.cancel();
-    _userSub?.cancel();
-    _memberSub?.cancel();
-    _tenantSub?.cancel();
     super.dispose();
   }
 }
