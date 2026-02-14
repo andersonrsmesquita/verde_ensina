@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_tokens.dart';
-import '../app_context_ext.dart';
+// Removendo app_context_ext para evitar erros, usamos Theme.of(context) nativo
 
 /// Card de Módulo padronizado para navegação principal.
 /// Padrão de Excelência: Utiliza sombras suaves, tipografia hierárquica e tokens Material 3.
@@ -21,8 +21,9 @@ class AppModuleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final textTheme = context.text;
+    // ✅ Padronização para Flutter Nativo (Remove dependência de extensions quebradas)
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Container(
       margin: const EdgeInsets.only(bottom: AppTokens.sm),
@@ -49,8 +50,9 @@ class AppModuleCard extends StatelessWidget {
               children: [
                 // Container do Ícone com Soft UI
                 Container(
-                  width: AppTokens.xxl, // 32px + padding interno
-                  height: AppTokens.xxl,
+                  width:
+                      48, // Tamanho fixo para consistência (AppTokens.xxl pode variar)
+                  height: 48,
                   decoration: BoxDecoration(
                     color: colors.primaryContainer.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(AppTokens.rMd),
@@ -58,7 +60,7 @@ class AppModuleCard extends StatelessWidget {
                   child: Icon(
                     icon,
                     color: colors.primary,
-                    size: AppTokens.iconMd,
+                    size: 24, // Tamanho padrão de ícone
                   ),
                 ),
                 const SizedBox(width: AppTokens.md),
@@ -93,7 +95,7 @@ class AppModuleCard extends StatelessWidget {
                 Icon(
                   Icons.chevron_right_rounded,
                   color: colors.outline.withOpacity(0.5),
-                  size: AppTokens.iconMd,
+                  size: 24,
                 ),
               ],
             ),

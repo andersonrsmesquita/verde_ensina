@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
-
 import '../app_tokens.dart';
-import '../app_context_ext.dart';
 
-/// Card de Seção padronizado para agrupar conteúdos relacionados.
-/// Padrão de Excelência: Suporta sombras premium, títulos com ícones (trailing)
-/// e adaptabilidade cromática para o Material 3.
 class SectionCard extends StatelessWidget {
   final String? title;
   final Widget child;
@@ -24,10 +19,9 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Verifique se o seu arquivo 'app_context_ext.dart'
-    // possui os getters 'colors' e 'text'.
-    final colors = context.colors;
-    final textTheme = context.text;
+    // ✅ Padronização para Flutter Nativo
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Container(
       decoration: BoxDecoration(
@@ -36,6 +30,8 @@ class SectionCard extends StatelessWidget {
         border: Border.all(
           color: colors.outlineVariant.withOpacity(0.2),
         ),
+        // Se AppTokens.shadowSm não for estático, ajuste aqui.
+        // Assumindo que é uma lista de BoxShadow:
         boxShadow: AppTokens.shadowSm(colors.shadow),
       ),
       child: Padding(
