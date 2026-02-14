@@ -23,11 +23,11 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Criar empresa'),
+        title: const Text('Criar espaço'),
         content: TextField(
           controller: ctrl,
           decoration: const InputDecoration(
-            labelText: 'Nome',
+            labelText: 'Nome do espaço',
             border: OutlineInputBorder(),
           ),
         ),
@@ -47,11 +47,15 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
     setState(() => _busy = true);
     try {
       final tenantId = await session.createTenant(name: name);
-      AppMessenger.show('✅ Empresa criada: $name');
+      AppMessenger.success('✅ Espaço criado: $name');
       await session.selectTenant(tenantId);
       if (mounted) context.go('/home');
     } catch (e) {
-      AppMessenger.show('❌ Falha ao criar: $e');
+      if (e is FirebaseException && e.code == 'permission-denied') {
+        AppMessenger.error('❌ Sem permissão no Firestore para criar espaço. Ajuste as regras e tente de novo.');
+      } else {
+        AppMessenger.error('❌ Falha ao criar: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -64,7 +68,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
       await session.selectTenant(tenantId);
       if (mounted) context.go('/home');
     } catch (e) {
-      AppMessenger.show('❌ Falha ao selecionar: $e');
+      AppMessenger.error('❌ Falha ao selecionar: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -85,7 +89,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Escolha a empresa'),
+        title: const Text('Escolha seu espaço'),
         actions: [
           IconButton(
             tooltip: 'Sair',
@@ -99,7 +103,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _criarTenant,
         icon: const Icon(Icons.add_business),
-        label: const Text('Criar empresa'),
+        label: const Text('Criar espaço'),
       ),
       body: Stack(
         children: [
@@ -124,11 +128,11 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                         const Icon(Icons.apartment, size: 48),
                         const SizedBox(height: 10),
                         const Text(
-                          'Você ainda não tem uma empresa.',
+                          'Você ainda não tem um espaço.',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 6),
-                        const Text('Crie uma para começar (trial de 14 dias).'),
+                        const Text('Crie um para começar (trial de 14 dias).'),
                         const SizedBox(height: 14),
                         AppButtons.elevatedIcon(
                           onPressed: _busy ? null : _criarTenant,
@@ -151,7 +155,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                     future: FirebasePaths.tenantsCol().doc(tid).get(),
                     builder: (context, tsnap) {
                       final tdata = tsnap.data?.data() ?? {};
-                      final name = (tdata['name'] ?? 'Empresa').toString();
+                      final name = (tdata['name'] ?? 'Espaço').toString();
                       final status = (tdata['status'] ?? 'active').toString();
                       final sub = (tdata['subscriptionStatus'] ?? 'trial').toString();
 
