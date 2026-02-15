@@ -8,9 +8,7 @@ import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/app_session.dart';
 import '../../core/session/session_scope.dart';
 
-// Importe o Guia de Culturas que você já tem (ou crie se não tiver)
-// Se não tiver, crie um arquivo guia_culturas.dart com o mapa _dadosProdutividade
-import '../canteiros/guia_culturas.dart'; // Ajuste o caminho conforme sua estrutura
+import '../canteiros/guia_culturas.dart';
 import '../planejamento/tela_gerador_canteiros.dart';
 import '../canteiros/widgets/canteiro_picker_dropdown.dart';
 
@@ -25,26 +23,14 @@ class TelaPlanejamentoConsumo extends StatefulWidget {
 class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   User? get _user => FirebaseAuth.instance.currentUser;
 
-  AppSession? get _sessionOrNull => SessionScope.of(context).session;
-  AppSession get appSession {
-    final s = _sessionOrNull;
-    if (s == null) {
-      throw StateError('Sessão indisponível (tenant não selecionado)');
-    }
-    return s;
-  }
-
-  // --- Estado da Tela ---
   final List<Map<String, dynamic>> _listaDesejos = [];
+
   String? _canteiroId;
-  String? _canteiroNome; // Para mostrar feedback visual
   String? _culturaSelecionada;
 
-  // Controladores
   final _qtdController = TextEditingController();
   final _customNameController = TextEditingController();
 
-  // Flags de UI
   bool _modoPersonalizado = false;
   int? _editandoIndex;
   bool _salvando = false;
@@ -56,10 +42,12 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     super.dispose();
   }
 
-  // Helper de Feedback
-  void _snack(String msg, {bool isError = false}) {
+  // =======================================================================
+  // UX Helpers
+  // =======================================================================
+
+  void _toast(String msg, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (isError) {
       AppMessenger.error(msg);
     } else {
@@ -67,43 +55,51 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     }
   }
 
-  // Helper de Formatação de Texto
   String _formatarTexto(String texto) {
-    if (texto.isEmpty) return "";
-    return texto.trim().split(' ').map((word) {
-      if (word.isEmpty) return "";
-      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    final t = texto.trim();
+    if (t.isEmpty) return '';
+    return t.split(RegExp(r'\s+')).map((w) {
+      if (w.isEmpty) return '';
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
     }).join(' ');
   }
 
-  // --- Lógica de Negócio Local (CRUD da Lista) ---
+  double _parseQtd(String v) {
+    return double.tryParse(v.trim().replaceAll(',', '.')) ?? 0.0;
+  }
+
+  // =======================================================================
+  // CRUD local da lista
+  // =======================================================================
 
   void _salvarItem() {
-    // 1. Validação do Nome
+    // Nome
     String nomeFinal;
     if (_modoPersonalizado) {
       if (_customNameController.text.trim().isEmpty) {
-        return _snack('Informe o nome da cultura.', isError: true);
+        _toast('Informe o nome da cultura.', isError: true);
+        return;
       }
       nomeFinal = _formatarTexto(_customNameController.text);
     } else {
       if (_culturaSelecionada == null) {
-        return _snack('Selecione uma cultura.', isError: true);
+        _toast('Selecione uma cultura.', isError: true);
+        return;
       }
       nomeFinal = _culturaSelecionada!;
     }
 
-    // 2. Validação da Quantidade
+    // Quantidade
     if (_qtdController.text.trim().isEmpty) {
-      return _snack('Informe a quantidade.', isError: true);
+      _toast('Informe a quantidade.', isError: true);
+      return;
     }
-    final qtd =
-        double.tryParse(_qtdController.text.replaceAll(',', '.')) ?? 0.0;
+    final qtd = _parseQtd(_qtdController.text);
     if (qtd <= 0) {
-      return _snack('Quantidade inválida.', isError: true);
+      _toast('Quantidade inválida.', isError: true);
+      return;
     }
 
-    // 3. Atualização da Lista
     setState(() {
       final novoItem = {
         'planta': nomeFinal,
@@ -114,12 +110,12 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       if (_editandoIndex != null) {
         _listaDesejos[_editandoIndex!] = novoItem;
         _editandoIndex = null;
-        _snack('Item atualizado com sucesso!');
+        _toast('Item atualizado.');
       } else {
         _listaDesejos.add(novoItem);
+        _toast('Item adicionado.');
       }
 
-      // Reset dos campos
       _culturaSelecionada = null;
       _qtdController.clear();
       _customNameController.clear();
@@ -132,16 +128,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     final item = _listaDesejos[index];
     setState(() {
       _editandoIndex = index;
-      _qtdController.text = item['meta'].toString();
+      _qtdController.text = (item['meta'] as num).toString();
 
-      // Verifica se é uma cultura padrão ou customizada
-      // OBS: GuiaCulturas.dados é onde você deve centralizar o mapa _dadosProdutividade
-      if (GuiaCulturas.dados.containsKey(item['planta'])) {
+      final nome = (item['planta'] as String).trim();
+      if (GuiaCulturas.dados.containsKey(nome)) {
         _modoPersonalizado = false;
-        _culturaSelecionada = item['planta'];
+        _culturaSelecionada = nome;
+        _customNameController.clear();
       } else {
         _modoPersonalizado = true;
-        _customNameController.text = item['planta'];
+        _customNameController.text = nome;
         _culturaSelecionada = null;
       }
     });
@@ -152,6 +148,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       _listaDesejos.removeAt(index);
       if (_editandoIndex == index) _cancelarEdicao();
     });
+    _toast('Removido.');
   }
 
   void _cancelarEdicao() {
@@ -165,33 +162,39 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     });
   }
 
-  // --- Lógica de Negócio Global (Processamento e Salvamento) ---
+  // =======================================================================
+  // Processamento + Persistência
+  // =======================================================================
 
-  Future<void> _gerarESalvarEIrParaGerador() async {
+  Future<void> _gerarESalvarEIrParaGerador(AppSession session) async {
     if (_listaDesejos.isEmpty) {
-      return _snack('Adicione pelo menos um item para planejar!',
-          isError: true);
+      _toast('Adicione pelo menos um item para planejar.', isError: true);
+      return;
     }
     if (_canteiroId == null) {
-      _snack('Por favor, selecione um lote no topo da tela.', isError: true);
+      _toast('Selecione um lote no topo.', isError: true);
+      return;
+    }
+    final user = _user;
+    if (user == null) {
+      _toast('Usuário não autenticado.', isError: true);
       return;
     }
 
     setState(() => _salvando = true);
 
     try {
-      // 1. Processamento Matemático
       double areaTotalCalculada = 0.0;
-      double horasMaoDeObraTotal = 0.0;
+      double horasMaoDeObraSemanal = 0.0;
 
       final itensProcessados = _listaDesejos.map((item) {
         final nome = item['planta'] as String;
         final meta = (item['meta'] as num).toDouble();
 
-        // Fallback seguro se não encontrar no guia
         final info = GuiaCulturas.dados[nome] ??
             {
               'yield': 1.0,
+              'unit': 'kg',
               'espaco': 0.5,
               'cicloDias': 60,
               'evitar': [],
@@ -203,24 +206,20 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         final espacoVal = (info['espaco'] as num).toDouble();
         final cicloDias = (info['cicloDias'] as int?) ?? 60;
 
-        // Cálculo de Mudas e Área
         final mudasCalc = meta / yieldVal;
-        final mudasReais =
-            (mudasCalc * 1.1).ceil(); // Margem de segurança de 10%
+        final mudasReais = (mudasCalc * 1.1).ceil(); // +10% margem
         final areaNecessaria = mudasReais * espacoVal;
 
-        // Cálculo de Mão de Obra (Baseado no PDF Custo Mão de Obra)
         int cicloSemanas = (cicloDias / 7).ceil();
         if (cicloSemanas < 1) cicloSemanas = 1;
 
-        double horasFase1 = areaNecessaria * 0.25; // Preparo
-        double horasFase2 = areaNecessaria * 0.083 * cicloSemanas; // Manutenção
-        double horasFase3 = areaNecessaria * 0.016; // Colheita
-        double horasTotaisCultura = horasFase1 + horasFase2 + horasFase3;
+        final horasFase1 = areaNecessaria * 0.25;
+        final horasFase2 = areaNecessaria * 0.083 * cicloSemanas;
+        final horasFase3 = areaNecessaria * 0.016;
+        final horasTotais = horasFase1 + horasFase2 + horasFase3;
 
         areaTotalCalculada += areaNecessaria;
-        horasMaoDeObraTotal +=
-            (horasTotaisCultura / cicloSemanas); // Média semanal
+        horasMaoDeObraSemanal += (horasTotais / cicloSemanas);
 
         return {
           'planta': nome,
@@ -232,29 +231,25 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         };
       }).toList();
 
-      // Estimativas de Insumos (Baseado no PDF Organo 15)
-      final aguaTotal = areaTotalCalculada * 5.0; // 5mm/dia
-      final aduboTotal = areaTotalCalculada * 3.0; // 3kg/m² (Média esterco)
+      final aguaTotal = areaTotalCalculada * 5.0;
+      final aduboTotal = areaTotalCalculada * 3.0;
 
-      // 2. Persistência no Firestore (Transação Segura)
       await _salvarPlanejamentoNoCanteiro(
+        session: session,
         canteiroId: _canteiroId!,
+        uid: user.uid,
         itensDesejados: List<Map<String, dynamic>>.from(_listaDesejos),
         itensProcessados: List<Map<String, dynamic>>.from(itensProcessados),
         areaTotal: areaTotalCalculada,
         aguaTotal: aguaTotal,
         aduboTotal: aduboTotal,
-        maoDeObraTotal: horasMaoDeObraTotal,
+        maoDeObraTotalSemanal: horasMaoDeObraSemanal,
       );
-
-      if (mounted) setState(() => _salvando = false);
-
-      // Pequeno delay para garantir que o loading saia da tela
-      await Future.delayed(const Duration(milliseconds: 100));
 
       if (!mounted) return;
 
-      // 3. Navegação para o Gerador (Próxima etapa da trilha)
+      setState(() => _salvando = false);
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -264,26 +259,25 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       );
     } catch (e) {
       if (mounted) setState(() => _salvando = false);
-      _snack('Erro ao salvar planejamento: $e', isError: true);
+      _toast('Erro ao salvar planejamento: $e', isError: true);
     }
   }
 
   Future<String> _salvarPlanejamentoNoCanteiro({
+    required AppSession session,
     required String canteiroId,
+    required String uid,
     required List<Map<String, dynamic>> itensDesejados,
     required List<Map<String, dynamic>> itensProcessados,
     required double areaTotal,
     required double aguaTotal,
     required double aduboTotal,
-    required double maoDeObraTotal,
+    required double maoDeObraTotalSemanal,
   }) async {
-    final user = _user;
-    if (user == null) throw Exception('Usuário não autenticado.');
+    final canteiroRef = FirebasePaths.canteiroRef(session.tenantId, canteiroId);
 
-    final canteiroRef =
-        FirebasePaths.canteiroRef(appSession.tenantId, canteiroId);
     final planejamentoRef =
-        FirebasePaths.canteiroPlanejamentosCol(appSession.tenantId, canteiroId)
+        FirebasePaths.canteiroPlanejamentosCol(session.tenantId, canteiroId)
             .doc();
 
     final resumo = {
@@ -291,16 +285,15 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'area_total_m2': areaTotal,
       'agua_l_dia': aguaTotal,
       'adubo_kg': aduboTotal,
-      'mao_de_obra_h_sem': maoDeObraTotal,
+      'mao_de_obra_h_sem': maoDeObraTotalSemanal,
       'updatedAt': FieldValue.serverTimestamp(),
       'planejamentoId': planejamentoRef.id,
     };
 
     final batch = FirebaseFirestore.instance.batch();
 
-    // Cria o documento detalhado do planejamento
     batch.set(planejamentoRef, {
-      'uid_usuario': user.uid,
+      'uid_usuario': uid,
       'tipo': 'consumo',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -310,12 +303,11 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         'area_total_m2': areaTotal,
         'agua_l_dia': aguaTotal,
         'adubo_kg': aduboTotal,
-        'mao_de_obra_h_sem': maoDeObraTotal,
+        'mao_de_obra_h_sem': maoDeObraTotalSemanal,
       },
       'resumo': resumo,
     });
 
-    // Atualiza o cabeçalho do canteiro com o planejamento ATIVO
     batch.update(canteiroRef, {
       'planejamento_atual': resumo,
       'planejamento_ativo_id': planejamentoRef.id,
@@ -327,21 +319,31 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   }
 
   // =======================================================================
-  // INTERFACE GRÁFICA (UI)
+  // UI
   // =======================================================================
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final session = SessionScope.of(context).session;
 
-    // Lista ordenada para o dropdown
+    if (session == null) {
+      return const PageContainer(
+        title: 'Plano de Consumo',
+        subtitle: 'Carregando sessão...',
+        scroll: false,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final listaCulturasOrdenada = GuiaCulturas.dados.keys.toList()..sort();
 
-    // Cálculos em tempo real para o Card de Resumo (Feedback imediato)
+    // KPIs em tempo real
     double areaTotal = 0;
     double horasSemanaisTotal = 0;
 
-    final cardsWidgets = _listaDesejos.asMap().entries.map((entry) {
+    final itensCards = <Widget>[];
+    for (final entry in _listaDesejos.asMap().entries) {
       final idx = entry.key;
       final item = entry.value;
 
@@ -357,49 +359,44 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
       final plantasReais = ((meta / yieldVal) * 1.1).ceil();
       final areaItem = plantasReais * espacoVal;
-
       areaTotal += areaItem;
 
       int cicloSemanas = (cicloDias / 7).ceil();
       if (cicloSemanas < 1) cicloSemanas = 1;
 
-      double horasItem = (areaItem * 0.25) +
+      final horasItem = (areaItem * 0.25) +
           (areaItem * 0.083 * cicloSemanas) +
           (areaItem * 0.016);
-
       horasSemanaisTotal += (horasItem / cicloSemanas);
 
-      return _buildItemCard(idx, nome, meta, info, plantasReais, areaItem, cs);
-    }).toList();
+      itensCards.add(
+          _buildItemCard(idx, nome, meta, info, plantasReais, areaItem, cs));
+    }
 
     return PageContainer(
       title: 'Plano de Consumo',
       subtitle: 'Defina o que você quer colher',
-      scroll: true,
+      scroll: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Seletor de Canteiro (Componente Reutilizável)
           SectionCard(
-            title: '1) Qual Lote vai receber o plantio?',
+            title: '1) Lote do plantio',
             child: CanteiroPickerDropdown(
-              tenantId: appSession.tenantId,
+              tenantId: session.tenantId,
               selectedId: _canteiroId,
               onSelect: (id) => setState(() => _canteiroId = id),
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          // 2. Formulário de Adição
+          const SizedBox(height: AppTokens.md),
           SectionCard(
             title: _editandoIndex != null
-                ? 'Editando Cultura...'
-                : '2) Adicionar Cultura',
+                ? 'Editando item'
+                : '2) Adicionar cultura',
             child: Column(
               children: [
                 _buildFormularioAdicao(cs, listaCulturasOrdenada),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppTokens.md),
                 AppButtons.elevatedIcon(
                   onPressed: _salvarItem,
                   icon: Icon(
@@ -411,39 +408,39 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
               ],
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          // 3. Lista de Itens ou Estado Vazio
-          if (_listaDesejos.isEmpty)
-            _buildEmptyState(cs)
-          else ...[
-            Text('Itens Adicionados',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            ...cardsWidgets,
-
-            const SizedBox(height: 16),
-
-            // 4. Card de Resumo (Estimativa Total)
-            _buildResumoTotal(cs, areaTotal, horasSemanaisTotal),
-          ]
+          const SizedBox(height: AppTokens.md),
+          Expanded(
+            child: SectionCard(
+              title: '3) Itens do plano',
+              child: _listaDesejos.isEmpty
+                  ? _buildEmptyState(cs)
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 80),
+                      children: [
+                        _buildKpisTop(cs, areaTotal, horasSemanaisTotal),
+                        const SizedBox(height: AppTokens.md),
+                        ...itensCards,
+                        const SizedBox(height: AppTokens.md),
+                        _buildResumoTotal(cs, areaTotal, horasSemanaisTotal),
+                      ],
+                    ),
+            ),
+          ),
         ],
       ),
       bottomBar: SizedBox(
         height: 50,
         width: double.infinity,
         child: AppButtons.elevatedIcon(
-          onPressed: _salvando ? null : _gerarESalvarEIrParaGerador,
+          onPressed:
+              _salvando ? null : () => _gerarESalvarEIrParaGerador(session),
           icon: _salvando
               ? const SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2))
+                      color: Colors.white, strokeWidth: 2),
+                )
               : const Icon(Icons.auto_awesome),
           label: Text(_salvando ? 'PROCESSANDO...' : 'GERAR PLANO INTELIGENTE'),
         ),
@@ -451,9 +448,66 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     );
   }
 
-  // --- Widgets Auxiliares de Construção ---
+  // =======================================================================
+  // Widgets auxiliares (premium)
+  // =======================================================================
+
+  Widget _buildKpisTop(
+      ColorScheme cs, double areaTotal, double horasSemanaisTotal) {
+    final totalItens = _listaDesejos.length;
+    final aguaDia = areaTotal * 5.0;
+
+    return Row(
+      children: [
+        Expanded(
+            child: _miniKpi('Itens', '$totalItens', Icons.playlist_add_check,
+                cs.primary, cs)),
+        const SizedBox(width: AppTokens.sm),
+        Expanded(
+            child: _miniKpi('Área', '${areaTotal.toStringAsFixed(1)} m²',
+                Icons.crop_free, cs.primary, cs)),
+        const SizedBox(width: AppTokens.sm),
+        Expanded(
+            child: _miniKpi('Água', '${aguaDia.toStringAsFixed(0)} L/d',
+                Icons.water_drop, Colors.blue.shade700, cs)),
+      ],
+    );
+  }
+
+  Widget _miniKpi(
+      String label, String value, IconData icon, Color color, ColorScheme cs) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
+          Text(value,
+              style:
+                  TextStyle(fontWeight: FontWeight.w900, color: cs.onSurface)),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
 
   Widget _buildFormularioAdicao(ColorScheme cs, List<String> listaCulturas) {
+    final unit = (!_modoPersonalizado &&
+            _culturaSelecionada != null &&
+            GuiaCulturas.dados.containsKey(_culturaSelecionada))
+        ? (GuiaCulturas.dados[_culturaSelecionada]!['unit']).toString()
+        : 'kg/un';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -461,7 +515,10 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('O que você quer colher?',
-                style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurfaceVariant)),
             IconButton(
               onPressed: () => setState(() {
                 _modoPersonalizado = !_modoPersonalizado;
@@ -479,47 +536,44 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             Expanded(
               flex: 4,
               child: _modoPersonalizado
-                  ? TextFormField(
+                  ? AppTextField(
                       controller: _customNameController,
-                      decoration: const InputDecoration(
-                          labelText: 'Nome da Cultura',
-                          border: OutlineInputBorder(),
-                          isDense: true),
+                      labelText: 'Nome da cultura',
+                      hintText: 'Ex: Alface americana',
+                      prefixIcon: Icons.eco_outlined,
                     )
                   : DropdownButtonFormField<String>(
                       value: _culturaSelecionada,
-                      hint: const Text('Selecione...'),
                       isExpanded: true,
                       decoration: const InputDecoration(
-                          border: OutlineInputBorder(), isDense: true),
+                        labelText: 'Cultura',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
                       items: listaCulturas
                           .map((k) => DropdownMenuItem(
-                              value: k,
-                              child: Text(k,
-                                  style: const TextStyle(fontSize: 14))))
+                                value: k,
+                                child: Text(k,
+                                    style: const TextStyle(fontSize: 14)),
+                              ))
                           .toList(),
                       onChanged: (v) => setState(() => _culturaSelecionada = v),
                     ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppTokens.md),
             Expanded(
               flex: 2,
-              child: TextFormField(
+              child: AppTextField(
                 controller: _qtdController,
+                labelText: 'Qtd',
+                hintText: '0,0',
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]'))
                 ],
-                decoration: InputDecoration(
-                  labelText: 'Qtd',
-                  suffixText: !_modoPersonalizado && _culturaSelecionada != null
-                      ? (GuiaCulturas.dados[_culturaSelecionada]!['unit'])
-                          .toString()
-                      : 'kg/un',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
+                suffixText: unit,
+                prefixIcon: Icons.confirmation_number_outlined,
               ),
             ),
           ],
@@ -530,7 +584,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             child: TextButton.icon(
               onPressed: _cancelarEdicao,
               icon: Icon(Icons.close, size: 16, color: cs.error),
-              label: Text('Cancelar Edição', style: TextStyle(color: cs.error)),
+              label: Text('Cancelar edição', style: TextStyle(color: cs.error)),
             ),
           ),
       ],
@@ -539,41 +593,53 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
   Widget _buildItemCard(int idx, String nome, double meta, Map info,
       int plantasReais, double areaItem, ColorScheme cs) {
+    final unit = (info['unit'] ?? 'un').toString();
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: AppTokens.sm),
       elevation: 0,
       shape: RoundedRectangleBorder(
-          side: BorderSide(color: cs.outlineVariant),
-          borderRadius: BorderRadius.circular(12)),
+        side: BorderSide(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+      ),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
+        contentPadding: const EdgeInsets.all(AppTokens.md),
         leading: CircleAvatar(
           backgroundColor: cs.primaryContainer,
-          child: Text('${plantasReais}x',
-              style: TextStyle(
-                  color: cs.onPrimaryContainer,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12)),
+          child: Text(
+            '${plantasReais}x',
+            style: TextStyle(
+              color: cs.onPrimaryContainer,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
         ),
-        title: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${meta.toStringAsFixed(1)} ${info['unit']} desejados',
-                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
-            const SizedBox(height: 4),
-            Text('Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
-                style:
-                    const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-          ],
+        title: Text(nome, style: const TextStyle(fontWeight: FontWeight.w900)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${meta.toStringAsFixed(1)} $unit desejados',
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+              const SizedBox(height: 4),
+              Text('Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: cs.onSurface)),
+            ],
+          ),
         ),
         trailing: PopupMenuButton(
           icon: Icon(Icons.more_vert, color: cs.outline),
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Editar')),
             PopupMenuItem(
-                value: 'delete',
-                child: Text('Remover', style: TextStyle(color: cs.error))),
+              value: 'delete',
+              child: Text('Remover', style: TextStyle(color: cs.error)),
+            ),
           ],
           onSelected: (value) {
             if (value == 'edit') _iniciarEdicao(idx);
@@ -590,12 +656,17 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       child: Column(
         children: [
           Icon(Icons.eco_outlined, size: 64, color: cs.outlineVariant),
-          const SizedBox(height: 16),
-          Text('Sua lista de plantio está vazia.',
-              style: TextStyle(
-                  fontSize: 16,
-                  color: cs.outline,
-                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: AppTokens.md),
+          Text(
+            'Sua lista está vazia.',
+            style: TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w900, color: cs.onSurface),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Adicione culturas acima pra gerar o plano.',
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
         ],
       ),
     );
@@ -604,167 +675,32 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   Widget _buildResumoTotal(
       ColorScheme cs, double areaTotal, double horasSemanaisTotal) {
     return SectionCard(
-      title: 'Estimativa Total do Sistema',
+      title: 'Estimativa total',
       child: Column(
         children: [
           AppKeyValueRow(
-              label: 'Área Útil Ocupada',
-              value: '${areaTotal.toStringAsFixed(1)} m²',
-              color: cs.primary),
+            label: 'Área útil ocupada',
+            value: '${areaTotal.toStringAsFixed(1)} m²',
+            color: cs.primary,
+          ),
           AppKeyValueRow(
-              label: 'Água Necessária',
-              value: '${(areaTotal * 5.0).toStringAsFixed(0)} L/dia',
-              color: Colors.blue.shade700),
+            label: 'Água necessária',
+            value: '${(areaTotal * 5.0).toStringAsFixed(0)} L/dia',
+            color: Colors.blue.shade700,
+          ),
           AppKeyValueRow(
-              label: 'Adubo Base',
-              value: '${(areaTotal * 3.0).toStringAsFixed(1)} kg',
-              color: Colors.brown.shade700),
+            label: 'Adubo base',
+            value: '${(areaTotal * 3.0).toStringAsFixed(1)} kg',
+            color: Colors.brown.shade700,
+          ),
           const Divider(),
           AppKeyValueRow(
-              label: 'Mão de Obra',
-              value: '${horasSemanaisTotal.toStringAsFixed(1)} h/sem',
-              isBold: true),
+            label: 'Mão de obra',
+            value: '${horasSemanaisTotal.toStringAsFixed(1)} h/sem',
+            isBold: true,
+          ),
         ],
       ),
     );
   }
-}
-
-// ⚠️ Se você ainda não tiver este arquivo, crie 'guia_culturas.dart' na mesma pasta ou em core/constants
-class GuiaCulturas {
-  static const Map<String, Map<String, dynamic>> dados = {
-    'Abobrinha italiana': {
-      'yield': 2.0,
-      'unit': 'kg',
-      'espaco': 1.0,
-      'cat': 'Frutos',
-      'cicloDias': 60
-    },
-    'Abóboras': {
-      'yield': 5.0,
-      'unit': 'kg',
-      'espaco': 6.0,
-      'cat': 'Frutos',
-      'cicloDias': 120
-    },
-    'Acelga': {
-      'yield': 0.8,
-      'unit': 'maço',
-      'espaco': 0.2,
-      'cat': 'Folhas',
-      'cicloDias': 70
-    },
-    'Alface': {
-      'yield': 0.3,
-      'unit': 'un',
-      'espaco': 0.0625,
-      'cat': 'Folhas',
-      'cicloDias': 60
-    },
-    'Alho': {
-      'yield': 0.04,
-      'unit': 'kg',
-      'espaco': 0.025,
-      'cat': 'Bulbos',
-      'cicloDias': 150
-    },
-    'Batata doce': {
-      'yield': 1.0,
-      'unit': 'kg',
-      'espaco': 0.27,
-      'cat': 'Raízes',
-      'cicloDias': 150
-    },
-    'Berinjela': {
-      'yield': 2.0,
-      'unit': 'kg',
-      'espaco': 0.8,
-      'cat': 'Frutos',
-      'cicloDias': 120
-    },
-    'Beterraba': {
-      'yield': 0.15,
-      'unit': 'un',
-      'espaco': 0.025,
-      'cat': 'Raízes',
-      'cicloDias': 70
-    },
-    'Brócolis': {
-      'yield': 0.5,
-      'unit': 'un',
-      'espaco': 0.4,
-      'cat': 'Flores',
-      'cicloDias': 100
-    },
-    'Cebola': {
-      'yield': 0.15,
-      'unit': 'kg',
-      'espaco': 0.03,
-      'cat': 'Bulbos',
-      'cicloDias': 150
-    },
-    'Cebolinha': {
-      'yield': 0.2,
-      'unit': 'maço',
-      'espaco': 0.025,
-      'cat': 'Temperos',
-      'cicloDias': 90
-    },
-    'Cenoura': {
-      'yield': 0.1,
-      'unit': 'kg',
-      'espaco': 0.0125,
-      'cat': 'Raízes',
-      'cicloDias': 100
-    },
-    'Coentro': {
-      'yield': 0.2,
-      'unit': 'maço',
-      'espaco': 0.02,
-      'cat': 'Temperos',
-      'cicloDias': 60
-    },
-    'Couve': {
-      'yield': 1.5,
-      'unit': 'maços',
-      'espaco': 0.4,
-      'cat': 'Folhas',
-      'cicloDias': 90
-    },
-    'Mandioca': {
-      'yield': 3.0,
-      'unit': 'kg',
-      'espaco': 0.6,
-      'cat': 'Raízes',
-      'cicloDias': 365
-    },
-    'Pimentão': {
-      'yield': 1.0,
-      'unit': 'kg',
-      'espaco': 0.5,
-      'cat': 'Frutos',
-      'cicloDias': 120
-    },
-    'Quiabo': {
-      'yield': 0.8,
-      'unit': 'kg',
-      'espaco': 0.3,
-      'cat': 'Frutos',
-      'cicloDias': 80
-    },
-    'Rúcula': {
-      'yield': 0.5,
-      'unit': 'maço',
-      'espaco': 0.01,
-      'cat': 'Folhas',
-      'cicloDias': 50
-    },
-    'Tomate': {
-      'yield': 3.0,
-      'unit': 'kg',
-      'espaco': 0.5,
-      'cat': 'Frutos',
-      'cicloDias': 120
-    },
-  };
 }

@@ -1,8 +1,19 @@
-// lib/modules/canteiros/guia_culturas.dart
+// FILE: lib/modules/canteiros/guia_culturas.dart
 //
-// Guia “completo” (bem parrudo) pra:
-// - TelaPlanejamentoCanteiro (calendarioRegional, buscarCulturas, getCulturaInfo)
+// Guia “completo” pra:
+// - TelaGuiaCulturas (listarCategorias, buscarCulturas, getCulturaInfo)
 // - TelaDetalhesCanteiro (guiaCompleto: Map com todos os detalhes)
+// - TelaPlanejamentoConsumo / Planejamento (GuiaCulturas.dados: adapter compat)
+//
+// ✅ Importante:
+// Este arquivo agora expõe:
+// - class CulturaInfo (com getter areaPorPlantaM2)
+// - guiaCompleto (map “rico”)
+// - calendarioRegional + helpers
+// - listarCategorias()
+// - buscarCulturas(query, {categoria})
+// - getCulturaInfo(nome)
+// - class GuiaCulturas { static dados }  <-- compat com telas antigas
 
 class CulturaInfo {
   final String nome;
@@ -22,8 +33,8 @@ class CulturaInfo {
   final String? adubacao;
   final String? pragas;
   final String? observacoes;
-  
-  // ✅ Adicionado as propriedades de consórcio / alelopatia
+
+  // ✅ Consórcio / alelopatia
   final List<String> companheiras;
   final List<String> evitar;
 
@@ -39,9 +50,12 @@ class CulturaInfo {
     this.adubacao,
     this.pragas,
     this.observacoes,
-    this.companheiras = const [], // Valor padrão vazio
-    this.evitar = const [],       // Valor padrão vazio
+    this.companheiras = const [],
+    this.evitar = const [],
   });
+
+  /// ✅ usado na TelaGuiaCulturas
+  double get areaPorPlantaM2 => espacamentoLinhaM * espacamentoPlantaM;
 
   /// Estimativa simples: área / (espacamentoLinha * espacamentoPlanta)
   int estimarQtdPlantasPorArea(double areaM2) {
@@ -67,8 +81,13 @@ class CulturaInfo {
     }
 
     List<String> _list(dynamic v) {
-      if (v is List) return v.map((e) => e.toString()).toList();
-      return [];
+      if (v is List) {
+        return v
+            .map((e) => e.toString())
+            .where((e) => e.trim().isNotEmpty)
+            .toList();
+      }
+      return const [];
     }
 
     return CulturaInfo(
@@ -77,14 +96,15 @@ class CulturaInfo {
       cicloDias: _i(m['ciclo_dias'], 60),
       espacamentoLinhaM: _d(m['espacamento_linha_m'], 0.30),
       espacamentoPlantaM: _d(m['espacamento_planta_m'], 0.30),
-      profundidadeCm: m['profundidade_cm'] == null ? null : _d(m['profundidade_cm'], 0),
+      profundidadeCm:
+          m['profundidade_cm'] == null ? null : _d(m['profundidade_cm'], 0),
       luminosidade: m['luminosidade']?.toString(),
       irrigacao: m['irrigacao']?.toString(),
       adubacao: m['adubacao']?.toString(),
       pragas: m['pragas']?.toString(),
       observacoes: m['observacoes']?.toString(),
-      companheiras: _list(m['companheiras']), // ✅ Carregando do mapa
-      evitar: _list(m['evitar']),             // ✅ Carregando do mapa
+      companheiras: _list(m['companheiras']),
+      evitar: _list(m['evitar']),
     );
   }
 }
@@ -101,9 +121,21 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'irrigacao': 'Frequente, manter solo úmido sem encharcar',
     'adubacao': 'Rico em matéria orgânica; reforço leve a cada 15 dias',
     'pragas': 'Pulgões, lesmas, lagartas',
-    'observacoes': 'Prefere clima ameno. No calor forte, pode pendoar (subir flor).',
-    'companheiras': ['Alho', 'Alho poró', 'Batata', 'Cebola', 'Cenoura', 'Rabanete'],
+    'observacoes':
+        'Prefere clima ameno. No calor forte, pode pendoar (subir flor).',
+    'companheiras': [
+      'Alho',
+      'Alho poró',
+      'Batata',
+      'Cebola',
+      'Cenoura',
+      'Rabanete'
+    ],
     'evitar': ['Beterraba', 'Couve', 'Nabo'],
+
+    // opcionais pro planejamento (se não tiver, o adapter dá default)
+    // 'yield': 1.0,
+    // 'unit': 'un',
   },
   'Rúcula': {
     'categoria': 'Folhosa',
@@ -144,7 +176,14 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura leve',
     'pragas': 'Pulgões, lesmas',
     'observacoes': 'Gosta de clima ameno.',
-    'companheiras': ['Couve', 'Rúcula', 'Repolho', 'Brócolis', 'Pepino', 'Abobrinha'],
+    'companheiras': [
+      'Couve',
+      'Rúcula',
+      'Repolho',
+      'Brócolis',
+      'Pepino',
+      'Abobrinha'
+    ],
     'evitar': [],
   },
   'Repolho': {
@@ -200,7 +239,14 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + cobertura mensal',
     'pragas': 'Trips',
     'observacoes': 'Pode ser replantada por touceira.',
-    'companheiras': ['Couve', 'Repolho', 'Brócolis', 'Tomate', 'Alface', 'Pepino'],
+    'companheiras': [
+      'Couve',
+      'Repolho',
+      'Brócolis',
+      'Tomate',
+      'Alface',
+      'Pepino'
+    ],
     'evitar': ['Ervilha', 'Feijão', 'Vagem'],
   },
   'Salsinha': {
@@ -270,7 +316,14 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Mais exigente: composto + reforços (K/Ca)',
     'pragas': 'Traça, mosca-branca, requeima',
     'observacoes': 'Tutoramento ajuda muito. Ventilação evita fungos.',
-    'companheiras': ['Abóbora', 'Melão', 'Pepino', 'Alho', 'Cebola', 'Manjericão'],
+    'companheiras': [
+      'Abóbora',
+      'Melão',
+      'Pepino',
+      'Alho',
+      'Cebola',
+      'Manjericão'
+    ],
     'evitar': ['Batata', 'Berinjela', 'Pimentão', 'Pimenta', 'Jiló'],
   },
   'Pimentão': {
@@ -284,7 +337,14 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Composto + reforço na floração',
     'pragas': 'Pulgões, trips, ácaros',
     'observacoes': 'Prefere calor moderado.',
-    'companheiras': ['Abóbora', 'Melão', 'Pepino', 'Alho', 'Cebola', 'Manjericão'],
+    'companheiras': [
+      'Abóbora',
+      'Melão',
+      'Pepino',
+      'Alho',
+      'Cebola',
+      'Manjericão'
+    ],
     'evitar': ['Batata', 'Berinjela', 'Tomate', 'Pimenta', 'Jiló'],
   },
   'Berinjela': {
@@ -326,7 +386,14 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'adubacao': 'Boa base orgânica',
     'pragas': 'Oídio, brocas',
     'observacoes': 'Ocupa espaço. Melhor em canteiro maior.',
-    'companheiras': ['Alho', 'Alho poró', 'Cebola', 'Espinafre', 'Milho', 'Feijão'],
+    'companheiras': [
+      'Alho',
+      'Alho poró',
+      'Cebola',
+      'Espinafre',
+      'Milho',
+      'Feijão'
+    ],
     'evitar': ['Beterraba', 'Abóbora', 'Melancia', 'Melão'],
   },
   'Cenoura': {
@@ -401,6 +468,9 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
 };
 
+// ======================================================================
+// Calendário regional (mantido)
+// ======================================================================
 final Map<String, Map<String, List<String>>> calendarioRegional = {
   'Norte': {
     'Janeiro': ['Quiabo', 'Pepino', 'Abobrinha', 'Coentro', 'Cebolinha'],
@@ -476,14 +546,58 @@ final Map<String, Map<String, List<String>>> calendarioRegional = {
 
 List<String> culturasPorRegiaoMes(String regiao, String mes) {
   final m = calendarioRegional[regiao];
-  if (m == null) return [];
-  final list = m[mes] ?? [];
+  if (m == null) return const [];
+  final list = m[mes] ?? const [];
   final seen = <String>{};
   final out = <String>[];
   for (final c in list) {
     if (seen.add(c)) out.add(c);
   }
   return out;
+}
+
+// ======================================================================
+// Funções usadas pela TelaGuiaCulturas
+// ======================================================================
+
+/// ✅ TelaGuiaCulturas chama isso
+List<String> listarCategorias() {
+  final set = <String>{};
+  for (final e in guiaCompleto.entries) {
+    final cat = (e.value['categoria'] ?? '').toString().trim();
+    if (cat.isNotEmpty) set.add(cat);
+  }
+  final out = set.toList()..sort((a, b) => a.compareTo(b));
+  return out;
+}
+
+/// ✅ Agora suporta categoria opcional (como sua tela pede)
+List<String> buscarCulturas(String query, {String? categoria}) {
+  final q = _norm(query);
+
+  final catNorm = _norm((categoria ?? '').trim());
+  final all = guiaCompleto.keys.toList()..sort((a, b) => a.compareTo(b));
+
+  final matches = <String>[];
+
+  for (final nome in all) {
+    // filtro categoria
+    if (catNorm.isNotEmpty) {
+      final m = guiaCompleto[nome];
+      final cat = _norm((m?['categoria'] ?? '').toString());
+      if (cat != catNorm) continue;
+    }
+
+    // filtro texto
+    if (q.isEmpty) {
+      matches.add(nome);
+    } else {
+      final n = _norm(nome);
+      if (n.contains(q)) matches.add(nome);
+    }
+  }
+
+  return matches;
 }
 
 CulturaInfo? getCulturaInfo(String nome) {
@@ -494,19 +608,76 @@ CulturaInfo? getCulturaInfo(String nome) {
   return CulturaInfo.fromMap(resolved, data);
 }
 
-List<String> buscarCulturas(String query) {
-  final q = _norm(query);
-  final all = guiaCompleto.keys.toList()..sort((a, b) => a.compareTo(b));
+// ======================================================================
+// Adapter “GuiaCulturas.dados” (compat com TelaPlanejamentoConsumo)
+// ======================================================================
 
-  if (q.isEmpty) return all;
+class GuiaCulturas {
+  /// Estrutura esperada por telas antigas:
+  /// dados[nome] = {
+  ///   'yield': double,
+  ///   'unit': String,
+  ///   'espaco': double,
+  ///   'cicloDias': int,
+  ///   'evitar': <String>[],
+  ///   'par': <String>[],
+  ///   'cat': String,
+  /// }
+  static final Map<String, Map<String, dynamic>> dados = _buildDados();
 
-  final matches = <String>[];
-  for (final nome in all) {
-    final n = _norm(nome);
-    if (n.contains(q)) matches.add(nome);
+  static Map<String, Map<String, dynamic>> _buildDados() {
+    final out = <String, Map<String, dynamic>>{};
+
+    for (final entry in guiaCompleto.entries) {
+      final nome = entry.key;
+      final m = entry.value;
+
+      final categoria = (m['categoria'] ?? 'Geral').toString();
+      final ciclo = _asInt(m['ciclo_dias'], 60);
+
+      final espLinha = _asDouble(m['espacamento_linha_m'], 0.30);
+      final espPlanta = _asDouble(m['espacamento_planta_m'], 0.30);
+      final espaco =
+          (espLinha > 0 && espPlanta > 0) ? (espLinha * espPlanta) : 0.5;
+
+      // Se algum dia você quiser colocar yield/unit no guiaCompleto, beleza.
+      final yieldVal = _asDouble(m['yield'], 1.0);
+      final unit = (m['unit'] ?? _defaultUnit(categoria)).toString();
+
+      final evitar = _asStringList(m['evitar']);
+      final par = _asStringList(m['companheiras']);
+
+      out[nome] = <String, dynamic>{
+        'yield': yieldVal <= 0 ? 1.0 : yieldVal,
+        'unit': unit.isEmpty ? 'un' : unit,
+        'espaco': espaco <= 0 ? 0.5 : espaco,
+        'cicloDias': ciclo <= 0 ? 60 : ciclo,
+        'evitar': evitar,
+        'par': par,
+        'cat': categoria,
+      };
+    }
+
+    return out;
   }
-  return matches;
+
+  static String _defaultUnit(String categoria) {
+    final c = _norm(categoria);
+    if (c.contains('tempero')) return 'maço';
+    if (c.contains('folh')) return 'un';
+    if (c.contains('brassic')) return 'un';
+    if (c.contains('raiz')) return 'kg';
+    if (c.contains('frut')) return 'kg';
+    if (c.contains('cucur')) return 'kg';
+    if (c.contains('grao')) return 'un';
+    if (c.contains('legumin')) return 'un';
+    return 'un';
+  }
 }
+
+// ======================================================================
+// Normalização e resolve
+// ======================================================================
 
 String? _resolveNomeCultura(String nome) {
   final alvo = _norm(nome);
@@ -525,7 +696,8 @@ String? _resolveNomeCultura(String nome) {
 
 String _norm(String s) {
   var t = s.trim().toLowerCase();
-  t = t.replaceAll(RegExp(r'[áàâãä]'), 'a')
+  t = t
+      .replaceAll(RegExp(r'[áàâãä]'), 'a')
       .replaceAll(RegExp(r'[éèêë]'), 'e')
       .replaceAll(RegExp(r'[íìîï]'), 'i')
       .replaceAll(RegExp(r'[óòôõö]'), 'o')
@@ -533,4 +705,27 @@ String _norm(String s) {
       .replaceAll(RegExp(r'[ç]'), 'c');
   t = t.replaceAll(RegExp(r'\s+'), ' ');
   return t;
+}
+
+double _asDouble(dynamic v, double def) {
+  if (v == null) return def;
+  if (v is num) return v.toDouble();
+  final s = v.toString().trim().replaceAll(',', '.');
+  return double.tryParse(s) ?? def;
+}
+
+int _asInt(dynamic v, int def) {
+  if (v == null) return def;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString().trim()) ?? def;
+}
+
+List<String> _asStringList(dynamic v) {
+  if (v is List) {
+    return v
+        .map((e) => e.toString())
+        .where((e) => e.trim().isNotEmpty)
+        .toList();
+  }
+  return const [];
 }

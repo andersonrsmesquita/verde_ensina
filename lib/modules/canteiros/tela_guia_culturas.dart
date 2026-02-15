@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:verde_ensina/core/ui/app_ui.dart';
-import 'package:verde_ensina/core/ui/widgets/app_text_field.dart';
 
 import 'guia_culturas.dart';
 
@@ -23,7 +22,7 @@ class _TelaGuiaCulturasState extends State<TelaGuiaCulturas> {
     super.initState();
     _searchListener = () {
       if (!mounted) return;
-      setState(() {}); // atualiza resultados enquanto digita
+      setState(() {});
     };
     _search.addListener(_searchListener);
   }
@@ -33,6 +32,11 @@ class _TelaGuiaCulturasState extends State<TelaGuiaCulturas> {
     _search.removeListener(_searchListener);
     _search.dispose();
     super.dispose();
+  }
+
+  void _limparBusca() {
+    _search.clear();
+    setState(() {});
   }
 
   @override
@@ -53,25 +57,33 @@ class _TelaGuiaCulturasState extends State<TelaGuiaCulturas> {
             title: 'Pesquisar',
             child: Column(
               children: [
-                AppTextField(
-                  controller: _search,
-                  label: 'Buscar cultura',
-                  hint: 'Ex: Tomate, Alface, Berinjela...',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _search.clear();
-                      // listener já chama setState, mas aqui garante resposta imediata
-                      setState(() {});
-                    },
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppTextField(
+                        controller: _search,
+                        labelText: 'Buscar cultura',
+                        hintText: 'Ex: Tomate, Alface, Berinjela...',
+                        prefixIcon: Icons.search,
+                      ),
+                    ),
+                    const SizedBox(width: AppTokens.sm),
+                    IconButton(
+                      tooltip: 'Limpar',
+                      onPressed: _limparBusca,
+                      icon: const Icon(Icons.clear),
+                      color: cs.primary,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppTokens.md),
                 DropdownButtonFormField<String?>(
                   value: _cat,
                   decoration: const InputDecoration(
                     labelText: 'Categoria',
                     prefixIcon: Icon(Icons.filter_list),
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                   items: <DropdownMenuItem<String?>>[
                     const DropdownMenuItem<String?>(
@@ -90,7 +102,7 @@ class _TelaGuiaCulturasState extends State<TelaGuiaCulturas> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTokens.md),
           SectionCard(
             title: 'Resultados (${resultados.length})',
             child: resultados.isEmpty

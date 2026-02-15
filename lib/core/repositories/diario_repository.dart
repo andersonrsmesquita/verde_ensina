@@ -3,37 +3,72 @@ import '../firebase/firebase_paths.dart';
 
 class DiarioRepository {
   final String tenantId;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db;
 
-  DiarioRepository(this.tenantId);
+  DiarioRepository(
+    this.tenantId, {
+    FirebaseFirestore? db,
+  }) : _db = db ?? FirebaseFirestore.instance;
 
-  // 1. Busca bruta sem orderBy para evitar o bloqueio de Índice do Firebase
-  Stream<QuerySnapshot> watchHistorico({String? canteiroId}) {
-    Query q = FirebasePaths.historicoManejoCol(tenantId);
+  CollectionReference<Map<String, dynamic>> get _col {
+    return FirebasePaths.historicoManejoCol(tenantId)
+        as CollectionReference<Map<String, dynamic>>;
+  }
 
-    if (canteiroId != null && canteiroId.isNotEmpty) {
-      q = q.where('canteiro_id', isEqualTo: canteiroId);
-    }
-
+  /// Padrão premium (igual TelaCanteiros):
+  /// - Query BASE simples, ordenada por data.
+  /// - Filtros por canteiro/status/busca ficam na tela (RAM),
+  ///   pra não depender de índice composto.
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchHistorico({
+    String? canteiroId, // mantido por compatibilidade (filtramos na UI)
+    int limit = 500,
+  }) {
+    final q = _col.orderBy('data', descending: true).limit(limit);
     return q.snapshots();
   }
 
-  // 2. Adicionar um Novo Manejo
-  Future<void> adicionarManejo(Map<String, dynamic> data) async {
-    data['createdAt'] = FieldValue.serverTimestamp();
-    await FirebasePaths.historicoManejoCol(tenantId).add(data);
+  Future<void> adicionarManejo(Map<String, dynamic> payload) async {
+    final ref = _col.doc();
+    final now = FieldValue.serverTimestamp();
+
+    final data = <String, dynamic>{
+      'canteiro_id': payload['canteiro_id'],
+      'canteiro_nome': payload['canteiro_nome'] ?? 'Canteiro',
+      'tipo_manejo': payload['tipo_manejo'] ?? 'Manejo',
+      'produto': payload['produto'] ?? '',
+      'detalhes': payload['detalhes'] ?? '',
+      'origem': payload['origem'] ?? 'manual',
+      'concluido': payload['concluido'] ?? false,
+      'uid_usuario': payload['uid_usuario'],
+      'data': payload['data'] ?? now,
+      'createdAt': payload['createdAt'] ?? now,
+      'updatedAt': payload['updatedAt'] ?? now,
+      if (payload.containsKey('quantidade_g'))
+        'quantidade_g': payload['quantidade_g'],
+      if (payload.containsKey('data_colheita_prevista'))
+        'data_colheita_prevista': payload['data_colheita_prevista'],
+    };
+
+    if (data['canteiro_id'] == null ||
+        (data['canteiro_id'].toString().trim().isEmpty)) {
+      throw ArgumentError('canteiro_id é obrigatório');
+    }
+    if (data['uid_usuario'] == null ||
+        (data['uid_usuario'].toString().trim().isEmpty)) {
+      throw ArgumentError('uid_usuario é obrigatório');
+    }
+
+    await ref.set(data);
   }
 
-  // 3. Marcar como Concluído / Pendente
-  Future<void> toggleConcluido(String docId, bool atual) async {
-    await FirebasePaths.historicoManejoCol(tenantId).doc(docId).update({
+  Future<void> excluirManejo(String id) async {
+    await _col.doc(id).delete();
+  }
+
+  Future<void> toggleConcluido(String id, bool atual) async {
+    await _col.doc(id).update({
       'concluido': !atual,
       'updatedAt': FieldValue.serverTimestamp(),
     });
-  }
-
-  // 4. Excluir Manejo
-  Future<void> excluirManejo(String docId) async {
-    await FirebasePaths.historicoManejoCol(tenantId).doc(docId).delete();
   }
 }
