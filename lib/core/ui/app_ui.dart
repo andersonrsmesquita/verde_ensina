@@ -21,3 +21,4 @@ export 'widgets/app_tile.dart';
 export 'widgets/page_container.dart';
 export 'widgets/section_card.dart';
 export 'widgets/clinica_da_planta_sheet.dart';
+export 'widgets/app_key_value_row.dart';
