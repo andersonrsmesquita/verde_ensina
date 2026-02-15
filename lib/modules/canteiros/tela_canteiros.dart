@@ -758,6 +758,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
   }
 
+  // 🚀 AQUI ESTÁ O CÓDIGO SUBSTITUÍDO (Usando SectionCard e sem degradê)
   Widget _buildCardResumo(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final cs = Theme.of(context).colorScheme;
@@ -772,57 +773,42 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       }
     }
 
-    return Container(
-      padding: const EdgeInsets.all(AppTokens.lg),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-            colors: [cs.primary, cs.secondary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-        boxShadow: [
-          BoxShadow(
-              color: cs.primary.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 8))
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return SectionCard(
+      title: 'Visão Geral dos Lotes',
+      child: Row(
         children: [
-          const Text('VISÃO GERAL',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2)),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              Column(children: [
-                Text('${totalArea.toStringAsFixed(1)} m²',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold)),
-                const Text('Área Útil',
-                    style: TextStyle(color: Colors.white70, fontSize: 10))
-              ]),
-              Container(width: 1, height: 40, color: Colors.white24),
-              Column(children: [
-                Text('$ativos',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold)),
-                const Text('Lotes Ativos',
-                    style: TextStyle(color: Colors.white70, fontSize: 10))
-              ]),
-            ],
-          ),
+          Expanded(
+              child: _miniKpi('Área Útil', '${totalArea.toStringAsFixed(1)} m²',
+                  Icons.crop_free, cs)),
+          Container(
+              width: 1, height: 40, color: cs.outlineVariant.withOpacity(0.5)),
+          Expanded(
+              child:
+                  _miniKpi('Lotes Ativos', '$ativos', Icons.eco_outlined, cs)),
         ],
       ),
+    );
+  }
+
+  Widget _miniKpi(String label, String value, IconData icon, ColorScheme cs) {
+    return Column(
+      children: [
+        Icon(icon, color: cs.primary, size: 24),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(
+              color: cs.onSurface, fontSize: 24, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+              color: cs.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w600),
+        ),
+      ],
     );
   }
 
