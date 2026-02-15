@@ -4,19 +4,17 @@ import 'package:flutter/services.dart';
 import '../app_tokens.dart';
 import '../app_context_ext.dart';
 
-/// Central de botões padronizados com suporte a ícones, estados de carregamento
-/// e feedback tátil (Haptic).
+/// Central de botões padronizados (Excelência).
+/// Mantém compatibilidade com chamadas novas e antigas.
 class AppButtons {
   AppButtons._();
 
-  /// Helper interno para lidar com o clique e feedback físico do aparelho.
   static void _handlePress(VoidCallback? onPressed, bool loading) {
     if (onPressed == null || loading) return;
-    HapticFeedback.lightImpact(); // Vibração premium ao tocar
+    HapticFeedback.lightImpact();
     onPressed();
   }
 
-  /// Widget de carregamento interno padronizado para botões.
   static Widget _btnLoading(Color color) => SizedBox(
         width: AppTokens.iconSm,
         height: AppTokens.iconSm,
@@ -26,9 +24,104 @@ class AppButtons {
         ),
       );
 
-  // ==========================================
-  // 1. ELEVATED BUTTON (COM ÍCONE)
-  // ==========================================
+  // ============================================================
+  // NOVOS (Compat com TelaLogin): primary / outlined / text
+  // ============================================================
+
+  static Widget primary({
+    required Widget child,
+    VoidCallback? onPressed,
+    bool loading = false,
+    bool fullWidth = true,
+    ButtonStyle? style,
+  }) {
+    return _BaseButton(
+      fullWidth: fullWidth,
+      child: Builder(builder: (context) {
+        final baseStyle = ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.md, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+        );
+
+        return ElevatedButton(
+          onPressed: loading ? null : () => _handlePress(onPressed, loading),
+          style: style == null ? baseStyle : baseStyle.merge(style),
+          child: AnimatedSwitcher(
+            duration: AppTokens.animFast,
+            child: loading ? _btnLoading(context.colors.onPrimary) : child,
+          ),
+        );
+      }),
+    );
+  }
+
+  static Widget outlined({
+    required Widget child,
+    VoidCallback? onPressed,
+    bool loading = false,
+    bool fullWidth = true,
+    ButtonStyle? style,
+  }) {
+    return _BaseButton(
+      fullWidth: fullWidth,
+      child: Builder(builder: (context) {
+        final baseStyle = OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.md, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+        );
+
+        return OutlinedButton(
+          onPressed: loading ? null : () => _handlePress(onPressed, loading),
+          style: style == null ? baseStyle : baseStyle.merge(style),
+          child: AnimatedSwitcher(
+            duration: AppTokens.animFast,
+            child: loading ? _btnLoading(context.colors.primary) : child,
+          ),
+        );
+      }),
+    );
+  }
+
+  static Widget text({
+    required Widget child,
+    VoidCallback? onPressed,
+    bool loading = false,
+    bool fullWidth = false,
+    ButtonStyle? style,
+  }) {
+    return _BaseButton(
+      fullWidth: fullWidth,
+      child: Builder(builder: (context) {
+        final baseStyle = TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.sm, vertical: AppTokens.xs),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
+          ),
+        );
+
+        return TextButton(
+          onPressed: loading ? null : () => _handlePress(onPressed, loading),
+          style: style == null ? baseStyle : baseStyle.merge(style),
+          child: AnimatedSwitcher(
+            duration: AppTokens.animFast,
+            child: loading ? _btnLoading(context.colors.primary) : child,
+          ),
+        );
+      }),
+    );
+  }
+
+  // ============================================================
+  // ANTIGOS (mantidos): elevatedIcon / outlinedIcon / textIcon
+  // ============================================================
+
   static Widget elevatedIcon({
     required Widget icon,
     required Widget label,
@@ -42,9 +135,7 @@ class AppButtons {
       child: Builder(builder: (context) {
         final baseStyle = ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.md,
-            vertical: 14,
-          ),
+              horizontal: AppTokens.md, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTokens.rMd),
           ),
@@ -66,9 +157,6 @@ class AppButtons {
     );
   }
 
-  // ==========================================
-  // 2. OUTLINED BUTTON (COM ÍCONE)
-  // ==========================================
   static Widget outlinedIcon({
     required Widget icon,
     required Widget label,
@@ -82,9 +170,7 @@ class AppButtons {
       child: Builder(builder: (context) {
         final baseStyle = OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.md,
-            vertical: 14,
-          ),
+              horizontal: AppTokens.md, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTokens.rMd),
           ),
@@ -106,9 +192,6 @@ class AppButtons {
     );
   }
 
-  // ==========================================
-  // 3. TEXT BUTTON (COM ÍCONE)
-  // ==========================================
   static Widget textIcon({
     required Widget icon,
     required Widget label,
@@ -122,9 +205,7 @@ class AppButtons {
       child: Builder(builder: (context) {
         final baseStyle = TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.sm,
-            vertical: AppTokens.xs,
-          ),
+              horizontal: AppTokens.sm, vertical: AppTokens.xs),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTokens.rMd),
           ),
@@ -147,7 +228,6 @@ class AppButtons {
   }
 }
 
-/// Helper interno para gerenciar a largura total do botão.
 class _BaseButton extends StatelessWidget {
   final Widget child;
   final bool fullWidth;

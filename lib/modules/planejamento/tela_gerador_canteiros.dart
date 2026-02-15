@@ -104,8 +104,10 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           }
         }
 
-        fila.clear();
-        fila.addAll(sobrou);
+        fila
+          ..clear()
+          ..addAll(sobrou);
+
         canteiros.add(canteiro);
       }
 
@@ -189,17 +191,17 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         ],
       ),
     );
+
     if (novo != null && novo.isNotEmpty) {
       setState(() => _canteirosSugeridos[index]['nome'] = novo);
     }
   }
 
   // ===========================================================================
-  // MÁGICA: SALVAMENTO PROTEGIDO (FIM DA MULTIPLICAÇÃO)
+  // SALVAMENTO PADRONIZADO (SEM CAMPOS "largura"/"comprimento" ERRADOS)
   // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
-    if (_salvando)
-      return; // 🛡️ Bloqueio de Duplo Clique! Se já estiver salvando, ignora novos cliques.
+    if (_salvando) return;
 
     final appSession = SessionScope.sessionOf(context);
     if (appSession == null) {
@@ -216,7 +218,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
             FirebasePaths.canteirosCol(appSession.tenantId).doc();
 
         final area = _asDouble(sug['areaTotal']);
-        final areaSafe = area.isNaN || area.isInfinite ? 0.0 : area;
+        final areaSafe = (area.isNaN || area.isInfinite) ? 0.0 : area;
+
+        // Regra simples: largura padrão 1.0m, comprimento = área / largura.
+        final double larguraM = 1.0;
+        final double comprimentoM = larguraM <= 0 ? 0.0 : (areaSafe / larguraM);
 
         final plantas = List<Map<String, dynamic>>.from(sug['plantas']);
         final culturasLista =
@@ -224,46 +230,58 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         final mudasTotais =
             plantas.fold<int>(0, (acc, p) => acc + _asInt(p['mudas']));
 
-        final canteiroPayload = {
+        final nome = (sug['nome'] ?? 'Lote').toString().trim();
+
+        final canteiroPayload = <String, dynamic>{
           'uid_usuario': appSession.uid,
-          'nome': sug['nome'],
-          'area_m2': double.parse(areaSafe.toStringAsFixed(2)),
-          'largura': 1.0,
-          'comprimento': double.parse(areaSafe.toStringAsFixed(2)),
+          'nome': nome,
+          'nome_lower': nome.toLowerCase(),
+          'tipo': 'Canteiro',
+          'finalidade': 'consumo',
           'ativo': true,
           'status': 'ocupado',
+
+          // Medidas padronizadas (as telas/leitura esperam esses nomes)
+          'largura_m': double.parse(larguraM.toStringAsFixed(2)),
+          'comprimento_m': double.parse(comprimentoM.toStringAsFixed(2)),
+          'area_m2': double.parse(areaSafe.toStringAsFixed(2)),
+          'volume_l': 0.0,
+
           'culturas': culturasLista,
           'mudas_totais': mudasTotais,
           'data_criacao': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
           'origem': 'ia_generator_consorcio',
         };
 
-        batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
+        batch.set(canteiroRef, _sanitizeMapFirestore(canteiroPayload));
 
-        // Cria o histórico de "Plantio"
+        // Histórico de Plantio
         final histRef =
             FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
         final detalhesBuffer =
             StringBuffer('Plantio (Formação de Consórcio):\n');
-        for (var p in plantas) {
+        for (final p in plantas) {
           detalhesBuffer.writeln(
               '• ${_nomePlanta(p)}: ${_asInt(p['mudas'])} mudas (${_asDouble(p['area']).toStringAsFixed(1)}m²)');
         }
 
         batch.set(
-            histRef,
-            _sanitizeMap({
-              'canteiro_id': canteiroRef.id,
-              'canteiro_nome': sug['nome'],
-              'uid_usuario': appSession.uid,
-              'tipo_manejo': 'Plantio',
-              'produto': culturasLista.join(', '),
-              'detalhes': detalhesBuffer.toString(),
-              'data': FieldValue.serverTimestamp(),
-              'createdAt': FieldValue.serverTimestamp(),
-              'concluido': true,
-            }));
+          histRef,
+          _sanitizeMapFirestore({
+            'canteiro_id': canteiroRef.id,
+            'canteiro_nome': nome,
+            'uid_usuario': appSession.uid,
+            'tipo_manejo': 'Plantio',
+            'produto': culturasLista.join(', '),
+            'detalhes': detalhesBuffer.toString(),
+            'data': FieldValue.serverTimestamp(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'concluido': true,
+          }),
+        );
       }
 
       await batch.commit();
@@ -271,13 +289,40 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       if (!mounted) return;
 
       AppMessenger.success('Sucesso! Lotes gerados inteligentemente.');
-      // O popUntil garante que a tela feche com segurança até voltar para o início.
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
-      AppMessenger.error('Erro ao salvar os lotes. Tente novamente.');
-      if (mounted)
-        setState(() => _salvando = false); // Libera o botão se der erro
+      AppMessenger.error('Erro ao salvar os lotes: $e');
+      if (mounted) setState(() => _salvando = false);
     }
+  }
+
+  // Sanitização PRO Firestore: remove null, conserta NaN/Infinity, mantém tipos.
+  Map<String, dynamic> _sanitizeMapFirestore(Map<String, dynamic> map) {
+    final out = <String, dynamic>{};
+    map.forEach((k, v) {
+      final sanitized = _sanitizeValue(v);
+      if (sanitized != null) out[k] = sanitized;
+    });
+    return out;
+  }
+
+  dynamic _sanitizeValue(dynamic v) {
+    if (v == null) return null;
+
+    if (v is double) {
+      if (v.isNaN || v.isInfinite) return 0.0;
+      return v;
+    }
+
+    if (v is Map<String, dynamic>) {
+      return _sanitizeMapFirestore(v);
+    }
+
+    if (v is List) {
+      return v.map(_sanitizeValue).where((e) => e != null).toList();
+    }
+
+    return v; // int, String, bool, Timestamp, FieldValue, etc.
   }
 
   @override
@@ -295,10 +340,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
               const CircularProgressIndicator(),
               const SizedBox(height: AppTokens.lg),
               Text(
-                  'A inteligência agronômica está calculando os melhores consórcios...',
-                  style: theme.textTheme.bodyLarge
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center),
+                'A inteligência agronômica está calculando os melhores consórcios...',
+                style: theme.textTheme.bodyLarge
+                    ?.copyWith(color: cs.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         ),
@@ -430,15 +476,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       ),
     );
   }
-
-  Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
-    return map.map((k, v) {
-      if (v is double && (v.isNaN || v.isInfinite)) return MapEntry(k, 0.0);
-      if (v == null) return MapEntry(k, "");
-      if (v is Map<String, dynamic>) return MapEntry(k, _sanitizeMap(v));
-      return MapEntry(k, v);
-    });
-  }
 }
 
 class _CanteiroSugeridoCard extends StatelessWidget {
@@ -464,7 +501,6 @@ class _CanteiroSugeridoCard extends StatelessWidget {
     } catch (_) {}
 
     final double custoMaoDeObra = area * 0.25;
-
     final isConsorcio = plantas.length > 1;
 
     return Card(

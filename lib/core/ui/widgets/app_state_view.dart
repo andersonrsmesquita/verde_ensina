@@ -4,31 +4,36 @@ import '../app_tokens.dart';
 import '../app_context_ext.dart';
 import 'app_button.dart';
 
-/// Widget centralizado para exibir estados vazios, de erro ou carregamento.
-/// Padrão de Excelência: Focado em UX clara, adaptável e com suporte semântico.
+enum AppViewState { loading, empty, error }
+
+/// View centralizada para estados vazios, erro e carregamento.
+/// ✅ Compatível com:
+/// - AppStateView(state: AppViewState.loading)
+/// - AppStateView(state: AppViewState.error, title/message/icon...)
+/// - usos antigos com icon/title/message sem state
 class AppStateView extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String message;
+  final AppViewState? state;
+
+  final IconData? icon;
+  final String? title;
+  final String? message;
+
   final String? actionLabel;
   final VoidCallback? onAction;
+
   final Color? color;
 
   const AppStateView({
     super.key,
-    required this.icon,
-    required this.title,
-    required this.message,
+    this.state,
+    this.icon,
+    this.title,
+    this.message,
     this.actionLabel,
     this.onAction,
     this.color,
   });
 
-  // ==========================================
-  // CONSTRUTORES SEMÂNTICOS (FACTORY)
-  // ==========================================
-
-  /// Estado vazio: Usado quando listas de canteiros, insumos ou registros estão vazias.
   factory AppStateView.empty({
     Key? key,
     String title = 'Nada por aqui ainda',
@@ -39,14 +44,14 @@ class AppStateView extends StatelessWidget {
   }) =>
       AppStateView(
         key: key,
-        icon: Icons.eco_outlined, // Ícone agronômico
+        state: AppViewState.empty,
+        icon: Icons.eco_outlined,
         title: title,
         message: message,
         actionLabel: actionLabel,
         onAction: onAction,
       );
 
-  /// Estado de erro: Usado quando falha a conexão ou ocorre erro de permissão no Firebase.
   factory AppStateView.error({
     Key? key,
     String title = 'Houve um imprevisto',
@@ -57,12 +62,13 @@ class AppStateView extends StatelessWidget {
   }) =>
       AppStateView(
         key: key,
+        state: AppViewState.error,
         icon: Icons.wifi_off_rounded,
         title: title,
         message: message,
         actionLabel: actionLabel,
         onAction: onAction,
-        color: const Color(0xFFD64545), // Cor de erro do Design System
+        color: const Color(0xFFD64545),
       );
 
   @override
@@ -70,19 +76,64 @@ class AppStateView extends StatelessWidget {
     final colors = context.colors;
     final textTheme = context.text;
 
-    // Cor baseada na semântica ou no tema primário
-    final baseColor = color ?? colors.primary;
+    if (state == AppViewState.loading) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTokens.xxl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 34,
+                height: 34,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: AppTokens.md),
+              Text(
+                title ?? 'Carregando...',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if ((message ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: AppTokens.xs),
+                Text(
+                  message!,
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // defaults por estado
+    IconData resolvedIcon = icon ??
+        (state == AppViewState.error ? Icons.cloud_off : Icons.inbox_outlined);
+
+    String resolvedTitle = title ??
+        (state == AppViewState.error ? 'Falha ao carregar' : 'Nada por aqui');
+
+    String resolvedMsg = message ??
+        (state == AppViewState.error
+            ? 'Não consegui carregar os dados agora. Tente novamente.'
+            : 'Você ainda não tem registros nesta seção.');
+
+    final baseColor =
+        color ?? (state == AppViewState.error ? colors.error : colors.primary);
 
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppTokens.xxl),
         child: ConstrainedBox(
-          constraints:
-              const BoxConstraints(maxWidth: 400), // Largura ideal para leitura
+          constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Container do Ícone com Soft UI
               Container(
                 width: 80,
                 height: 80,
@@ -91,12 +142,11 @@ class AppStateView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppTokens.rLg),
                   border: Border.all(color: baseColor.withOpacity(0.2)),
                 ),
-                child: Icon(icon, size: 40, color: baseColor),
+                child: Icon(resolvedIcon, size: 40, color: baseColor),
               ),
               const SizedBox(height: AppTokens.xl),
-              // Título com Peso Máximo
               Text(
-                title,
+                resolvedTitle,
                 textAlign: TextAlign.center,
                 style: textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
@@ -104,9 +154,8 @@ class AppStateView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppTokens.xs),
-              // Mensagem de apoio
               Text(
-                message,
+                resolvedMsg,
                 textAlign: TextAlign.center,
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
@@ -115,11 +164,10 @@ class AppStateView extends StatelessWidget {
               ),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: AppTokens.xl),
-                // Botão de ação integrado ao Design System
                 AppButton.primary(
                   label: actionLabel!,
                   onPressed: onAction,
-                  fullWidth: false, // Centralizado e encolhido
+                  fullWidth: false,
                 ),
               ],
             ],

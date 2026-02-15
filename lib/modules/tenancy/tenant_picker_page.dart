@@ -28,11 +28,14 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
           controller: ctrl,
           decoration: const InputDecoration(
             labelText: 'Nome do espaço',
+            hintText: 'Ex: Horta da casa / Sítio 01 / Estufa',
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Criar'),
@@ -47,15 +50,11 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
     setState(() => _busy = true);
     try {
       final tenantId = await session.createTenant(name: name);
-      AppMessenger.success('✅ Espaço criado: $name');
+      AppMessenger.show('✅ Espaço criado: $name');
       await session.selectTenant(tenantId);
       if (mounted) context.go('/home');
     } catch (e) {
-      if (e is FirebaseException && e.code == 'permission-denied') {
-        AppMessenger.error('❌ Sem permissão no Firestore para criar espaço. Ajuste as regras e tente de novo.');
-      } else {
-        AppMessenger.error('❌ Falha ao criar: $e');
-      }
+      AppMessenger.show('❌ Falha ao criar: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -68,7 +67,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
       await session.selectTenant(tenantId);
       if (mounted) context.go('/home');
     } catch (e) {
-      AppMessenger.error('❌ Falha ao selecionar: $e');
+      AppMessenger.show('❌ Falha ao selecionar: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -89,7 +88,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Escolha um espaço de trabalho'),
+        title: const Text('Escolha o espaço'),
         actions: [
           IconButton(
             tooltip: 'Sair',
@@ -102,7 +101,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy ? null : _criarTenant,
-        icon: const Icon(Icons.add_business),
+        icon: const Icon(Icons.add),
         label: const Text('Criar espaço'),
       ),
       body: Stack(
@@ -115,8 +114,13 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
               }
 
               final data = snap.data!.data() ?? {};
-              final tenantIdsRaw = (data['tenantIds'] is List) ? data['tenantIds'] as List : <dynamic>[];
-              final tenantIds = tenantIdsRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+              final tenantIdsRaw = (data['tenantIds'] is List)
+                  ? data['tenantIds'] as List
+                  : <dynamic>[];
+              final tenantIds = tenantIdsRaw
+                  .map((e) => e.toString())
+                  .where((e) => e.isNotEmpty)
+                  .toList();
 
               if (tenantIds.isEmpty) {
                 return Center(
@@ -136,7 +140,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                         const SizedBox(height: 14),
                         AppButtons.elevatedIcon(
                           onPressed: _busy ? null : _criarTenant,
-                          icon: const Icon(Icons.add_business),
+                          icon: const Icon(Icons.add),
                           label: const Text('Criar agora'),
                         ),
                       ],
@@ -157,12 +161,16 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                       final tdata = tsnap.data?.data() ?? {};
                       final name = (tdata['name'] ?? 'Espaço').toString();
                       final status = (tdata['status'] ?? 'active').toString();
-                      final sub = (tdata['subscriptionStatus'] ?? 'trial').toString();
+                      final sub =
+                          (tdata['subscriptionStatus'] ?? 'trial').toString();
 
                       return Card(
                         child: ListTile(
-                          leading: const CircleAvatar(child: Icon(Icons.business)),
-                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          leading:
+                              const CircleAvatar(child: Icon(Icons.apartment)),
+                          title: Text(name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700)),
                           subtitle: Text('Status: $status • Plano: $sub'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: _busy ? null : () => _selecionar(tid),
@@ -174,7 +182,6 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
               );
             },
           ),
-
           if (_busy)
             Container(
               color: Colors.black.withOpacity(0.08),

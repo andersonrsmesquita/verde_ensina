@@ -6,7 +6,7 @@ import '../session/session_controller.dart';
 // ✅ CORREÇÃO 1: Importe a TelaHome correta
 import '../../modules/home/tela_home.dart';
 
-import '../../modules/auth/login_page.dart';
+import '../../modules/auth/tela_login.dart';
 import '../../modules/tenancy/tenant_picker_page.dart';
 import '../../modules/shared/app_error_page.dart';
 import '../../modules/shared/splash_page.dart';

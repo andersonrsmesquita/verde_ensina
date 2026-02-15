@@ -7,14 +7,20 @@ import '../app_context_ext.dart';
 enum AppFieldVariant { outline, filled }
 
 /// Campo de texto altamente customizável e integrado ao Design System.
-/// Padrão de Excelência: Gerencia estados de foco, visibilidade de senha
-/// e oferece variações semânticas (email, senha, número).
+/// ✅ Compatível com chamadas antigas:
+/// - labelText / hintText / suffixText
+/// - AppTextField.search(...)
+/// - AppTextField.dropdown<T>(...)
 class AppTextField extends StatefulWidget {
   final TextEditingController controller;
 
+  /// ✅ Padrão novo
   final String? label;
   final String? hint;
+
+  /// ✅ Compatibilidade (mantido como propriedades finais)
   final String? helperText;
+  final String? suffixText;
 
   final IconData? prefixIcon;
   final Widget? prefix;
@@ -49,11 +55,18 @@ class AppTextField extends StatefulWidget {
   final bool autofocus;
 
   const AppTextField({
-    super.key,
+    Key? key,
     required this.controller,
-    this.label,
-    this.hint,
+
+    /// ✅ novos
+    String? label,
+    String? hint,
+
+    /// ✅ antigos (compat)
+    String? labelText,
+    String? hintText,
     this.helperText,
+    this.suffixText,
     this.prefixIcon,
     this.prefix,
     this.suffixIcon,
@@ -79,10 +92,12 @@ class AppTextField extends StatefulWidget {
     this.showPasswordToggle = false,
     this.focusNode,
     this.autofocus = false,
-  });
+  })  : label = label ?? labelText,
+        hint = hint ?? hintText,
+        super(key: key);
 
   // ==========================================
-  // CONSTRUTORES DE FÁBRICA (FACTORY)
+  // FACTORY (mantidos)
   // ==========================================
 
   factory AppTextField.email({
@@ -145,6 +160,79 @@ class AppTextField extends StatefulWidget {
     );
   }
 
+  // ==========================================
+  // ✅ HELPERS ESTÁTICOS (compat com TelaCanteiros)
+  // ==========================================
+
+  static Widget search({
+    Key? key,
+    required TextEditingController controller,
+    String? hintText,
+    ValueChanged<String>? onChanged,
+    VoidCallback? onClear,
+    bool enabled = true,
+  }) {
+    return AppTextField(
+      key: key,
+      controller: controller,
+      hintText: hintText ?? 'Buscar...',
+      prefixIcon: Icons.search,
+      enabled: enabled,
+      autocorrect: false,
+      enableSuggestions: false,
+      textInputAction: TextInputAction.search,
+      showClearButton: true,
+      onChanged: onChanged,
+      onClear: onClear,
+      variant: AppFieldVariant.filled,
+    );
+  }
+
+  static Widget dropdown<T>({
+    Key? key,
+    required String labelText,
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    ValueChanged<T?>? onChanged,
+    bool enabled = true,
+    String? helperText,
+  }) {
+    return Builder(
+      builder: (context) {
+        final colors = context.colors;
+
+        OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+              borderSide: BorderSide(color: c, width: w),
+            );
+
+        final baseBorderColor = colors.outlineVariant.withOpacity(0.5);
+
+        return DropdownButtonFormField<T>(
+          key: key,
+          value: value,
+          items: items,
+          onChanged: enabled ? onChanged : null,
+          decoration: InputDecoration(
+            labelText: labelText,
+            helperText: helperText,
+            isDense: true,
+            filled: true,
+            fillColor: colors.surfaceContainerHighest.withOpacity(0.35),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.md,
+              vertical: 16,
+            ),
+            border: border(baseBorderColor, 1),
+            enabledBorder: border(baseBorderColor, 1),
+            focusedBorder: border(colors.primary, 1.5),
+          ),
+          icon: Icon(Icons.expand_more, color: colors.onSurfaceVariant),
+        );
+      },
+    );
+  }
+
   @override
   State<AppTextField> createState() => _AppTextFieldState();
 }
@@ -204,10 +292,11 @@ class _AppTextFieldState extends State<AppTextField> {
               ? () => setState(() => _obscure = !_obscure)
               : null,
           icon: Icon(
-              _obscure
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              size: AppTokens.iconMd),
+            _obscure
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+            size: AppTokens.iconMd,
+          ),
         ),
       );
     }
@@ -258,10 +347,18 @@ class _AppTextFieldState extends State<AppTextField> {
       labelText: widget.label,
       hintText: widget.hint,
       helperText: widget.helperText,
+
+      /// ✅ compat com TelaCanteiros (m, L etc)
+      suffixText: widget.suffixText,
+      suffixStyle: TextStyle(
+        color: colors.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+      ),
+
       prefixIcon: prefixWidget,
       suffixIcon: suffixWidget,
       isDense: true,
-      filled: true, // Sempre preenchido levemente para melhor UX
+      filled: true,
       fillColor: isFocused
           ? colors.primary.withOpacity(0.03)
           : (isFilled
@@ -277,7 +374,8 @@ class _AppTextFieldState extends State<AppTextField> {
       errorBorder: border(colors.error, 1),
       focusedErrorBorder: border(colors.error, 1.5),
       labelStyle: TextStyle(
-          color: isFocused ? colors.primary : colors.onSurfaceVariant),
+        color: isFocused ? colors.primary : colors.onSurfaceVariant,
+      ),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,7 +14,8 @@ class AppDialogs {
   AppDialogs._();
 
   /// Diálogo de Confirmação (Sim/Não).
-  /// Essencial para ações destrutivas como excluir registros de custos ou histórico.
+  /// ✅ Compat:
+  /// - suporte a onConfirm (async) para telas que chamam "AppDialogs.confirm(... onConfirm: ...)"
   static Future<bool> confirm(
     BuildContext context, {
     required String title,
@@ -20,62 +23,111 @@ class AppDialogs {
     String confirmText = 'Confirmar',
     String cancelText = 'Cancelar',
     bool isDanger = false,
+
+    /// ✅ novo: callback executado ao confirmar (pode ser async)
+    FutureOr<void> Function()? onConfirm,
+
+    /// ✅ alias (caso alguma tela use outro nome)
+    FutureOr<void> Function()? onConfirmed,
   }) async {
     final colors = context.colors;
 
     // Feedback tátil ao abrir o diálogo
     HapticFeedback.mediumImpact();
 
+    final action = onConfirm ?? onConfirmed;
+
     final res = await showDialog<bool>(
       context: context,
       barrierDismissible: false, // Força a interação do usuário
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: colors.surface,
-          surfaceTintColor: colors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTokens.rLg),
-          ),
-          title: Text(
-            title,
-            style: context.text.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: isDanger ? AppColors.error : colors.onSurface,
-            ),
-          ),
-          content: Text(
-            message,
-            style: context.text.bodyMedium
-                ?.copyWith(color: colors.onSurfaceVariant),
-          ),
-          actionsPadding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.md,
-            vertical: AppTokens.sm,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(
-                cancelText,
-                style: TextStyle(
-                    color: colors.primary, fontWeight: FontWeight.bold),
-              ),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: isDanger ? AppColors.error : colors.primary,
-                foregroundColor: isDanger ? Colors.white : colors.onPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppTokens.rMd),
-                ),
-              ),
-              onPressed: () {
+        bool busy = false;
+
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            Future<void> handleConfirm() async {
+              if (busy) return;
+
+              // Se não tem callback, é só fechar retornando true
+              if (action == null) {
                 if (isDanger) HapticFeedback.heavyImpact();
                 Navigator.of(ctx).pop(true);
-              },
-              child: Text(confirmText),
-            ),
-          ],
+                return;
+              }
+
+              setState(() => busy = true);
+
+              try {
+                if (isDanger) HapticFeedback.heavyImpact();
+                await Future<void>.sync(() => action());
+                if (ctx.mounted) Navigator.of(ctx).pop(true);
+              } catch (e) {
+                // Não fecha: deixa o usuário tentar de novo
+                setState(() => busy = false);
+
+                // Feedback rápido (sem depender do AppMessenger)
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erro: $e')),
+                  );
+                }
+              }
+            }
+
+            return AlertDialog(
+              backgroundColor: colors.surface,
+              surfaceTintColor: colors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+              ),
+              title: Text(
+                title,
+                style: context.text.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: isDanger ? AppColors.error : colors.onSurface,
+                ),
+              ),
+              content: Text(
+                message,
+                style: context.text.bodyMedium
+                    ?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              actionsPadding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.md,
+                vertical: AppTokens.sm,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: busy ? null : () => Navigator.of(ctx).pop(false),
+                  child: Text(
+                    cancelText,
+                    style: TextStyle(
+                      color: colors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isDanger ? AppColors.error : colors.primary,
+                    foregroundColor: isDanger ? Colors.white : colors.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppTokens.rMd),
+                    ),
+                  ),
+                  onPressed: busy ? null : handleConfirm,
+                  child: busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(confirmText),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -84,7 +136,6 @@ class AppDialogs {
   }
 
   /// Diálogo Informativo (Aviso Simples).
-  /// Útil para explicar regras de calagem ou adubação Organo 15[cite: 6].
   static Future<void> info(
     BuildContext context, {
     required String title,

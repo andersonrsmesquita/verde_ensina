@@ -7,7 +7,6 @@ class CanteiroRepository {
 
   CanteiroRepository(this.tenantId);
 
-  // Busca os canteiros aplicando filtros
   Query<Map<String, dynamic>> queryCanteiros({
     required String filtroAtivo,
     required String filtroStatus,
@@ -35,7 +34,6 @@ class CanteiroRepository {
     return q;
   }
 
-  // Cria ou Atualiza um Lote/Vaso
   Future<void> salvarLocal({
     String? docId,
     required Map<String, dynamic> payload,
@@ -43,7 +41,7 @@ class CanteiroRepository {
     if (docId == null) {
       payload['data_criacao'] = FieldValue.serverTimestamp();
       payload['ativo'] = true;
-      payload['status'] = 'livre';
+      payload['status'] = payload['status'] ?? 'livre';
       await FirebasePaths.canteirosCol(tenantId).add(payload);
     } else {
       payload['data_atualizacao'] = FieldValue.serverTimestamp();
@@ -51,7 +49,6 @@ class CanteiroRepository {
     }
   }
 
-  // Arquiva ou Reativa
   Future<void> alternarStatusAtivo(String docId, bool ativoAtual) async {
     await FirebasePaths.canteirosCol(tenantId).doc(docId).update({
       'ativo': !ativoAtual,
@@ -59,11 +56,37 @@ class CanteiroRepository {
     });
   }
 
-  // Exclusão Permanente (Cascade Delete - Exclui o Lote e o Histórico dele)
+  /// ✅ usado pela TelaCanteiros
+  Future<void> atualizarStatus(String docId, String status) async {
+    await FirebasePaths.canteirosCol(tenantId).doc(docId).update({
+      'status': status,
+      'data_atualizacao': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// ✅ usado pela TelaCanteiros
+  Future<void> duplicar({
+    required Map<String, dynamic> data,
+    required String novoNome,
+  }) async {
+    final payload = Map<String, dynamic>.from(data);
+
+    payload['nome'] = novoNome;
+    payload['nome_lower'] = novoNome.toLowerCase();
+
+    // duplicação começa "limpa"
+    payload['ativo'] = true;
+    payload['status'] = 'livre';
+
+    payload['data_criacao'] = FieldValue.serverTimestamp();
+    payload.remove('data_atualizacao');
+
+    await FirebasePaths.canteirosCol(tenantId).add(payload);
+  }
+
   Future<void> excluirDefinitivoCascade(String uid, String canteiroId) async {
     final batch = _db.batch();
 
-    // Apaga o histórico vinculado ao canteiro
     final historicoSnap = await FirebasePaths.historicoManejoCol(tenantId)
         .where('canteiro_id', isEqualTo: canteiroId)
         .where('uid_usuario', isEqualTo: uid)
@@ -73,7 +96,6 @@ class CanteiroRepository {
       batch.delete(doc.reference);
     }
 
-    // Apaga o canteiro
     final canteiroRef = FirebasePaths.canteirosCol(tenantId).doc(canteiroId);
     batch.delete(canteiroRef);
 
