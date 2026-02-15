@@ -50,10 +50,8 @@ class _VerdeEnsinaAppState extends State<VerdeEnsinaApp> {
       child: MaterialApp.router(
         title: 'Verde Ensina Pro',
         debugShowCheckedModeBanner: false,
-
         scaffoldMessengerKey: AppMessenger.key,
         routerConfig: router,
-
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -62,7 +60,6 @@ class _VerdeEnsinaAppState extends State<VerdeEnsinaApp> {
         supportedLocales: const [
           Locale('pt', 'BR'),
         ],
-
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,

@@ -7,41 +7,20 @@ class CanteiroRepository {
 
   CanteiroRepository(this.tenantId);
 
-  Query<Map<String, dynamic>> queryCanteiros({
-    required String filtroAtivo,
-    required String filtroStatus,
-    required String busca,
-  }) {
-    Query<Map<String, dynamic>> q = FirebasePaths.canteirosCol(tenantId);
-
-    if (filtroAtivo == 'ativos') {
-      q = q.where('ativo', isEqualTo: true);
-    } else if (filtroAtivo == 'arquivados') {
-      q = q.where('ativo', isEqualTo: false);
-    }
-
-    if (filtroStatus != 'todos') {
-      q = q.where('status', isEqualTo: filtroStatus);
-    }
-
-    if (busca.trim().isNotEmpty) {
-      final term = busca.trim().toLowerCase();
-      q = q.orderBy('nome_lower').startAt([term]).endAt(['$term\uf8ff']);
-    } else {
-      q = q.orderBy('data_criacao', descending: true);
-    }
-
-    return q;
+  // Busca os canteiros BRUTOS (sem filtros).
+  // O app vai filtrar localmente para evitar erros de Índice no Firebase.
+  Query<Map<String, dynamic>> queryCanteiros() {
+    return FirebasePaths.canteirosCol(tenantId);
   }
 
-  Future<void> salvarLocal({
-    String? docId,
-    required Map<String, dynamic> payload,
-  }) async {
+  Future<void> salvarLocal(
+      {String? docId, required Map<String, dynamic> payload}) async {
     if (docId == null) {
       payload['data_criacao'] = FieldValue.serverTimestamp();
       payload['ativo'] = true;
-      payload['status'] = payload['status'] ?? 'livre';
+      if (payload['status'] == null || payload['status']!.isEmpty) {
+        payload['status'] = 'livre';
+      }
       await FirebasePaths.canteirosCol(tenantId).add(payload);
     } else {
       payload['data_atualizacao'] = FieldValue.serverTimestamp();
@@ -56,7 +35,6 @@ class CanteiroRepository {
     });
   }
 
-  /// ✅ usado pela TelaCanteiros
   Future<void> atualizarStatus(String docId, String status) async {
     await FirebasePaths.canteirosCol(tenantId).doc(docId).update({
       'status': status,
@@ -64,22 +42,23 @@ class CanteiroRepository {
     });
   }
 
-  /// ✅ usado pela TelaCanteiros
-  Future<void> duplicar({
-    required Map<String, dynamic> data,
-    required String novoNome,
-  }) async {
+  Future<void> duplicar(
+      {required Map<String, dynamic> data, required String novoNome}) async {
     final payload = Map<String, dynamic>.from(data);
-
     payload['nome'] = novoNome;
     payload['nome_lower'] = novoNome.toLowerCase();
-
-    // duplicação começa "limpa"
-    payload['ativo'] = true;
-    payload['status'] = 'livre';
-
     payload['data_criacao'] = FieldValue.serverTimestamp();
     payload.remove('data_atualizacao');
+    payload['status'] = 'livre';
+    payload.remove('agg_ciclo_id');
+    payload.remove('agg_ciclo_inicio');
+    payload.remove('agg_ciclo_produtos');
+    payload.remove('agg_ciclo_mapa');
+    payload['agg_ciclo_concluido'] = false;
+    payload['agg_total_custo'] = 0.0;
+    payload['agg_total_receita'] = 0.0;
+    payload['agg_ciclo_custo'] = 0.0;
+    payload['agg_ciclo_receita'] = 0.0;
 
     await FirebasePaths.canteirosCol(tenantId).add(payload);
   }

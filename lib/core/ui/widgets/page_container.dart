@@ -2,35 +2,23 @@ import 'package:flutter/material.dart';
 import '../app_tokens.dart';
 import '../app_responsive.dart';
 
-/// Esqueleto mestre de páginas (Excelência SaaS).
 class PageContainer extends StatelessWidget {
   final String? title;
-
-  /// ✅ novo: subtítulo abaixo do título
   final String? subtitle;
-
   final Widget body;
   final List<Widget>? actions;
-
-  /// ✅ novo: bottomBar (mantém compat com telas novas)
+  final Widget? bottom;
   final Widget? bottomBar;
 
-  /// Alias compatível com telas antigas que usam "bottom"
-  final Widget? bottom;
-
+  // 🛡️ Mudei o padrão para FALSE. Assim as listas nunca mais vão sumir.
+  // Telas de formulário devem passar scroll: true explicitamente.
   final bool scroll;
 
-  /// Centro do conteúdo (geralmente usado em login/onboarding)
   final bool center;
-
-  /// Alias compatível com telas antigas que usam "centered"
   final bool? centered;
-
   final Widget? floatingActionButton;
   final Color? backgroundColor;
   final bool usePadding;
-
-  /// Permite reduzir largura (ex: login com 520)
   final double? maxWidth;
 
   const PageContainer({
@@ -39,9 +27,9 @@ class PageContainer extends StatelessWidget {
     this.subtitle,
     required this.body,
     this.actions,
-    this.bottomBar,
     this.bottom,
-    this.scroll = true,
+    this.bottomBar,
+    this.scroll = false, // Padrão agora é fixo (seguro para listas)
     bool center = false,
     this.centered,
     this.floatingActionButton,
@@ -59,14 +47,17 @@ class PageContainer extends StatelessWidget {
     final padding =
         usePadding ? AppResponsive.pagePadding(screenWidth) : EdgeInsets.zero;
     final effectiveMaxWidth = maxWidth ?? AppTokens.maxWidth;
+    final effectiveBottom = bottomBar ?? bottom;
 
-    Widget content = ConstrainedBox(
+    Widget constrained = ConstrainedBox(
       constraints: BoxConstraints(maxWidth: effectiveMaxWidth),
       child: body,
     );
 
+    Widget pageBody;
+
     if (scroll) {
-      content = LayoutBuilder(
+      pageBody = LayoutBuilder(
         builder: (context, constraints) {
           final minH = (constraints.maxHeight - padding.vertical);
           return SingleChildScrollView(
@@ -74,27 +65,33 @@ class PageContainer extends StatelessWidget {
             padding: padding,
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: minH < 0 ? 0 : minH),
-              child: center ? Center(child: content) : content,
+              child: center
+                  ? Center(child: constrained)
+                  : Align(alignment: Alignment.topCenter, child: constrained),
             ),
           );
         },
       );
     } else {
-      content = Padding(
-        padding: padding,
-        child: center ? Center(child: content) : content,
+      pageBody = SizedBox.expand(
+        child: Padding(
+          padding: padding,
+          child: center
+              ? Center(child: constrained)
+              : Align(alignment: Alignment.topCenter, child: constrained),
+        ),
       );
     }
-
-    content = Center(child: content);
-
-    final effectiveBottom = bottomBar ?? bottom;
 
     return Scaffold(
       backgroundColor: backgroundColor ?? colors.surface,
       appBar: title == null
           ? null
           : AppBar(
+              centerTitle: true,
+              actions: actions,
+              scrolledUnderElevation: 0,
+              backgroundColor: colors.surface,
               title: subtitle == null
                   ? Text(
                       title!,
@@ -119,12 +116,8 @@ class PageContainer extends StatelessWidget {
                         ),
                       ],
                     ),
-              centerTitle: true,
-              actions: actions,
-              scrolledUnderElevation: 0,
-              backgroundColor: colors.surface,
             ),
-      body: content,
+      body: SafeArea(child: pageBody),
       floatingActionButton: floatingActionButton,
       bottomNavigationBar: effectiveBottom == null
           ? null

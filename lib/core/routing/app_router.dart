@@ -2,16 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../session/session_controller.dart';
-
-// ✅ CORREÇÃO 1: Importe a TelaHome correta
 import '../../modules/home/tela_home.dart';
-
 import '../../modules/auth/tela_login.dart';
 import '../../modules/tenancy/tenant_picker_page.dart';
 import '../../modules/shared/app_error_page.dart';
 import '../../modules/shared/splash_page.dart';
-// O MainLayout não é mais necessário para a Home, pois a TelaHome já tem layout próprio.
-// import '../../modules/layout/main_layout.dart';
 
 class AppRouter {
   static GoRouter buildRouter(SessionController session) {
@@ -21,10 +16,8 @@ class AppRouter {
       redirect: (context, state) {
         final String loc = state.matchedLocation;
 
-        // 1. Loading
         if (!session.ready) return '/splash';
 
-        // 2. Erro Global
         if (session.error != null) {
           return loc == '/error' ? null : '/error';
         }
@@ -34,18 +27,15 @@ class AppRouter {
         final bool indoTenant = loc == '/tenant';
         final bool indoError = loc == '/error';
 
-        // 3. Não logado
         if (!session.isLoggedIn) {
           return indoLogin ? null : '/login';
         }
 
-        // 4. Sem Tenant
         if (session.session == null) {
           if (indoLogin) return null;
           return indoTenant ? null : '/tenant';
         }
 
-        // 5. Logado e Pronto
         if (indoLogin || indoSplash || indoTenant || indoError) {
           return '/home';
         }
@@ -73,18 +63,31 @@ class AppRouter {
             onLogout: () => session.signOut(),
           ),
         ),
-
-        // ✅ CORREÇÃO 2: Home fora do ShellRoute
-        // Como a TelaHome já tem Scaffold, AppBar e BottomBar,
-        // ela deve ser uma rota "raiz" para não duplicar layouts.
         GoRoute(
           path: '/home',
-          builder: (_, __) => const TelaHome(), // Usa a classe correta
+          builder: (_, __) => const TelaHome(),
         ),
-
-        // Futuramente, se tiver telas internas (ex: Configurações Detalhadas)
-        // que precisem de um menu lateral comum, você pode reativar o ShellRoute para elas.
       ],
+      // 🛡️ ESTA É A PROTEÇÃO MESTRA:
+      // Se o GoRouter não achar a rota (porque abrimos a tela com Navigator.push),
+      // ele não quebra o app, ele deixa o Navigator nativo gerenciar a tela.
+      errorBuilder: (context, state) => Scaffold(
+        appBar: AppBar(title: const Text('Ops!')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Caminho não encontrado.',
+                  style: TextStyle(fontSize: 18)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => context.go('/home'),
+                child: const Text('Voltar para o Início'),
+              )
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
