@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/ui/app_ui.dart';
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
-import '../../core/session/app_session.dart';
 
 class TelaGeradorCanteiros extends StatefulWidget {
   final List<Map<String, dynamic>> itensPlanejados;
@@ -22,13 +21,12 @@ class TelaGeradorCanteiros extends StatefulWidget {
 class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   List<Map<String, dynamic>> _canteirosSugeridos = [];
   bool _salvando = false;
-  bool _processando = true; // Loading inicial para evitar travamento na UI
+  bool _processando = true;
   String? _erroProcessamento;
 
   @override
   void initState() {
     super.initState();
-    // Executa após o build para não travar a animação de entrada
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _processarInteligencia();
     });
@@ -68,18 +66,19 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   }
 
   // ===========================================================================
-  // Inteligência de Agrupamento
+  // Inteligência de Agrupamento (Consórcio e Alelopatia)
   // ===========================================================================
   void _processarInteligencia() async {
     try {
-      setState(() => _processando = true);
+      setState(() {
+        _processando = true;
+        _erroProcessamento = null;
+      });
 
-      // Simula um delay mínimo para a UI respirar se a lista for gigante
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(
+          const Duration(milliseconds: 500)); // UX de processamento
 
       final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
-
-      // Ordena por área (maior para menor) para otimizar espaço
       fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
 
       final canteiros = <Map<String, dynamic>>[];
@@ -88,7 +87,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         final mestre = fila.removeAt(0);
 
         final canteiro = <String, dynamic>{
-          'nome': 'Canteiro de ${_nomePlanta(mestre)}',
+          'nome': 'Lote de ${_nomePlanta(mestre)}',
           'plantas': [mestre],
           'areaTotal': _asDouble(mestre['area']),
           'evitar': _listaString(mestre['evitar']),
@@ -113,10 +112,8 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           }
         }
 
-        // Mantém na fila apenas o que sobrou (incompatível com o canteiro atual)
         fila.clear();
         fila.addAll(sobrou);
-
         canteiros.add(canteiro);
       }
 
@@ -126,8 +123,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           _processando = false;
         });
       }
-    } catch (e, s) {
-      debugPrint('Erro na IA: $e $s');
+    } catch (e) {
       if (mounted) {
         setState(() {
           _erroProcessamento = 'Erro ao calcular consórcios: $e';
@@ -142,10 +138,8 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     final nomeCandidata = _nomePlanta(candidata);
     final evitarDoCanteiro = canteiro['evitar'] as List;
 
-    // 1. O canteiro já tem alguém que odeia a candidata?
     if (evitarDoCanteiro.contains(nomeCandidata)) return false;
 
-    // 2. A candidata odeia alguém que já está no canteiro?
     final inimigosCandidata = _listaString(candidata['evitar']);
     final plantasNoCanteiro = canteiro['plantas'] as List;
 
@@ -158,10 +152,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
   void _atualizarNomeAuto(Map<String, dynamic> canteiro) {
     final plantas = canteiro['plantas'] as List;
-    final nomes = plantas
-        .map((p) => _nomePlanta(p))
-        .toSet()
-        .toList(); // toSet remove duplicatas no nome
+    final nomes = plantas.map((p) => _nomePlanta(p)).toSet().toList();
 
     if (nomes.length > 1) {
       final principal = nomes.first;
@@ -173,23 +164,36 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   Future<void> _editarNome(int index) async {
     final controller =
         TextEditingController(text: _canteirosSugeridos[index]['nome']);
+    final theme = Theme.of(context);
+
     final novo = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Renomear Canteiro'),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTokens.radiusLg)),
+        title: const Text('Renomear Lote',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         content: TextField(
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(hintText: 'Ex: Canteiro da Frente'),
+          decoration: InputDecoration(
+            hintText: 'Ex: Lote da Frente',
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
+          ),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
-          TextButton(
+              child: Text('CANCELAR',
+                  style: TextStyle(color: theme.colorScheme.outline))),
+          ElevatedButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('Salvar')),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary),
+              child: const Text('SALVAR')),
         ],
       ),
     );
@@ -199,7 +203,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   }
 
   // ===========================================================================
-  // Persistência
+  // Persistência no Banco (Firebase)
   // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
     final appSession = SessionScope.sessionOf(context);
@@ -217,7 +221,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
             FirebasePaths.canteirosCol(appSession.tenantId).doc();
 
         final area = _asDouble(sug['areaTotal']);
-        // Proteção contra NaN
         final areaSafe = area.isNaN || area.isInfinite ? 0.0 : area;
 
         final plantas = List<Map<String, dynamic>>.from(sug['plantas']);
@@ -230,39 +233,40 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
           'uid_usuario': appSession.uid,
           'nome': sug['nome'],
           'area_m2': double.parse(areaSafe.toStringAsFixed(2)),
-          'largura': 1.0, // Padrão
-          'comprimento':
-              double.parse(areaSafe.toStringAsFixed(2)), // Padrão linear
+          'largura': 1.0,
+          'comprimento': double.parse(areaSafe.toStringAsFixed(2)),
           'ativo': true,
           'status': 'ocupado',
           'culturas': culturasLista,
           'mudas_totais': mudasTotais,
           'data_criacao': FieldValue.serverTimestamp(),
-          'origem': 'ia_generator',
+          'origem': 'ia_generator_consorcio',
         };
 
         batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
-        // Cria o histórico de "Plantio Inicial"
+        // Cria o histórico de "Plantio" na linha do tempo
         final histRef =
             FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
-        // Detalhes bonitos para o histórico
-        final detalhesBuffer = StringBuffer('Plantio Automático:\n');
+        final detalhesBuffer =
+            StringBuffer('Plantio (Formação de Consórcio):\n');
         for (var p in plantas) {
-          detalhesBuffer
-              .writeln('• ${_nomePlanta(p)}: ${_asInt(p['mudas'])} mudas');
+          detalhesBuffer.writeln(
+              '• ${_nomePlanta(p)}: ${_asInt(p['mudas'])} mudas (${_asDouble(p['area']).toStringAsFixed(1)}m²)');
         }
 
         batch.set(
             histRef,
             _sanitizeMap({
               'canteiro_id': canteiroRef.id,
+              'canteiro_nome': sug['nome'],
               'uid_usuario': appSession.uid,
               'tipo_manejo': 'Plantio',
-              'produto': culturasLista.join(', '), // Resumo das plantas
+              'produto': culturasLista.join(', '),
               'detalhes': detalhesBuffer.toString(),
               'data': FieldValue.serverTimestamp(),
+              'createdAt': FieldValue.serverTimestamp(),
               'concluido': true,
             }));
       }
@@ -270,13 +274,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       await batch.commit();
 
       if (!mounted) return;
-      Navigator.of(context)
-          .popUntil((route) => route.isFirst); // Volta pra Home
+      Navigator.of(context).popUntil((route) => route.isFirst);
       AppMessenger.success(
-          'Sucesso! ${_canteirosSugeridos.length} canteiros criados.');
-    } catch (e, s) {
-      debugPrint('Erro ao salvar: $e $s');
-      AppMessenger.error('Erro ao salvar canteiros. Tente novamente.');
+          'Sucesso! ${_canteirosSugeridos.length} Lotes gerados inteligentemente.');
+    } catch (e) {
+      AppMessenger.error('Erro ao salvar os lotes. Tente novamente.');
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
@@ -285,42 +287,45 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
-    // Estado de Carregamento
     if (_processando) {
-      return const Scaffold(
+      return Scaffold(
+        backgroundColor: cs.surfaceContainerLowest,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
+              const CircularProgressIndicator(),
+              const SizedBox(height: AppTokens.lg),
               Text(
-                  'A inteligência artificial está organizando seus canteiros...'),
+                  'A inteligência agronômica está calculando os melhores consórcios...',
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(color: cs.onSurfaceVariant),
+                  textAlign: TextAlign.center),
             ],
           ),
         ),
       );
     }
 
-    // Estado de Erro na Lógica
     if (_erroProcessamento != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Erro')),
+        appBar: AppBar(title: const Text('Erro de Cálculo')),
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppTokens.xl),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                const SizedBox(height: 16),
+                Icon(Icons.error_outline, size: 64, color: cs.error),
+                const SizedBox(height: AppTokens.md),
                 Text(_erroProcessamento!, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppTokens.xl),
                 AppButtons.outlinedIcon(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.arrow_back),
-                  label: const Text('Voltar'),
+                  label: const Text('Voltar e revisar'),
                 )
               ],
             ),
@@ -329,57 +334,112 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       );
     }
 
-    // Tela Principal
     return Scaffold(
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Plano de Canteiros'),
+        title: const Text('Mapeamento Inteligente'),
+        centerTitle: true,
+        backgroundColor: cs.surface,
+        foregroundColor: cs.primary,
+        elevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Recalcular',
+            tooltip: 'Recalcular Lotes',
             onPressed: _salvando ? null : _processarInteligencia,
           ),
         ],
       ),
       body: _canteirosSugeridos.isEmpty
           ? const Center(child: Text('Nenhum item compatível para organizar.'))
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: _canteirosSugeridos.length,
-              itemBuilder: (context, i) {
-                final sug = _canteirosSugeridos[i];
-                return _CanteiroSugeridoCard(
-                  index: i + 1,
-                  sugestao: sug,
-                  onRename: () => _editarNome(i),
-                );
-              },
+          : Column(
+              children: [
+                _buildAgronomicInsightPanel(theme, cs),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(
+                        AppTokens.md, 0, AppTokens.md, AppTokens.xl * 3),
+                    itemCount: _canteirosSugeridos.length,
+                    itemBuilder: (context, i) {
+                      final sug = _canteirosSugeridos[i];
+                      return _CanteiroSugeridoCard(
+                        index: i + 1,
+                        sugestao: sug,
+                        onRename: () => _editarNome(i),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: AppButtons.elevatedIcon(
-            onPressed: _salvando ? null : _criarTodosCanteiros,
-            // ✅ CORRIGIDO: Ícone done_all (minúsculo)
-            icon: _salvando
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.done_all),
-            label: Text(_salvando ? 'SALVANDO...' : 'CONFIRMAR E PLANTAR TUDO'),
-          ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(AppTokens.lg),
+        decoration: BoxDecoration(
+          color: cs.surface,
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: AppButtons.elevatedIcon(
+          onPressed: _salvando ? null : _criarTodosCanteiros,
+          icon: _salvando
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.done_all),
+          label: Text(_salvando ? 'CRIANDO LOTES...' : 'APROVAR E CRIAR LOTES'),
         ),
       ),
     );
   }
 
-  // Sanitizador: Garante que nada vá como NaN/Null para o Firestore
+  // Painel Inteligente baseado no manual de Consórcio e Rotação
+  Widget _buildAgronomicInsightPanel(ThemeData theme, ColorScheme cs) {
+    return Container(
+      margin: const EdgeInsets.all(AppTokens.md),
+      padding: const EdgeInsets.all(AppTokens.md),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        border: Border.all(color: cs.secondaryContainer),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.tips_and_updates, color: cs.onSecondaryContainer),
+          const SizedBox(width: AppTokens.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Uso Eficiente da Terra (UET)',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        color: cs.onSecondaryContainer,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(
+                  'Agrupamos suas plantas usando a técnica de Consórcio. Culturas aliadas compartilham o mesmo lote, reduzindo pragas e aumentando a produção por m²!',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: cs.onSecondaryContainer),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
     return map.map((k, v) {
       if (v is double && (v.isNaN || v.isInfinite)) return MapEntry(k, 0.0);
-      if (v == null) return MapEntry(k, ""); // Null safety básico
+      if (v == null) return MapEntry(k, "");
       if (v is Map<String, dynamic>) return MapEntry(k, _sanitizeMap(v));
       return MapEntry(k, v);
     });
@@ -403,85 +463,115 @@ class _CanteiroSugeridoCard extends StatelessWidget {
     final cs = theme.colorScheme;
     final plantas = List<Map<String, dynamic>>.from(sugestao['plantas']);
 
-    // Helpers de exibição
     double area = 0.0;
     try {
       area = double.parse(sugestao['areaTotal'].toString());
     } catch (_) {}
 
+    // Custo Operacional Fase 1: 0.25h / m² para preparar o lote, adubar e plantar
+    final double custoMaoDeObra = area * 0.25;
+
+    final isConsorcio = plantas.length > 1;
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias, // Arredondamento perfeito
+      margin: const EdgeInsets.only(bottom: AppTokens.sm),
       elevation: 0,
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: cs.outlineVariant),
-        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+            color: isConsorcio ? cs.primary : cs.outlineVariant,
+            width: isConsorcio ? 1.5 : 1.0),
+        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
       ),
+      color: cs.surface,
       child: ExpansionTile(
-        backgroundColor: cs.surfaceContainerHighest.withOpacity(0.3),
-        shape: const Border(), // Remove bordas internas do ExpansionTile
+        backgroundColor: Colors.transparent,
+        shape: const Border(),
         leading: CircleAvatar(
-          backgroundColor: cs.primaryContainer,
+          backgroundColor:
+              isConsorcio ? cs.primary : cs.surfaceContainerHighest,
           child: Text('#$index',
               style: TextStyle(
-                  color: cs.onPrimaryContainer, fontWeight: FontWeight.bold)),
+                  color: isConsorcio ? cs.onPrimary : cs.onSurface,
+                  fontWeight: FontWeight.bold)),
         ),
         title: Text(
           sugestao['nome'],
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(
-          '${area.toStringAsFixed(2)} m² • ${plantas.length} culturas',
-          style: TextStyle(color: cs.onSurfaceVariant),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.crop_free, size: 14, color: cs.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text('${area.toStringAsFixed(1)} m²',
+                    style: TextStyle(color: cs.onSurfaceVariant)),
+                const SizedBox(width: 12),
+                Icon(Icons.handyman, size: 14, color: cs.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text('Fase 1: ${custoMaoDeObra.toStringAsFixed(1)}h',
+                    style: TextStyle(color: cs.onSurfaceVariant)),
+              ],
+            ),
+            if (isConsorcio) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('CONSÓRCIO INTELIGENTE',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: cs.onPrimaryContainer)),
+              )
+            ]
+          ],
         ),
         trailing: IconButton(
-          icon: const Icon(Icons.edit_outlined),
+          icon: Icon(Icons.edit_outlined, color: cs.outline),
           onPressed: onRename,
           tooltip: 'Renomear',
         ),
         children: [
-          const Divider(height: 1, indent: 16, endIndent: 16),
+          const Divider(height: 1),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(AppTokens.md),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 8),
-                  child: Text('COMPOSIÇÃO:',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                          color: cs.primary, fontWeight: FontWeight.bold)),
-                ),
-                ...plantas.map((p) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Icon(Icons.subdirectory_arrow_right,
-                              size: 16, color: cs.outline),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(p['planta'].toString(),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: cs.secondaryContainer,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text('${p['mudas']} mudas',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: cs.onSecondaryContainer)),
-                          ),
-                        ],
+                Text('COMPOSIÇÃO DO LOTE:',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.primary, fontWeight: FontWeight.bold)),
+                const SizedBox(height: AppTokens.sm),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: plantas.map((p) {
+                    return Chip(
+                      avatar: CircleAvatar(
+                        backgroundColor: cs.secondary,
+                        child: Text(
+                          p['mudas'].toString(),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: cs.onSecondary,
+                              fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    )),
+                      label: Text(p['planta'].toString()),
+                      backgroundColor: cs.secondaryContainer,
+                      side: BorderSide.none,
+                    );
+                  }).toList(),
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );

@@ -21,7 +21,6 @@ class TelaPlanejamentoConsumo extends StatefulWidget {
 class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   User? get _user => FirebaseAuth.instance.currentUser;
 
-  // SaaS / Multi-tenant
   AppSession? get _sessionOrNull => SessionScope.of(context).session;
   AppSession get appSession {
     final s = _sessionOrNull;
@@ -31,15 +30,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return s;
   }
 
-  // =========================
-  // DADOS (seu mapa original)
-  // =========================
+  // =======================================================================
+  // DADOS AGRONÔMICOS (Enriquecido com Ciclo em Dias para Mão de Obra)
+  // =======================================================================
   final Map<String, Map<String, dynamic>> _dadosProdutividade = {
     'Abobrinha italiana': {
       'yield': 2.0,
       'unit': 'kg',
       'espaco': 1.0 * 1.0,
       'cat': 'Frutos',
+      'cicloDias': 60,
       'info': 'Rica em vitaminas do complexo B.',
     },
     'Abóboras': {
@@ -47,6 +47,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 3.0 * 2.0,
       'cat': 'Frutos',
+      'cicloDias': 120,
       'info': 'Fonte de betacaroteno e fibras.',
     },
     'Acelga': {
@@ -54,6 +55,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'maço',
       'espaco': 0.5 * 0.4,
       'cat': 'Folhas',
+      'cicloDias': 70,
       'info': 'Ajuda no controle da diabetes.',
     },
     'Alface': {
@@ -61,6 +63,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'un',
       'espaco': 0.25 * 0.25,
       'cat': 'Folhas',
+      'cicloDias': 60,
       'info': 'Calmante natural e rico em fibras.',
     },
     'Alho': {
@@ -68,6 +71,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 0.25 * 0.1,
       'cat': 'Bulbos',
+      'cicloDias': 150,
       'info': 'Antibiótico natural e anti-inflamatório.',
     },
     'Batata doce': {
@@ -75,6 +79,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 0.9 * 0.3,
       'cat': 'Raízes',
+      'cicloDias': 150,
       'info': 'Carboidrato complexo de baixo índice glicêmico.',
     },
     'Berinjela': {
@@ -82,6 +87,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 1.0 * 0.8,
       'cat': 'Frutos',
+      'cicloDias': 120,
       'info': 'Rica em antioxidantes e saúde do coração.',
     },
     'Beterraba': {
@@ -89,6 +95,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'un',
       'espaco': 0.25 * 0.1,
       'cat': 'Raízes',
+      'cicloDias': 70,
       'info': 'Melhora o fluxo sanguíneo e pressão arterial.',
     },
     'Brócolis': {
@@ -96,6 +103,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'un',
       'espaco': 0.8 * 0.5,
       'cat': 'Flores',
+      'cicloDias': 100,
       'info': 'Alto teor de cálcio e combate radicais livres.',
     },
     'Cebola': {
@@ -103,6 +111,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 0.3 * 0.1,
       'cat': 'Bulbos',
+      'cicloDias': 150,
       'info': 'Melhora a circulação e imunidade.',
     },
     'Cebolinha': {
@@ -110,6 +119,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'maço',
       'espaco': 0.25 * 0.1,
       'cat': 'Temperos',
+      'cicloDias': 90,
       'info': 'Rica em vitamina A e C.',
     },
     'Cenoura': {
@@ -117,6 +127,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 0.25 * 0.05,
       'cat': 'Raízes',
+      'cicloDias': 100,
       'info': 'Essencial para a visão e pele.',
     },
     'Coentro': {
@@ -124,6 +135,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'maço',
       'espaco': 0.2 * 0.1,
       'cat': 'Temperos',
+      'cicloDias': 60,
       'info': 'Desintoxicante de metais pesados.',
     },
     'Couve': {
@@ -131,6 +143,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'maços',
       'espaco': 0.8 * 0.5,
       'cat': 'Folhas',
+      'cicloDias': 90,
       'info': 'Desintoxicante e rica em ferro.',
     },
     'Mandioca': {
@@ -138,6 +151,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 1.0 * 0.6,
       'cat': 'Raízes',
+      'cicloDias': 365,
       'info': 'Fonte de energia glúten-free.',
     },
     'Pimentão': {
@@ -145,6 +159,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 1.0 * 0.5,
       'cat': 'Frutos',
+      'cicloDias': 120,
       'info': 'Termogênico e rico em vitamina C.',
     },
     'Quiabo': {
@@ -152,6 +167,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 1.0 * 0.3,
       'cat': 'Frutos',
+      'cicloDias': 80,
       'info': 'Excelente para digestão e flora intestinal.',
     },
     'Rúcula': {
@@ -159,6 +175,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'maço',
       'espaco': 0.2 * 0.05,
       'cat': 'Folhas',
+      'cicloDias': 50,
       'info': 'Picante, digestiva e rica em ômega-3.',
     },
     'Tomate': {
@@ -166,17 +183,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'unit': 'kg',
       'espaco': 1.0 * 0.5,
       'cat': 'Frutos',
+      'cicloDias': 120,
       'info': 'Rico em licopeno, previne câncer.',
     },
   };
 
   final List<Map<String, dynamic>> _listaDesejos = [];
 
-  // Seleção de canteiro (pra salvar corretamente)
   String? _canteiroId;
   String? _canteiroNome;
 
-  // Controladores e Estados
   String? _culturaSelecionada;
   final _qtdController = TextEditingController();
   final _customNameController = TextEditingController();
@@ -192,23 +208,22 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     super.dispose();
   }
 
-  void _snack(String msg, {Color? bg}) {
+  void _snack(String msg, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: bg));
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (isError) {
+      AppMessenger.error(msg);
+    } else {
+      AppMessenger.success(msg);
+    }
   }
 
   String _formatarTexto(String texto) {
     if (texto.isEmpty) return "";
-    return texto
-        .trim()
-        .split(' ')
-        .map((word) {
-          if (word.isEmpty) return "";
-          return word[0].toUpperCase() + word.substring(1).toLowerCase();
-        })
-        .join(' ');
+    return texto.trim().split(' ').map((word) {
+      if (word.isEmpty) return "";
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
   }
 
   void _salvarItem() {
@@ -216,27 +231,27 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
     if (_modoPersonalizado) {
       if (_customNameController.text.trim().isEmpty) {
-        _snack('Informe o nome da cultura.', bg: Colors.orange);
+        _snack('Informe o nome da cultura.', isError: true);
         return;
       }
       nomeFinal = _formatarTexto(_customNameController.text);
     } else {
       if (_culturaSelecionada == null) {
-        _snack('Selecione uma cultura.', bg: Colors.orange);
+        _snack('Selecione uma cultura.', isError: true);
         return;
       }
       nomeFinal = _culturaSelecionada!;
     }
 
     if (_qtdController.text.trim().isEmpty) {
-      _snack('Informe a quantidade.', bg: Colors.orange);
+      _snack('Informe a quantidade.', isError: true);
       return;
     }
 
     final qtd =
         double.tryParse(_qtdController.text.replaceAll(',', '.')) ?? 0.0;
     if (qtd <= 0) {
-      _snack('Quantidade inválida.', bg: Colors.orange);
+      _snack('Quantidade inválida.', isError: true);
       return;
     }
 
@@ -298,20 +313,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     });
   }
 
-  // =========================
-  // Selecionar canteiro
-  // =========================
   void _selecionarCanteiro() {
-    final user = _user;
-    if (user == null) {
-      _snack('Você precisa estar logado.', bg: Colors.red);
+    if (_user == null) {
+      _snack('Você precisa estar logado.', isError: true);
       return;
     }
 
-    final rootContext = context;
-
     showModalBottomSheet(
-      context: rootContext,
+      context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
@@ -329,16 +338,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: const [
+                const Row(
+                  children: [
                     Icon(Icons.grid_view, color: Colors.green),
                     SizedBox(width: 10),
                     Text(
-                      'Salvar em qual canteiro?',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Salvar em qual lote?',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -348,7 +355,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                   style: TextStyle(color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
-
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirebasePaths.canteirosCol(appSession.tenantId)
@@ -357,8 +363,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                     builder: (sbContext, snapshot) {
                       if (snapshot.hasError) {
                         return const Center(
-                          child: Text('Erro ao carregar canteiros.'),
-                        );
+                            child: Text('Erro ao carregar lotes.'));
                       }
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -366,44 +371,17 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
                       final docs = snapshot.data?.docs ?? [];
                       if (docs.isEmpty) {
-                        return Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                'Você ainda não tem canteiros ativos.',
-                              ),
-                              const SizedBox(height: 12),
-                              AppButtons.elevatedIcon(
-                                onPressed: () {
-                                  Navigator.pop(sheetContext);
-                                  Future.microtask(() {
-                                    if (!mounted) return;
-                                    Navigator.of(rootContext).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => const SizedBox(),
-                                      ),
-                                    );
-                                  });
-                                },
-                                icon: const Icon(Icons.add),
-                                label: const Text('Cadastre um canteiro'),
-                              ),
-                            ],
-                          ),
-                        );
+                        return const Center(
+                            child: Text('Você ainda não tem lotes ativos.'));
                       }
 
-                      final ordenados = [...docs]
-                        ..sort((a, b) {
+                      final ordenados = [...docs]..sort((a, b) {
                           final ma = (a.data() as Map<String, dynamic>?) ?? {};
                           final mb = (b.data() as Map<String, dynamic>?) ?? {};
-                          final na = (ma['nome'] ?? '')
-                              .toString()
-                              .toLowerCase();
-                          final nb = (mb['nome'] ?? '')
-                              .toString()
-                              .toLowerCase();
+                          final na =
+                              (ma['nome'] ?? '').toString().toLowerCase();
+                          final nb =
+                              (mb['nome'] ?? '').toString().toLowerCase();
                           return na.compareTo(nb);
                         });
 
@@ -415,33 +393,32 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           final data =
                               (doc.data() as Map<String, dynamic>?) ?? {};
                           final nome = (data['nome'] ?? 'Sem nome').toString();
-
                           final selecionado = _canteiroId == doc.id;
 
                           return ListTile(
                             title: Text(
                               nome,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
+                              style: TextStyle(
+                                fontWeight: selecionado
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: selecionado
+                                    ? Colors.green.shade800
+                                    : Colors.black87,
                               ),
                             ),
                             trailing: selecionado
-                                ? const Icon(
-                                    Icons.check_circle,
-                                    color: Colors.green,
-                                  )
-                                : const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 14,
-                                    color: Colors.grey,
-                                  ),
+                                ? const Icon(Icons.check_circle,
+                                    color: Colors.green)
+                                : const Icon(Icons.arrow_forward_ios,
+                                    size: 14, color: Colors.grey),
                             onTap: () {
                               setState(() {
                                 _canteiroId = doc.id;
                                 _canteiroNome = nome;
                               });
                               Navigator.pop(sheetContext);
-                              _snack('Salvando planejamento em: $nome');
+                              _snack('Lote selecionado: $nome');
                             },
                           );
                         },
@@ -457,9 +434,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     );
   }
 
-  // =========================
-  // Persistência profissional
-  // =========================
   Future<String> _salvarPlanejamentoNoCanteiro({
     required String canteiroId,
     required List<Map<String, dynamic>> itensDesejados,
@@ -467,21 +441,23 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     required double areaTotal,
     required double aguaTotal,
     required double aduboTotal,
+    required double maoDeObraTotal,
   }) async {
     final user = _user;
     if (user == null) throw Exception('Usuário não autenticado.');
 
-    final appSession = SessionScope.of(context).session;
-    if (appSession == null) throw Exception('Sem tenant selecionado');
-
-    final canteiroRef = FirebasePaths.canteiroRef(appSession.tenantId, canteiroId);
-    final planejamentoRef = FirebasePaths.canteiroPlanejamentosCol(appSession.tenantId, canteiroId).doc();
+    final canteiroRef =
+        FirebasePaths.canteiroRef(appSession.tenantId, canteiroId);
+    final planejamentoRef =
+        FirebasePaths.canteiroPlanejamentosCol(appSession.tenantId, canteiroId)
+            .doc();
 
     final resumo = {
       'itens': itensDesejados,
       'area_total_m2': areaTotal,
       'agua_l_dia': aguaTotal,
       'adubo_kg': aduboTotal,
+      'mao_de_obra_h_sem': maoDeObraTotal,
       'updatedAt': FieldValue.serverTimestamp(),
       'planejamentoId': planejamentoRef.id,
     };
@@ -499,6 +475,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         'area_total_m2': areaTotal,
         'agua_l_dia': aguaTotal,
         'adubo_kg': aduboTotal,
+        'mao_de_obra_h_sem': maoDeObraTotal,
       },
       'resumo': resumo,
     });
@@ -513,19 +490,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return planejamentoRef.id;
   }
 
-  // =========================
-  // GERAR PLANO + SALVAR
-  // =========================
   Future<void> _gerarESalvarEIrParaGerador() async {
     if (_listaDesejos.isEmpty) {
-      _snack('Adicione pelo menos um item para planejar!', bg: Colors.orange);
+      _snack('Adicione pelo menos um item para planejar!', isError: true);
       return;
     }
     if (_canteiroId == null) {
-      _snack(
-        'Selecione um canteiro para salvar este planejamento.',
-        bg: Colors.orange,
-      );
+      _snack('Selecione um lote no menu superior antes de gerar.',
+          isError: true);
       _selecionarCanteiro();
       return;
     }
@@ -533,16 +505,18 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     setState(() => _salvando = true);
 
     try {
-      // Prepara a lista com dados técnicos para o algoritmo
+      double areaTotalCalculada = 0.0;
+      double horasMaoDeObraTotal = 0.0;
+
       final itensProcessados = _listaDesejos.map((item) {
         final nome = item['planta'] as String;
         final meta = (item['meta'] as num).toDouble();
 
-        final info =
-            _dadosProdutividade[nome] ??
+        final info = _dadosProdutividade[nome] ??
             {
               'yield': 1.0,
               'espaco': 0.5,
+              'cicloDias': 60,
               'evitar': [],
               'par': [],
               'cat': 'Geral',
@@ -550,10 +524,22 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
         final yieldVal = (info['yield'] as num).toDouble();
         final espacoVal = (info['espaco'] as num).toDouble();
+        final cicloDias = (info['cicloDias'] as int?) ?? 60;
 
         final mudasCalc = meta / yieldVal;
-        final mudasReais = (mudasCalc * 1.1).ceil(); // +10% margem
+        final mudasReais = (mudasCalc * 1.1).ceil();
         final areaNecessaria = mudasReais * espacoVal;
+
+        int cicloSemanas = (cicloDias / 7).ceil();
+        if (cicloSemanas < 1) cicloSemanas = 1;
+
+        double horasFase1 = areaNecessaria * 0.25;
+        double horasFase2 = areaNecessaria * 0.083 * cicloSemanas;
+        double horasFase3 = areaNecessaria * 0.016;
+        double horasTotaisCultura = horasFase1 + horasFase2 + horasFase3;
+
+        areaTotalCalculada += areaNecessaria;
+        horasMaoDeObraTotal += (horasTotaisCultura / cicloSemanas);
 
         return {
           'planta': nome,
@@ -565,25 +551,26 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         };
       }).toList();
 
-      // Totais
-      final areaTotal = itensProcessados.fold<double>(
-        0,
-        (sum, it) => sum + ((it['area'] as num).toDouble()),
-      );
-      final aguaTotal = areaTotal * 4; // L/dia
-      final aduboTotal = areaTotal * 3; // kg
+      final aguaTotal = areaTotalCalculada * 5.0;
+      final aduboTotal = areaTotalCalculada * 3.0;
 
       await _salvarPlanejamentoNoCanteiro(
         canteiroId: _canteiroId!,
         itensDesejados: List<Map<String, dynamic>>.from(_listaDesejos),
         itensProcessados: List<Map<String, dynamic>>.from(itensProcessados),
-        areaTotal: areaTotal,
+        areaTotal: areaTotalCalculada,
         aguaTotal: aguaTotal,
         aduboTotal: aduboTotal,
+        maoDeObraTotal: horasMaoDeObraTotal,
       );
 
-      if (!mounted) return;
+      // Desliga o loading ANTES do navegador (isso evita o crash Assert dependent)
+      if (mounted) setState(() => _salvando = false);
 
+      // Delay minúsculo pro framework respirar e desenhar o botão normal
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -592,9 +579,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         ),
       );
     } catch (e) {
-      _snack('Erro ao salvar planejamento: $e', bg: Colors.red);
-    } finally {
       if (mounted) setState(() => _salvando = false);
+      _snack('Erro ao salvar planejamento: $e', isError: true);
     }
   }
 
@@ -603,27 +589,27 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     final listaCulturasOrdenada = _dadosProdutividade.keys.toList()..sort();
 
     double areaTotal = 0;
-    double aguaTotal = 0;
-    double aduboTotal = 0;
+    double horasSemanaisTotal = 0;
 
-    final cards = _listaDesejos.asMap().entries.map((entry) {
+    final cardsWidgets = _listaDesejos.asMap().entries.map((entry) {
       final idx = entry.key;
       final item = entry.value;
 
       final nome = item['planta'] as String;
       final meta = (item['meta'] as num).toDouble();
 
-      final info =
-          _dadosProdutividade[nome] ??
+      final info = _dadosProdutividade[nome] ??
           {
             'yield': 1.0,
             'unit': 'kg',
             'espaco': 0.5,
+            'cicloDias': 60,
             'info': 'Cultura personalizada.',
           };
 
       final yieldVal = (info['yield'] as num).toDouble();
       final espacoVal = (info['espaco'] as num).toDouble();
+      final cicloDias = (info['cicloDias'] as int?) ?? 60;
 
       final plantasExatas = meta / yieldVal;
       final plantasReais = (plantasExatas * 1.1).ceil();
@@ -631,106 +617,50 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
       areaTotal += areaItem;
 
+      int cicloSemanas = (cicloDias / 7).ceil();
+      if (cicloSemanas < 1) cicloSemanas = 1;
+      double horasItem = (areaItem * 0.25) +
+          (areaItem * 0.083 * cicloSemanas) +
+          (areaItem * 0.016);
+      horasSemanaisTotal += (horasItem / cicloSemanas);
+
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-          border: Border.all(color: Colors.grey.shade100),
+          border: Border.all(color: Colors.grey.shade200),
         ),
         child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '${plantasReais}x',
+          contentPadding: const EdgeInsets.all(12),
+          leading: CircleAvatar(
+            backgroundColor: Colors.green.shade50,
+            child: Text('${plantasReais}x',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.green.shade700,
-                ),
-              ),
-            ),
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12)),
           ),
-          title: Text(
-            nome,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
+          title:
+              Text(nome, style: const TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '${meta.toStringAsFixed(1)} ${info['unit']} desejados',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
+              Text('${meta.toStringAsFixed(1)} ${info['unit']} desejados',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12)),
               const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.info_outline, size: 14, color: Colors.green[300]),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      (info['info'] ?? '').toString(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
-                        color: Colors.green[700],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text('Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.bold)),
             ],
           ),
           trailing: PopupMenuButton(
             icon: const Icon(Icons.more_vert, color: Colors.grey),
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Editar')),
               PopupMenuItem(
-                value: 'edit',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit, size: 18, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Text('Editar'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete, size: 18, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Remover'),
-                  ],
-                ),
-              ),
+                  value: 'delete',
+                  child: Text('Remover', style: TextStyle(color: Colors.red))),
             ],
             onSelected: (value) {
               if (value == 'edit') _iniciarEdicao(idx);
@@ -741,436 +671,296 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       );
     }).toList();
 
-    aguaTotal = areaTotal * 4;
-    aduboTotal = areaTotal * 3;
+    double aguaTotal = areaTotal * 5.0;
+    double aduboTotal = areaTotal * 3.0;
 
-    return Stack(
-      children: [
-        Scaffold(
-          backgroundColor: const Color(0xFFF8F9FA),
-          appBar: AppBar(
-            title: const Text(
-              'Planejamento de Consumo',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-            ),
-            centerTitle: true,
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.green[800],
-            elevation: 0,
-            actions: [
-              AppButtons.textIcon(
-                onPressed: _selecionarCanteiro,
-                icon: const Icon(Icons.grid_view),
-                label: Text(
-                  _canteiroNome == null ? 'Selecionar canteiro' : 'Trocar',
-                ),
-              ),
-            ],
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text('Planejamento de Plantio',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.green),
+        actions: [
+          TextButton.icon(
+            onPressed: _selecionarCanteiro,
+            icon: const Icon(Icons.grid_view, color: Colors.green),
+            label: Text(_canteiroNome == null ? 'Lote' : 'Trocar Lote',
+                style: const TextStyle(color: Colors.green)),
           ),
-          body: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(25),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
                       blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Canteiro selecionado (visual)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _canteiroId == null
-                            ? Colors.orange.shade50
-                            : Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
+                      offset: const Offset(0, 5))
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _canteiroId == null
+                          ? Colors.orange.shade50
+                          : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
                           color: _canteiroId == null
-                              ? Colors.orange.shade100
-                              : Colors.green.shade100,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
+                              ? Colors.orange.shade200
+                              : Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
                             _canteiroId == null
                                 ? Icons.warning_amber
                                 : Icons.check_circle,
                             color: _canteiroId == null
                                 ? Colors.orange
-                                : Colors.green,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _canteiroId == null
-                                  ? 'Selecione um canteiro para salvar este planejamento.'
-                                  : 'Salvando em: $_canteiroNome',
-                              style: TextStyle(
+                                : Colors.green),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _canteiroId == null
+                                ? 'Selecione um Lote para salvar o planejamento (Ícone 🟩 acima).'
+                                : 'Salvando em: $_canteiroNome',
+                            style: TextStyle(
                                 color: _canteiroId == null
-                                    ? Colors.orange.shade800
-                                    : Colors.green.shade800,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                                    ? Colors.orange.shade900
+                                    : Colors.green.shade900,
+                                fontWeight: FontWeight.bold),
                           ),
-                          TextButton(
-                            onPressed: _selecionarCanteiro,
-                            child: const Text('Selecionar'),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
                           _editandoIndex != null
-                              ? 'Editando Item...'
+                              ? 'Editando...'
                               : 'O que vamos plantar?',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _editandoIndex != null
-                                ? Colors.blue
-                                : Colors.grey[800],
-                          ),
-                        ),
-                        if (_editandoIndex != null)
-                          AppButtons.textIcon(
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                      if (_editandoIndex != null)
+                        TextButton.icon(
                             onPressed: _cancelarEdicao,
-                            icon: const Icon(Icons.close, size: 16),
-                            label: const Text('Cancelar'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                              padding: EdgeInsets.zero,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 4,
-                          child: _modoPersonalizado
-                              ? TextField(
-                                  controller: _customNameController,
-                                  decoration: InputDecoration(
-                                    labelText: 'Nome da Cultura',
+                            icon: const Icon(Icons.close,
+                                size: 16, color: Colors.red),
+                            label: const Text('Cancelar',
+                                style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: _modoPersonalizado
+                            ? TextField(
+                                controller: _customNameController,
+                                decoration: const InputDecoration(
+                                    labelText: 'Nome',
                                     hintText: 'Ex: Jiló',
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 15,
-                                      vertical: 15,
-                                    ),
-                                    isDense: true,
-                                  ),
-                                )
-                              : DropdownButtonFormField<String>(
-                                  value: _culturaSelecionada,
-                                  hint: const Text('Selecione...'),
-                                  isExpanded: true,
-                                  items: listaCulturasOrdenada.map((key) {
-                                    return DropdownMenuItem(
-                                      value: key,
-                                      child: Text(
-                                        key,
-                                        style: const TextStyle(fontSize: 14),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: (v) =>
-                                      setState(() => _culturaSelecionada = v),
-                                  decoration: InputDecoration(
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 15,
-                                      vertical: 15,
-                                    ),
-                                    isDense: true,
-                                  ),
-                                ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _modoPersonalizado = !_modoPersonalizado;
-                              _culturaSelecionada = null;
-                              _customNameController.clear();
-                            });
-                          },
-                          tooltip: _modoPersonalizado
-                              ? 'Voltar para Lista'
-                              : 'Digitar outro',
-                          icon: Icon(
-                            _modoPersonalizado ? Icons.list : Icons.keyboard,
-                            color: Colors.green,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: _qtdController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9\.,]'),
+                                    border: OutlineInputBorder(),
+                                    isDense: true),
+                              )
+                            : DropdownButtonFormField<String>(
+                                value: _culturaSelecionada,
+                                hint: const Text('Selecione...'),
+                                isExpanded: true,
+                                items: listaCulturasOrdenada
+                                    .map((k) => DropdownMenuItem(
+                                        value: k,
+                                        child: Text(k,
+                                            style:
+                                                const TextStyle(fontSize: 14))))
+                                    .toList(),
+                                onChanged: (v) =>
+                                    setState(() => _culturaSelecionada = v),
+                                decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    isDense: true),
                               ),
-                            ],
-                            decoration: InputDecoration(
-                              labelText: 'Qtd',
-                              suffixText:
-                                  !_modoPersonalizado &&
-                                      _culturaSelecionada != null
-                                  ? (_dadosProdutividade[_culturaSelecionada]!['unit'])
-                                        .toString()
-                                  : 'kg/un',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 15,
-                                vertical: 15,
-                              ),
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 15),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: AppButtons.elevatedIcon(
-                        onPressed: _salvarItem,
+                      ),
+                      IconButton(
+                        onPressed: () => setState(() {
+                          _modoPersonalizado = !_modoPersonalizado;
+                          _culturaSelecionada = null;
+                          _customNameController.clear();
+                        }),
                         icon: Icon(
-                          _editandoIndex != null
-                              ? Icons.save
-                              : Icons.add_circle,
-                          color: Colors.white,
+                            _modoPersonalizado ? Icons.list : Icons.keyboard,
+                            color: Colors.green),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _qtdController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                                RegExp(r'[0-9\.,]'))
+                          ],
+                          decoration: InputDecoration(
+                            labelText: 'Qtd',
+                            suffixText: !_modoPersonalizado &&
+                                    _culturaSelecionada != null
+                                ? (_dadosProdutividade[_culturaSelecionada]![
+                                        'unit'])
+                                    .toString()
+                                : 'kg/un',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
-                        label: Text(
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _salvarItem,
+                      icon: Icon(_editandoIndex != null
+                          ? Icons.save
+                          : Icons.add_circle),
+                      label: Text(
                           _editandoIndex != null
                               ? 'SALVAR ALTERAÇÕES'
                               : 'ADICIONAR À LISTA',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _editandoIndex != null
-                              ? Colors.blue
-                              : Theme.of(context).colorScheme.primary,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade700,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(12))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_listaDesejos.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    Icon(Icons.spa_outlined,
+                        size: 80, color: Colors.grey.shade300),
+                    const SizedBox(height: 16),
+                    const Text('Sua lista está vazia.',
+                        style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    ...cardsWidgets,
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                          color: Colors.green.shade800,
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Column(
+                        children: [
+                          const Text('ESTIMATIVA TOTAL DO SISTEMA',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12)),
+                          const Divider(color: Colors.white24, height: 25),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _InfoResumo(
+                                  icon: Icons.crop_free,
+                                  valor: areaTotal.toStringAsFixed(1),
+                                  unidade: 'm²',
+                                  label: 'Área Útil'),
+                              Container(
+                                  width: 1, height: 40, color: Colors.white24),
+                              _InfoResumo(
+                                  icon: Icons.water_drop,
+                                  valor: aguaTotal.toStringAsFixed(0),
+                                  unidade: 'L/dia',
+                                  label: 'Água Aprox.'),
+                            ],
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _InfoResumo(
+                                  icon: Icons.compost,
+                                  valor: aduboTotal.toStringAsFixed(1),
+                                  unidade: 'kg',
+                                  label: 'Adubo Base'),
+                              Container(
+                                  width: 1, height: 40, color: Colors.white24),
+                              _InfoResumo(
+                                  icon: Icons.handyman,
+                                  valor: horasSemanaisTotal.toStringAsFixed(1),
+                                  unidade: 'h/sem',
+                                  label: 'Mão de Obra'),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
-
-              Expanded(
-                child: _listaDesejos.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.spa_outlined,
-                              size: 80,
-                              color: Colors.grey.withOpacity(0.2),
-                            ),
-                            const SizedBox(height: 15),
-                            Text(
-                              'Sua lista está vazia.',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              'Adicione o que sua família consome.',
-                              style: TextStyle(color: Colors.grey[400]),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.all(20),
-                        children: [
-                          ...cards,
-                          const SizedBox(height: 10),
-
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Colors.green.shade800,
-                                  Colors.green.shade600,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.green.withOpacity(0.3),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(
-                                      Icons.analytics,
-                                      color: Colors.white70,
-                                      size: 18,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'ESTIMATIVA TOTAL DO SISTEMA',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.0,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Divider(
-                                  color: Colors.white24,
-                                  height: 25,
-                                ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    _InfoResumo(
-                                      icon: Icons.crop_free,
-                                      valor: areaTotal.toStringAsFixed(1),
-                                      unidade: 'm²',
-                                      label: 'Área Útil',
-                                    ),
-                                    Container(
-                                      width: 1,
-                                      height: 40,
-                                      color: Colors.white24,
-                                    ),
-                                    _InfoResumo(
-                                      icon: Icons.water_drop,
-                                      valor: aguaTotal.toStringAsFixed(0),
-                                      unidade: 'L/dia',
-                                      label: 'Água Aprox.',
-                                    ),
-                                    Container(
-                                      width: 1,
-                                      height: 40,
-                                      color: Colors.white24,
-                                    ),
-                                    _InfoResumo(
-                                      icon: Icons.compost,
-                                      valor: aduboTotal.toStringAsFixed(1),
-                                      unidade: 'kg',
-                                      label: 'Adubo (Organo15)',
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 15),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black12,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    '💡 Cálculo inclui +10% de margem de segurança.',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 11,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ],
-          ),
-          bottomNavigationBar: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: AppButtons.elevatedIcon(
-              onPressed: _gerarESalvarEIrParaGerador,
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text('GERAR PLANO INTELIGENTE'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[800],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                elevation: 4,
-                shadowColor: Colors.blue.withOpacity(0.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
+          ],
         ),
-
-        if (_salvando)
-          Container(
-            color: Colors.black.withOpacity(0.25),
-            child: const Center(child: CircularProgressIndicator()),
-          ),
-      ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(16),
+        color: Colors.white,
+        child: ElevatedButton.icon(
+          onPressed: _salvando ? null : _gerarESalvarEIrParaGerador,
+          icon: _salvando
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
+              : const Icon(Icons.auto_awesome),
+          label: Text(_salvando ? 'PROCESSANDO...' : 'GERAR PLANO INTELIGENTE',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade800,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+        ),
+      ),
     );
   }
 }
@@ -1181,53 +971,38 @@ class _InfoResumo extends StatelessWidget {
   final String unidade;
   final String label;
 
-  const _InfoResumo({
-    required this.icon,
-    required this.valor,
-    required this.unidade,
-    required this.label,
-  });
+  const _InfoResumo(
+      {required this.icon,
+      required this.valor,
+      required this.unidade,
+      required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: Colors.white, size: 20),
-        ),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+            child: Icon(icon, color: Colors.white, size: 20)),
         const SizedBox(height: 8),
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(
-              valor,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(width: 2),
-            Text(
-              unidade,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(valor,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(width: 4),
+            Text(unidade,
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
           ],
         ),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white60, fontSize: 10),
-        ),
+        Text(label,
+            style: const TextStyle(color: Colors.white60, fontSize: 10)),
       ],
     );
   }
