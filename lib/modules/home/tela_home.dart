@@ -6,18 +6,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
 import '../../core/session/app_session.dart';
-import '../../core/ui/app_ui.dart'; // Importa AppButtons, AppModuleCard, SectionCard
-// Se o SectionCard não estiver exportado no app_ui, descomente a linha abaixo:
-// import '../../core/ui/widgets/section_card.dart';
+import '../../core/ui/app_ui.dart';
 
 import '../../core/repositories/user_profile_repository.dart';
 
 // ✅ Todos os Módulos Importados
 import '../canteiros/tela_canteiros.dart';
-import '../canteiros/tela_planejamento_canteiro.dart';
+import '../canteiros/tela_planejamento_canteiro.dart'; // Classe TelaPlanejamentoCanteiro
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
-import '../planejamento/tela_planejamento_consumo.dart';
+import '../planejamento/tela_planejamento_consumo.dart'; // Classe TelaPlanejamentoConsumo
 import '../adubacao/tela_adubacao_organo15.dart';
 import '../diario/tela_diario_manejo.dart';
 import '../financeiro/tela_financeiro.dart';
@@ -214,6 +212,7 @@ class _AbaInicioDashboard extends StatelessWidget {
                       color: cs.primary,
                       onTap: () => Navigator.push(
                           context,
+                          // ✅ Corrigido: Abre a Lista de Desejos (Planejamento de Consumo)
                           MaterialPageRoute(
                               builder: (_) => const TelaPlanejamentoConsumo())),
                     ),
@@ -540,14 +539,18 @@ class _AbaJornadaTrilha extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        // Adicione seus itens de trilha aqui usando AppModuleCard se quiser
+
+        // Item 1: Planejamento
         AppModuleCard(
-            title: '1. Planejamento',
-            icon: Icons.calculate,
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const TelaPlanejamentoConsumo()))),
+          title: '1. Planejamento',
+          icon: Icons.calendar_today,
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  // ✅ Corrigido: Abre a tela de Canteiro, não a de Consumo
+                  builder: (_) => const TelaPlanejamentoCanteiro())),
+        ),
+
         AppModuleCard(
             title: '2. Preparo',
             icon: Icons.grid_on,

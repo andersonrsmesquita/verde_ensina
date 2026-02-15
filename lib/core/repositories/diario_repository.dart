@@ -3,36 +3,37 @@ import '../firebase/firebase_paths.dart';
 
 class DiarioRepository {
   final String tenantId;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   DiarioRepository(this.tenantId);
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> watchHistorico({String? canteiroId}) {
-    Query<Map<String, dynamic>> q = FirebasePaths.historicoManejoCol(tenantId);
+  // 1. Busca bruta sem orderBy para evitar o bloqueio de Índice do Firebase
+  Stream<QuerySnapshot> watchHistorico({String? canteiroId}) {
+    Query q = FirebasePaths.historicoManejoCol(tenantId);
+
     if (canteiroId != null && canteiroId.isNotEmpty) {
       q = q.where('canteiro_id', isEqualTo: canteiroId);
     }
-    return q.orderBy('data', descending: true).limit(100).snapshots();
+
+    return q.snapshots();
   }
 
-  Future<void> adicionarManejo(Map<String, dynamic> dados) async {
-    final docRef = FirebasePaths.historicoManejoCol(tenantId).doc();
-    // Adiciona timestamps automáticos se não vierem
-    dados['data_criacao'] ??= FieldValue.serverTimestamp();
-    dados['ativo'] = true;
-    
-    // Sanitização básica (pode ser expandida)
-    final safeData = dados.map((key, value) {
-      if (value is double && (value.isNaN || value.isInfinite)) return MapEntry(key, 0.0);
-      return MapEntry(key, value);
-    });
-
-    await docRef.set(safeData);
+  // 2. Adicionar um Novo Manejo
+  Future<void> adicionarManejo(Map<String, dynamic> data) async {
+    data['createdAt'] = FieldValue.serverTimestamp();
+    await FirebasePaths.historicoManejoCol(tenantId).add(data);
   }
 
+  // 3. Marcar como Concluído / Pendente
   Future<void> toggleConcluido(String docId, bool atual) async {
     await FirebasePaths.historicoManejoCol(tenantId).doc(docId).update({
       'concluido': !atual,
-      'data_atualizacao': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  // 4. Excluir Manejo
+  Future<void> excluirManejo(String docId) async {
+    await FirebasePaths.historicoManejoCol(tenantId).doc(docId).delete();
   }
 }

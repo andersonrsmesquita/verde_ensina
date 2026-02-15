@@ -31,7 +31,7 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
   void _abrirSheetRegistro(Map<String, String> canteiros) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
+      isScrollControlled: true, // Permite que a tela suba com o teclado
       backgroundColor: Colors.transparent,
       builder: (_) => _SheetRegistroManejo(
         canteiros: canteiros,
@@ -48,67 +48,62 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
 
     if (_repo == null || tenantId == null) {
       return const PageContainer(
-        scroll: false,
-        body: Center(child: Text("Carregando sessão...")),
-      );
+          scroll: false, body: Center(child: Text("Carregando...")));
     }
 
     return PageContainer(
       title: 'Diário de Campo',
-      subtitle: 'Registre e acompanhe as atividades do seu espaço',
-      scroll: false, // 🛡️ Important for screens with Expanded/ListView
+      subtitle: 'Acompanhe as atividades do seu espaço',
+      scroll: false, // 🛡️ Evita o bug de lista invisível no Windows
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. FILTRO INTELIGENTE E AÇÕES
           _FiltroCanteiros(
             tenantId: tenantId,
             selectedId: _canteiroFiltro,
-            onChanged: (id, map) {
-              setState(() => _canteiroFiltro = id);
-            },
+            onChanged: (id, map) => setState(() => _canteiroFiltro = id),
             onAddPressed: (map) => _abrirSheetRegistro(map),
           ),
-
-          const SizedBox(height: AppTokens.md),
-
-          // 2. LISTA DE HISTÓRICO
+          const SizedBox(height: 16),
           Expanded(
             child: SectionCard(
-              title: 'Histórico de Atividades',
+              title: 'Histórico',
               child: StreamBuilder<QuerySnapshot>(
                 stream: _repo!.watchHistorico(canteiroId: _canteiroFiltro),
                 builder: (context, snap) {
-                  if (snap.hasError) {
+                  if (snap.hasError)
                     return Center(
                         child: Text('Erro: ${snap.error}',
                             style: TextStyle(color: cs.error)));
-                  }
-                  if (!snap.hasData) {
+                  if (!snap.hasData)
                     return const Center(child: CircularProgressIndicator());
-                  }
 
-                  final docs = snap.data!.docs;
+                  final docs = snap.data!.docs.toList();
+                  // Ordenação Local para evitar erro de índice do Firebase
+                  docs.sort((a, b) {
+                    final dA = (a.data() as Map<String, dynamic>)['data']
+                        as Timestamp?;
+                    final dB = (b.data() as Map<String, dynamic>)['data']
+                        as Timestamp?;
+                    if (dA == null) return 1;
+                    if (dB == null) return -1;
+                    return dB.compareTo(dA);
+                  });
 
-                  if (docs.isEmpty) {
-                    return const _EmptyState();
-                  }
+                  if (docs.isEmpty) return const _EmptyState();
 
-                  // Calculate some quick stats for a mini dashboard
                   int concluidos = 0;
                   int pendentes = 0;
                   for (var doc in docs) {
-                    final d = doc.data() as Map<String, dynamic>;
-                    if (d['concluido'] == true) {
+                    if ((doc.data() as Map<String, dynamic>)['concluido'] ==
+                        true)
                       concluidos++;
-                    } else {
+                    else
                       pendentes++;
-                    }
                   }
 
                   return Column(
                     children: [
-                      // Mini Dashboard KPI
                       Row(
                         children: [
                           Expanded(
@@ -131,8 +126,6 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
                         ],
                       ),
                       const Divider(height: 32),
-
-                      // The actual list
                       Expanded(
                         child: ListView.separated(
                           padding: const EdgeInsets.only(bottom: 80),
@@ -165,14 +158,14 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
   void _confirmarExclusao(String id) {
     AppDialogs.confirm(
       context,
-      title: 'Excluir registro?',
-      message: 'Tem certeza que deseja apagar esta atividade do diário?',
+      title: 'Excluir?',
+      message: 'Apagar esta atividade do diário?',
       confirmText: 'EXCLUIR',
       isDanger: true,
       onConfirm: () async {
         try {
           await _repo!.excluirManejo(id);
-          if (mounted) AppMessenger.success('Registro excluído.');
+          if (mounted) AppMessenger.success('Excluído.');
         } catch (e) {
           if (mounted) AppMessenger.error('Erro ao excluir.');
         }
@@ -181,22 +174,17 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
   }
 }
 
-// ============================================================================
-// WIDGETS AUXILIARES (UI LIMPA E PADRONIZADA)
-// ============================================================================
-
 class _FiltroCanteiros extends StatelessWidget {
   final String tenantId;
   final String? selectedId;
   final Function(String?, Map<String, String>) onChanged;
   final Function(Map<String, String>) onAddPressed;
 
-  const _FiltroCanteiros({
-    required this.tenantId,
-    required this.selectedId,
-    required this.onChanged,
-    required this.onAddPressed,
-  });
+  const _FiltroCanteiros(
+      {required this.tenantId,
+      required this.selectedId,
+      required this.onChanged,
+      required this.onAddPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -219,11 +207,10 @@ class _FiltroCanteiros extends StatelessWidget {
                   isExpanded: true,
                   value: map.containsKey(selectedId) ? selectedId : null,
                   decoration: const InputDecoration(
-                    labelText: 'Selecione um lote...',
-                    prefixIcon: Icon(Icons.filter_list),
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
+                      labelText: 'Selecione um lote...',
+                      prefixIcon: Icon(Icons.filter_list),
+                      border: OutlineInputBorder(),
+                      isDense: true),
                   items: [
                     const DropdownMenuItem(
                         value: null, child: Text('Todos os lotes')),
@@ -256,12 +243,11 @@ class _ManejoCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onDelete;
 
-  const _ManejoCard({
-    required this.data,
-    required this.docId,
-    required this.onToggle,
-    required this.onDelete,
-  });
+  const _ManejoCard(
+      {required this.data,
+      required this.docId,
+      required this.onToggle,
+      required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -277,13 +263,12 @@ class _ManejoCard extends StatelessWidget {
         color: concluido
             ? cs.surfaceContainerHighest.withOpacity(0.3)
             : cs.surface,
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: concluido
-              ? cs.outlineVariant.withOpacity(0.5)
-              : _getColorForType(tipo).withOpacity(0.5),
-          width: 1.5,
-        ),
+            color: concluido
+                ? cs.outlineVariant.withOpacity(0.5)
+                : _getColorForType(tipo).withOpacity(0.5),
+            width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,36 +276,25 @@ class _ManejoCard extends StatelessWidget {
           ListTile(
             contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
             leading: CircleAvatar(
-              backgroundColor: concluido
-                  ? cs.surfaceContainerHighest
-                  : _getColorForType(tipo).withOpacity(0.2),
-              child: Icon(
-                _getIconForType(tipo),
-                color: concluido ? cs.outline : _getColorForType(tipo),
-              ),
-            ),
-            title: Text(
-              tipo,
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                decoration: concluido ? TextDecoration.lineThrough : null,
-                color: concluido ? cs.outline : cs.onSurface,
-              ),
-            ),
-            subtitle: Text(
-              data['canteiro_nome'] ?? 'Lote Desconhecido',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: cs.onSurfaceVariant,
-              ),
-            ),
+                backgroundColor: concluido
+                    ? cs.surfaceContainerHighest
+                    : _getColorForType(tipo).withOpacity(0.2),
+                child: Icon(_getIconForType(tipo),
+                    color: concluido ? cs.outline : _getColorForType(tipo))),
+            title: Text(tipo,
+                style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    decoration: concluido ? TextDecoration.lineThrough : null,
+                    color: concluido ? cs.outline : cs.onSurface)),
+            subtitle: Text(data['canteiro_nome'] ?? 'Lote Desconhecido',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
             trailing: Checkbox(
-              value: concluido,
-              onChanged: (_) => onToggle(),
-              activeColor: Colors.green,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
-            ),
+                value: concluido,
+                onChanged: (_) => onToggle(),
+                activeColor: Colors.green,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4))),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -329,42 +303,37 @@ class _ManejoCard extends StatelessWidget {
               children: [
                 if (produto.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('Produto/Ação: $produto',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text('Ação: $produto',
+                      style: const TextStyle(fontWeight: FontWeight.w600))
                 ],
                 if (detalhes.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(detalhes,
                       style:
-                          TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+                          TextStyle(color: cs.onSurfaceVariant, fontSize: 13))
                 ],
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.calendar_today, size: 14, color: cs.outline),
-                        const SizedBox(width: 4),
-                        Text(
+                    Row(children: [
+                      Icon(Icons.calendar_today, size: 14, color: cs.outline),
+                      const SizedBox(width: 4),
+                      Text(
                           date != null
                               ? DateFormat('dd/MM/yyyy HH:mm').format(date)
-                              : 'Data não registrada',
+                              : 'Sem data',
                           style: TextStyle(
                               fontSize: 12,
                               color: cs.outline,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
+                              fontWeight: FontWeight.bold))
+                    ]),
                     InkWell(
-                      onTap: onDelete,
-                      child: Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: Icon(Icons.delete_outline,
-                            size: 18, color: cs.error),
-                      ),
-                    )
+                        onTap: onDelete,
+                        child: Padding(
+                            padding: const EdgeInsets.all(4.0),
+                            child: Icon(Icons.delete_outline,
+                                size: 18, color: cs.error)))
                   ],
                 ),
               ],
@@ -380,8 +349,7 @@ class _ManejoCard extends StatelessWidget {
       case 'irrigação':
         return Icons.water_drop;
       case 'adubação':
-        return Icons
-            .compost; // Using the new material icon if available, or just eco
+        return Icons.compost;
       case 'plantio':
         return Icons.spa;
       case 'colheita':
@@ -413,7 +381,6 @@ class _ManejoCard extends StatelessWidget {
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -423,19 +390,16 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.history_edu, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
-          Text(
-            'Diário em branco',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600),
-          ),
+          Text('Diário em branco',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600)),
           const SizedBox(height: 8),
           Text(
-            'Nenhuma atividade registrada para este filtro. Use o botão "NOVO" acima para adicionar um manejo.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500),
-          ),
+              'Nenhuma atividade registrada para este filtro. Use o botão "NOVO" acima.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey.shade500)),
         ],
       ),
     );
@@ -455,10 +419,9 @@ class _MiniKpi extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.3))),
       child: Column(
         children: [
           Text(value,
@@ -474,7 +437,7 @@ class _MiniKpi extends StatelessWidget {
 }
 
 // ============================================================================
-// SHEET DE REGISTRO (Inteligente e Padronizado)
+// SHEET DE REGISTRO (Protegido contra o "Esmagamento de Teclado")
 // ============================================================================
 class _SheetRegistroManejo extends StatefulWidget {
   final Map<String, String> canteiros;
@@ -509,10 +472,7 @@ class _SheetRegistroManejoState extends State<_SheetRegistroManejo> {
 
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_canteiroId == null) {
-      AppMessenger.warn('Selecione o local da atividade.');
-      return;
-    }
+    if (_canteiroId == null) return AppMessenger.warn('Selecione o local.');
 
     setState(() => _salvando = true);
     try {
@@ -523,12 +483,11 @@ class _SheetRegistroManejoState extends State<_SheetRegistroManejo> {
         'produto': _produtoCtrl.text.trim(),
         'detalhes': _detalhesCtrl.text.trim(),
         'data': FieldValue.serverTimestamp(),
-        'concluido': true, // Assume done when logged
+        'concluido': true,
         'uid_usuario': FirebaseAuth.instance.currentUser?.uid,
       });
-
       if (mounted) Navigator.pop(context);
-      AppMessenger.success('Atividade registrada no diário!');
+      AppMessenger.success('Atividade registrada!');
     } catch (e) {
       AppMessenger.error('Erro ao salvar registro.');
     } finally {
@@ -537,113 +496,115 @@ class _SheetRegistroManejoState extends State<_SheetRegistroManejo> {
   }
 
   @override
-  void dispose() {
-    _produtoCtrl.dispose();
-    _detalhesCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: BoxDecoration(
+    // 🛡️ Container Seguro: Oculpando 80% da tela e rolável
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: BoxDecoration(
           color: cs.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: SafeArea(
-          top: false,
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Registrar Manejo',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w900)),
-                      IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    value: widget.canteiros.containsKey(_canteiroId)
-                        ? _canteiroId
-                        : null,
-                    decoration: const InputDecoration(
-                        labelText: 'Localização (Lote/Vaso)',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.place_outlined)),
-                    items: widget.canteiros.entries
-                        .map((e) => DropdownMenuItem(
-                            value: e.key, child: Text(e.value)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _canteiroId = v),
-                    validator: (v) => v == null ? 'Obrigatório' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    value: _tipo,
-                    decoration: const InputDecoration(
-                        labelText: 'Tipo de Atividade',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category_outlined)),
-                    items: _tiposManejo
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _tipo = v!),
-                  ),
-                  const SizedBox(height: 16),
-                  AppTextField(
-                    controller: _produtoCtrl,
-                    labelText: 'Produto/Ação Principal',
-                    hintText: _tipo == 'Adubação'
-                        ? 'Ex: Yoorin, Esterco Bovino...'
-                        : (_tipo == 'Controle de Pragas'
-                            ? 'Ex: Óleo de Nim, Calda Bordalesa...'
-                            : 'Ex: 10 min gotejamento...'),
-                    prefixIcon: Icons.shopping_bag_outlined,
-                  ),
-                  const SizedBox(height: 16),
-                  AppTextField(
-                    controller: _detalhesCtrl,
-                    labelText: 'Detalhes/Observações (Opcional)',
-                    hintText:
-                        'Ex: Aplicado no fim da tarde. Presença de joaninhas.',
-                    prefixIcon: Icons.notes,
-                    minLines: 2,
-                    maxLines: 4,
-                  ),
-                  const SizedBox(height: 24),
-                  AppButtons.elevatedIcon(
-                    onPressed: _salvando ? null : _salvar,
-                    icon: _salvando
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.save),
-                    label: Text(_salvando ? 'SALVANDO...' : 'SALVAR NO DIÁRIO'),
-                  )
+                  Text('Registrar Manejo',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w900)),
+                  IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close)),
                 ],
               ),
-            ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        value: widget.canteiros.containsKey(_canteiroId)
+                            ? _canteiroId
+                            : null,
+                        decoration: const InputDecoration(
+                            labelText: 'Localização (Lote)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.place_outlined)),
+                        items: widget.canteiros.entries
+                            .map((e) => DropdownMenuItem(
+                                value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _canteiroId = v),
+                        validator: (v) => v == null ? 'Obrigatório' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        value: _tipo,
+                        decoration: const InputDecoration(
+                            labelText: 'Atividade',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.category_outlined)),
+                        items: _tiposManejo
+                            .map((e) =>
+                                DropdownMenuItem(value: e, child: Text(e)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _tipo = v!),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _produtoCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Ação principal / Produto',
+                          hintText: _tipo == 'Adubação'
+                              ? 'Ex: Yoorin...'
+                              : 'Ex: 10 min de gotejamento...',
+                          prefixIcon: const Icon(Icons.shopping_bag_outlined),
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _detalhesCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Observações',
+                          hintText: 'Ex: Presença de joaninhas.',
+                          prefixIcon: Icon(Icons.notes),
+                          border: OutlineInputBorder(),
+                        ),
+                        minLines: 2,
+                        maxLines: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 50,
+                child: AppButtons.elevatedIcon(
+                  onPressed: _salvando ? null : _salvar,
+                  icon: _salvando
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.save),
+                  label: Text(_salvando ? 'SALVANDO...' : 'SALVAR NO DIÁRIO'),
+                ),
+              )
+            ],
           ),
         ),
       ),

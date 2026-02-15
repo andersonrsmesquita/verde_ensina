@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
 import '../../core/firebase/firebase_paths.dart';
@@ -20,457 +21,736 @@ class TelaGeradorCanteiros extends StatefulWidget {
 class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   List<Map<String, dynamic>> _canteirosSugeridos = [];
   bool _salvando = false;
-  bool _processando = true;
-  String? _erroProcessamento;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _processarInteligencia();
-    });
+    _processarInteligencia();
   }
 
+  // ===========================================================================
+  // Helpers robustos
+  // ===========================================================================
   double _asDouble(dynamic v) {
     if (v == null) return 0.0;
-    if (v is num) return v.toDouble();
-    if (v is String) {
-      if (v.isEmpty) return 0.0;
-      return double.tryParse(v.replaceAll(',', '.').trim()) ?? 0.0;
+
+    if (v is num) {
+      final d = v.toDouble();
+      if (d.isNaN || d.isInfinite) return 0.0;
+      return d;
     }
-    return 0.0;
+
+    final s = v.toString().replaceAll(',', '.').trim();
+    final d = double.tryParse(s) ?? 0.0;
+    if (d.isNaN || d.isInfinite) return 0.0;
+    return d;
   }
 
   int _asInt(dynamic v) {
     if (v == null) return 0;
-    if (v is num) return v.round();
-    if (v is String) {
-      if (v.isEmpty) return 0;
-      final d = double.tryParse(v.replaceAll(',', '.').trim());
-      return d != null ? d.round() : 0;
+
+    if (v is int) return v;
+
+    if (v is double) {
+      if (v.isNaN || v.isInfinite) return 0;
+      return v.round();
     }
-    return 0;
+
+    if (v is num) return v.round();
+    return int.tryParse(v.toString().trim()) ?? 0;
+  }
+
+  String _asString(dynamic v, {String fallback = ''}) {
+    final s = (v ?? '').toString().trim();
+    return s.isEmpty ? fallback : s;
   }
 
   String _nomePlanta(Map<String, dynamic> item) =>
-      (item['planta'] ?? 'Cultura').toString();
+      _asString(item['planta'], fallback: 'Planta');
 
   List<String> _listaString(dynamic v) {
-    if (v == null) return [];
-    if (v is List) return v.map((e) => e.toString()).toList();
-    return [];
-  }
-
-  void _processarInteligencia() async {
-    try {
-      setState(() {
-        _processando = true;
-        _erroProcessamento = null;
-      });
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
-      fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
-
-      final canteiros = <Map<String, dynamic>>[];
-
-      while (fila.isNotEmpty) {
-        final mestre = fila.removeAt(0);
-
-        final canteiro = <String, dynamic>{
-          'nome': 'Lote de ${_nomePlanta(mestre)}',
-          'plantas': [mestre],
-          'areaTotal': _asDouble(mestre['area']),
-          'evitar': _listaString(mestre['evitar']),
-          'par': _listaString(mestre['par']),
-        };
-
-        final sobrou = <Map<String, dynamic>>[];
-
-        for (final candidata in fila) {
-          if (_verificarCompatibilidade(canteiro, candidata)) {
-            (canteiro['plantas'] as List).add(candidata);
-            canteiro['areaTotal'] =
-                _asDouble(canteiro['areaTotal']) + _asDouble(candidata['area']);
-
-            (canteiro['evitar'] as List)
-                .addAll(_listaString(candidata['evitar']));
-            (canteiro['par'] as List).addAll(_listaString(candidata['par']));
-
-            _atualizarNomeAuto(canteiro);
-          } else {
-            sobrou.add(candidata);
-          }
-        }
-
-        fila
-          ..clear()
-          ..addAll(sobrou);
-
-        canteiros.add(canteiro);
-      }
-
-      if (mounted) {
-        setState(() {
-          _canteirosSugeridos = canteiros;
-          _processando = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _erroProcessamento = 'Erro ao calcular consórcios: $e';
-          _processando = false;
-        });
-      }
+    if (v == null) return <String>[];
+    if (v is List) {
+      return v
+          .map((e) => e.toString())
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
     }
+    return <String>[];
   }
 
-  bool _verificarCompatibilidade(
+  // ===========================================================================
+  // Sanitizador Firestore (anti abort() / NaN / tipos bizarros)
+  // ===========================================================================
+  Map<String, dynamic> _sanitizeMap(Map<String, dynamic> map) {
+    final val = _sanitize(map, r'$');
+    return (val as Map).cast<String, dynamic>();
+  }
+
+  dynamic _sanitize(dynamic value, String path) {
+    if (value == null) return null;
+
+    if (value is String || value is bool || value is int) return value;
+
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) {
+        throw ArgumentError(
+            'Firestore: double inválido em $path (NaN/Infinity).');
+      }
+      return value;
+    }
+
+    if (value is num) {
+      final d = value.toDouble();
+      if (d.isNaN || d.isInfinite) {
+        throw ArgumentError('Firestore: num inválido em $path (NaN/Infinity).');
+      }
+      return d;
+    }
+
+    if (value is Timestamp ||
+        value is GeoPoint ||
+        value is FieldValue ||
+        value is DocumentReference) {
+      return value;
+    }
+
+    if (value is DateTime) return Timestamp.fromDate(value);
+    if (value is Enum) return value.name;
+
+    if (value is List) {
+      return value.asMap().entries.map((e) {
+        return _sanitize(e.value, '$path[${e.key}]');
+      }).toList();
+    }
+
+    if (value is Map) {
+      final out = <String, dynamic>{};
+      for (final entry in value.entries) {
+        final k = entry.key;
+        if (k is! String) {
+          throw ArgumentError(
+            'Firestore: chave não-String em $path -> "$k" (${k.runtimeType})',
+          );
+        }
+        out[k] = _sanitize(entry.value, '$path.$k');
+      }
+      return out;
+    }
+
+    throw UnsupportedError(
+      'Firestore: tipo NÃO suportado em $path -> ${value.runtimeType}. '
+      'Converta antes de salvar.',
+    );
+  }
+
+  // ===========================================================================
+  // Inteligência de agrupamento
+  // ===========================================================================
+  bool _ehCompat(
       Map<String, dynamic> canteiro, Map<String, dynamic> candidata) {
     final nomeCandidata = _nomePlanta(candidata);
-    final evitarDoCanteiro = canteiro['evitar'] as List;
+    final inimigosCandidata = _listaString(candidata['evitar']);
 
+    final evitarDoCanteiro =
+        List<String>.from(canteiro['evitar'] as List? ?? const []);
     if (evitarDoCanteiro.contains(nomeCandidata)) return false;
 
-    final inimigosCandidata = _listaString(candidata['evitar']);
-    final plantasNoCanteiro = canteiro['plantas'] as List;
-
-    for (var p in plantasNoCanteiro) {
-      if (inimigosCandidata.contains(_nomePlanta(p))) return false;
+    final plantasNoCanteiro = List<Map<String, dynamic>>.from(
+        canteiro['plantas'] as List? ?? const []);
+    for (final p in plantasNoCanteiro) {
+      final plantaNoCanteiro = _nomePlanta(p);
+      if (inimigosCandidata.contains(plantaNoCanteiro)) return false;
     }
 
     return true;
   }
 
-  void _atualizarNomeAuto(Map<String, dynamic> canteiro) {
-    final plantas = canteiro['plantas'] as List;
-    final nomes = plantas.map((p) => _nomePlanta(p)).toSet().toList();
+  int _scorePreferencia(
+      Map<String, dynamic> canteiro, Map<String, dynamic> candidata) {
+    final nomeCandidata = _nomePlanta(candidata);
 
-    if (nomes.length > 1) {
-      final principal = nomes.first;
-      final qtdExtras = nomes.length - 1;
-      canteiro['nome'] = 'Consórcio: $principal + $qtdExtras cultura(s)';
+    final parDoCanteiro =
+        List<String>.from(canteiro['par'] as List? ?? const []);
+    final parDaCandidata = _listaString(candidata['par']);
+
+    int score = 0;
+
+    if (parDoCanteiro.contains(nomeCandidata)) score += 2;
+
+    final plantasNoCanteiro = List<Map<String, dynamic>>.from(
+        canteiro['plantas'] as List? ?? const []);
+    for (final p in plantasNoCanteiro) {
+      final nome = _nomePlanta(p);
+      if (parDaCandidata.contains(nome)) {
+        score += 2;
+        break;
+      }
     }
+
+    final area = _asDouble(candidata['area']);
+    if (area > 0 && area < 1.0) score += 1;
+
+    return score;
   }
 
+  void _atualizarNomeAuto(Map<String, dynamic> canteiro) {
+    final plantas = List<Map<String, dynamic>>.from(
+        canteiro['plantas'] as List? ?? const []);
+    final nomes = plantas.map(_nomePlanta).toList();
+
+    if (nomes.isEmpty) {
+      canteiro['nome'] = 'Canteiro';
+      return;
+    }
+    if (nomes.length == 1) {
+      canteiro['nome'] = 'Canteiro de ${nomes.first}';
+      return;
+    }
+
+    final top2 = nomes.take(2).toList();
+    final resto = nomes.length - 2;
+
+    canteiro['nome'] = resto > 0
+        ? 'Consórcio: ${top2.join(' + ')} +$resto'
+        : 'Consórcio: ${top2.join(' + ')}';
+  }
+
+  void _processarInteligencia() {
+    final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
+
+    fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
+
+    final canteiros = <Map<String, dynamic>>[];
+
+    while (fila.isNotEmpty) {
+      final mestre = fila.removeAt(0);
+
+      final canteiro = <String, dynamic>{
+        'nome': 'Canteiro de ${_nomePlanta(mestre)}',
+        'plantas': [mestre],
+        'areaTotal': _asDouble(mestre['area']),
+        'evitar': List<String>.from(_listaString(mestre['evitar'])),
+        'par': List<String>.from(_listaString(mestre['par'])),
+      };
+
+      final candidatasOrdenadas = List<Map<String, dynamic>>.from(fila)
+        ..sort((a, b) {
+          final sa = _scorePreferencia(canteiro, a);
+          final sb = _scorePreferencia(canteiro, b);
+          if (sb != sa) return sb.compareTo(sa);
+          return _asDouble(b['area']).compareTo(_asDouble(a['area']));
+        });
+
+      final sobrou = <Map<String, dynamic>>[];
+
+      for (final candidata in candidatasOrdenadas) {
+        if (_ehCompat(canteiro, candidata)) {
+          (canteiro['plantas'] as List).add(candidata);
+          canteiro['areaTotal'] =
+              _asDouble(canteiro['areaTotal']) + _asDouble(candidata['area']);
+
+          (canteiro['evitar'] as List)
+              .addAll(_listaString(candidata['evitar']));
+          (canteiro['par'] as List).addAll(_listaString(candidata['par']));
+
+          _atualizarNomeAuto(canteiro);
+        } else {
+          sobrou.add(candidata);
+        }
+      }
+
+      fila
+        ..clear()
+        ..addAll(sobrou);
+
+      canteiros.add(canteiro);
+    }
+
+    setState(() => _canteirosSugeridos = canteiros);
+  }
+
+  // ===========================================================================
+  // Totais
+  // ===========================================================================
+  int _totalMudas() {
+    int total = 0;
+    for (final c in _canteirosSugeridos) {
+      final plantas =
+          List<Map<String, dynamic>>.from(c['plantas'] as List? ?? const []);
+      for (final p in plantas) {
+        total += _asInt(p['mudas']);
+      }
+    }
+    return total;
+  }
+
+  double _totalArea() {
+    double total = 0;
+    for (final c in _canteirosSugeridos) {
+      total += _asDouble(c['areaTotal']);
+    }
+    return total;
+  }
+
+  // ===========================================================================
+  // Editar nome
+  // ===========================================================================
   Future<void> _editarNome(int index) async {
-    final controller =
-        TextEditingController(text: _canteirosSugeridos[index]['nome']);
-    final theme = Theme.of(context);
+    final atual =
+        _asString(_canteirosSugeridos[index]['nome'], fallback: 'Canteiro');
+    final controller = TextEditingController(text: atual);
 
     final novo = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTokens.radiusLg)),
-        title: const Text('Renomear Lote',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Renomear canteiro'),
         content: TextField(
           controller: controller,
           autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: InputDecoration(
-            hintText: 'Ex: Lote da Frente',
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            hintText: 'Ex: Canteiro Principal',
           ),
+          onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('CANCELAR',
-                  style: TextStyle(color: theme.colorScheme.outline))),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: theme.colorScheme.onPrimary),
-              child: const Text('SALVAR')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
         ],
       ),
     );
 
-    if (novo != null && novo.isNotEmpty) {
-      setState(() => _canteirosSugeridos[index]['nome'] = novo);
-    }
+    if (novo == null) return;
+    if (novo.trim().isEmpty) return;
+
+    setState(() => _canteirosSugeridos[index]['nome'] = novo.trim());
   }
 
   // ===========================================================================
-  // SALVAMENTO PADRONIZADO (SEM CAMPOS "largura"/"comprimento" ERRADOS)
+  // Firestore Save (batch + sanitize + AppMessenger)
   // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
-    if (_salvando) return;
-
-    final appSession = SessionScope.sessionOf(context);
+    final appSession = SessionScope.of(context).session;
     if (appSession == null) {
-      AppMessenger.error('Sessão inválida. Faça login novamente.');
+      AppMessenger.error('Selecione um espaço (tenant) para salvar.');
+      return;
+    }
+
+    if (_canteirosSugeridos.isEmpty) {
+      AppMessenger.warn('Nada para salvar ainda.');
       return;
     }
 
     setState(() => _salvando = true);
-    final batch = FirebaseFirestore.instance.batch();
+
+    final fs = FirebaseFirestore.instance;
+    final batch = fs.batch();
 
     try {
-      for (final sug in _canteirosSugeridos) {
-        final canteiroRef =
-            FirebasePaths.canteirosCol(appSession.tenantId).doc();
+      for (final sugestao in _canteirosSugeridos) {
+        final canteiroRef = FirebasePaths.canteirosCol(appSession.tenantId).doc();
 
-        final area = _asDouble(sug['areaTotal']);
-        final areaSafe = (area.isNaN || area.isInfinite) ? 0.0 : area;
+        final area = _asDouble(sugestao['areaTotal']);
+        const largura = 1.0;
+        final comprimento = area > 0 ? (area / largura) : 1.0;
 
-        // Regra simples: largura padrão 1.0m, comprimento = área / largura.
-        final double larguraM = 1.0;
-        final double comprimentoM = larguraM <= 0 ? 0.0 : (areaSafe / larguraM);
+        final plantas = List<Map<String, dynamic>>.from(
+            sugestao['plantas'] as List? ?? const []);
 
-        final plantas = List<Map<String, dynamic>>.from(sug['plantas']);
-        final culturasLista =
-            plantas.map((p) => _nomePlanta(p)).toSet().toList();
+        final culturas = plantas.map((p) => _nomePlanta(p)).toList();
         final mudasTotais =
             plantas.fold<int>(0, (acc, p) => acc + _asInt(p['mudas']));
 
-        final nome = (sug['nome'] ?? 'Lote').toString().trim();
-
         final canteiroPayload = <String, dynamic>{
           'uid_usuario': appSession.uid,
-          'nome': nome,
-          'nome_lower': nome.toLowerCase(),
-          'tipo': 'Canteiro',
-          'finalidade': 'consumo',
+          'nome': _asString(sugestao['nome'], fallback: 'Canteiro'),
+          'area_m2': double.parse(area.toStringAsFixed(2)),
+          'largura': largura,
+          'comprimento': double.parse(comprimento.toStringAsFixed(2)),
           'ativo': true,
           'status': 'ocupado',
-
-          // Medidas padronizadas (as telas/leitura esperam esses nomes)
-          'largura_m': double.parse(larguraM.toStringAsFixed(2)),
-          'comprimento_m': double.parse(comprimentoM.toStringAsFixed(2)),
-          'area_m2': double.parse(areaSafe.toStringAsFixed(2)),
-          'volume_l': 0.0,
-
-          'culturas': culturasLista,
+          'culturas': culturas,
           'mudas_totais': mudasTotais,
+          'plantas_planejadas': plantas.map((p) {
+            return <String, dynamic>{
+              'planta': _nomePlanta(p),
+              'mudas': _asInt(p['mudas']),
+              'area': _asDouble(p['area']),
+              'evitar': _listaString(p['evitar']),
+              'par': _listaString(p['par']),
+            };
+          }).toList(),
           'data_criacao': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-          'origem': 'ia_generator_consorcio',
+          'data_atualizacao': FieldValue.serverTimestamp(),
         };
 
-        batch.set(canteiroRef, _sanitizeMapFirestore(canteiroPayload));
+        batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
-        // Histórico de Plantio
-        final histRef =
-            FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
+        final histRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
-        final detalhesBuffer =
-            StringBuffer('Plantio (Formação de Consórcio):\n');
+        final nomes = <String>[];
+        var detalhes = 'Plantio Automático (Planejamento):\n';
         for (final p in plantas) {
-          detalhesBuffer.writeln(
-              '• ${_nomePlanta(p)}: ${_asInt(p['mudas'])} mudas (${_asDouble(p['area']).toStringAsFixed(1)}m²)');
+          final nome = _nomePlanta(p);
+          final mudas = _asInt(p['mudas']);
+          nomes.add(nome);
+          detalhes += '- $nome: $mudas mudas\n';
         }
 
-        batch.set(
-          histRef,
-          _sanitizeMapFirestore({
-            'canteiro_id': canteiroRef.id,
-            'canteiro_nome': nome,
-            'uid_usuario': appSession.uid,
-            'tipo_manejo': 'Plantio',
-            'produto': culturasLista.join(', '),
-            'detalhes': detalhesBuffer.toString(),
-            'data': FieldValue.serverTimestamp(),
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'concluido': true,
-          }),
-        );
+        final historicoPayload = <String, dynamic>{
+          'canteiro_id': canteiroRef.id,
+          'uid_usuario': appSession.uid,
+          'tipo_manejo': 'Plantio',
+          'produto': nomes.join(' + '),
+          'detalhes': detalhes,
+          'origem': 'planejamento',
+          'data': FieldValue.serverTimestamp(),
+          'quantidade_g': 0,
+          'concluido': false,
+          'data_colheita_prevista': Timestamp.fromDate(
+            DateTime.now().add(const Duration(days: 90)),
+          ),
+        };
+
+        batch.set(histRef, _sanitizeMap(historicoPayload));
       }
 
       await batch.commit();
 
       if (!mounted) return;
 
-      AppMessenger.success('Sucesso! Lotes gerados inteligentemente.');
       Navigator.of(context).popUntil((route) => route.isFirst);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        AppMessenger.success('✅ Canteiros criados e plantados!');
+      });
     } catch (e) {
-      AppMessenger.error('Erro ao salvar os lotes: $e');
+      AppMessenger.error('Erro ao salvar: $e');
+    } finally {
       if (mounted) setState(() => _salvando = false);
     }
   }
 
-  // Sanitização PRO Firestore: remove null, conserta NaN/Infinity, mantém tipos.
-  Map<String, dynamic> _sanitizeMapFirestore(Map<String, dynamic> map) {
-    final out = <String, dynamic>{};
-    map.forEach((k, v) {
-      final sanitized = _sanitizeValue(v);
-      if (sanitized != null) out[k] = sanitized;
-    });
-    return out;
+  // ===========================================================================
+  // UI (premium via Theme + AppUI)
+  // ===========================================================================
+  @override
+  Widget build(BuildContext context) {
+    final appSession = SessionScope.of(context).session;
+    if (appSession == null) {
+      return const Scaffold(
+        body: Center(child: Text('Selecione um espaço (tenant) para continuar.')),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Plano de Canteiros'),
+            actions: [
+              IconButton(
+                tooltip: 'Reprocessar',
+                onPressed: _salvando ? null : _processarInteligencia,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          body: _canteirosSugeridos.isEmpty
+              ? _EmptyState(onReprocessar: _processarInteligencia)
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
+                  children: [
+                    _SummaryCard(
+                      qtd: _canteirosSugeridos.length,
+                      areaTotal: _totalArea(),
+                      mudasTotal: _totalMudas(),
+                    ),
+                    const SizedBox(height: 12),
+                    ...List.generate(_canteirosSugeridos.length, (i) {
+                      final c = _canteirosSugeridos[i];
+                      final nome = _asString(c['nome'], fallback: 'Canteiro');
+                      final area = _asDouble(c['areaTotal']);
+
+                      const largura = 1.0;
+                      final comprimento = area > 0 ? (area / largura) : 1.0;
+
+                      final plantas = List<Map<String, dynamic>>.from(
+                          c['plantas'] as List? ?? const []);
+                      final mudas = plantas.fold<int>(
+                          0, (acc, p) => acc + _asInt(p['mudas']));
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _CanteiroCard(
+                          index: i + 1,
+                          nome: nome,
+                          area: area,
+                          largura: largura,
+                          comprimento: comprimento,
+                          culturasCount: plantas.length,
+                          mudasTotal: mudas,
+                          plantas: plantas,
+                          onRename: _salvando ? null : () => _editarNome(i),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                    Card(
+                      child: ListTile(
+                        leading: Icon(Icons.info_outline, color: cs.primary),
+                        title: const Text('Antes de salvar'),
+                        subtitle: const Text(
+                          'Dica: toque em “renomear” se quiser ajustar os nomes. '
+                          'Depois é só aprovar e o app já cria os canteiros e registra o plantio.',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+          bottomNavigationBar: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              child: AppButtons.elevatedIcon(
+                fullWidth: true,
+                loading: _salvando,
+                onPressed: _salvando || _canteirosSugeridos.isEmpty
+                    ? null
+                    : _criarTodosCanteiros,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('APROVAR E PLANTAR AGORA'),
+              ),
+            ),
+          ),
+        ),
+
+        // overlay de bloqueio (sem inventar estilo; só Theme)
+        if (_salvando) ...[
+          const ModalBarrier(dismissible: false, color: Colors.black26),
+          Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Salvando planejamento...'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
+}
 
-  dynamic _sanitizeValue(dynamic v) {
-    if (v == null) return null;
+// ===========================================================================
+// Widgets “premium” sem decoração caseira (só Theme / Card / Chip)
+// ===========================================================================
+class _SummaryCard extends StatelessWidget {
+  final int qtd;
+  final double areaTotal;
+  final int mudasTotal;
 
-    if (v is double) {
-      if (v.isNaN || v.isInfinite) return 0.0;
-      return v;
-    }
+  const _SummaryCard({
+    required this.qtd,
+    required this.areaTotal,
+    required this.mudasTotal,
+  });
 
-    if (v is Map<String, dynamic>) {
-      return _sanitizeMapFirestore(v);
-    }
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
 
-    if (v is List) {
-      return v.map(_sanitizeValue).where((e) => e != null).toList();
-    }
-
-    return v; // int, String, bool, Timestamp, FieldValue, etc.
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.auto_awesome, color: cs.primary),
+              title: const Text(
+                'Sugestão Inteligente',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text('A IA organizou seu consumo em $qtd canteiros.'),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _MiniKpi(
+                    label: 'Área total',
+                    value: '${areaTotal.toStringAsFixed(2)} m²',
+                    icon: Icons.square_foot,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _MiniKpi(
+                    label: 'Mudas',
+                    value: mudasTotal.toString(),
+                    icon: Icons.grass,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+class _MiniKpi extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _MiniKpi({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    if (_processando) {
-      return Scaffold(
-        backgroundColor: cs.surfaceContainerLowest,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: AppTokens.lg),
-              Text(
-                'A inteligência agronômica está calculando os melhores consórcios...',
-                style: theme.textTheme.bodyLarge
-                    ?.copyWith(color: cs.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_erroProcessamento != null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Erro de Cálculo')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppTokens.xl),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: cs.error),
-                const SizedBox(height: AppTokens.md),
-                Text(_erroProcessamento!, textAlign: TextAlign.center),
-                const SizedBox(height: AppTokens.xl),
-                AppButtons.outlinedIcon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Voltar e revisar'),
-                )
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: cs.surfaceContainerLowest,
-      appBar: AppBar(
-        title: const Text('Mapeamento Inteligente'),
-        centerTitle: true,
-        backgroundColor: cs.surface,
-        foregroundColor: cs.primary,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Recalcular Lotes',
-            onPressed: _salvando ? null : _processarInteligencia,
-          ),
-        ],
-      ),
-      body: _canteirosSugeridos.isEmpty
-          ? const Center(child: Text('Nenhum item compatível para organizar.'))
-          : Column(
-              children: [
-                _buildAgronomicInsightPanel(theme, cs),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(
-                        AppTokens.md, 0, AppTokens.md, AppTokens.xl * 3),
-                    itemCount: _canteirosSugeridos.length,
-                    itemBuilder: (context, i) {
-                      final sug = _canteirosSugeridos[i];
-                      return _CanteiroSugeridoCard(
-                        index: i + 1,
-                        sugestao: sug,
-                        onRename: () => _editarNome(i),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(AppTokens.lg),
-        decoration: BoxDecoration(
-          color: cs.surface,
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
-            ),
-          ],
-        ),
-        child: AppButtons.elevatedIcon(
-          onPressed: _salvando ? null : _criarTodosCanteiros,
-          icon: _salvando
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.done_all),
-          label: Text(_salvando ? 'CRIANDO LOTES...' : 'APROVAR E CRIAR LOTES'),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAgronomicInsightPanel(ThemeData theme, ColorScheme cs) {
     return Container(
-      margin: const EdgeInsets.all(AppTokens.md),
-      padding: const EdgeInsets.all(AppTokens.md),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.secondaryContainer.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-        border: Border.all(color: cs.secondaryContainer),
+        border: Border.all(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(14),
+        color: cs.surface,
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.tips_and_updates, color: cs.onSecondaryContainer),
-          const SizedBox(width: AppTokens.md),
+          Icon(icon, color: cs.primary),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Uso Eficiente da Terra (UET)',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        color: cs.onSecondaryContainer,
-                        fontWeight: FontWeight.bold)),
+                Text(label, style: theme.textTheme.bodySmall),
                 const SizedBox(height: 4),
                 Text(
-                  'Agrupamos suas plantas usando a técnica de Consórcio. Culturas aliadas compartilham o mesmo lote, reduzindo pragas e aumentando a produção por m²!',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: cs.onSecondaryContainer),
+                  value,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+class _CanteiroCard extends StatelessWidget {
+  final int index;
+  final String nome;
+  final double area;
+  final int culturasCount;
+  final int mudasTotal;
+  final double largura;
+  final double comprimento;
+  final List<Map<String, dynamic>> plantas;
+  final VoidCallback? onRename;
+
+  const _CanteiroCard({
+    required this.index,
+    required this.nome,
+    required this.area,
+    required this.culturasCount,
+    required this.mudasTotal,
+    required this.largura,
+    required this.comprimento,
+    required this.plantas,
+    required this.onRename,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: ExpansionTile(
+        title: Text(
+          nome,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          'Canteiro #$index • ${area.toStringAsFixed(2)} m²',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: IconButton(
+          tooltip: 'Renomear',
+          onPressed: onRename,
+          icon: const Icon(Icons.edit_outlined),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _InfoChip(icon: Icons.grass, label: '$mudasTotal mudas'),
+              _InfoChip(icon: Icons.layers, label: '$culturasCount culturas'),
+              _InfoChip(
+                icon: Icons.straighten,
+                label:
+                    '${largura.toStringAsFixed(1)}m x ${comprimento.toStringAsFixed(1)}m',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Culturas neste canteiro',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: plantas.map((p) {
+              final planta = (p['planta'] ?? 'Planta').toString();
+              final mudas = (p['mudas'] ?? 0).toString();
+              return Chip(
+                label: Text('$planta ($mudas x)'),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -478,131 +758,60 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   }
 }
 
-class _CanteiroSugeridoCard extends StatelessWidget {
-  final int index;
-  final Map<String, dynamic> sugestao;
-  final VoidCallback onRename;
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
 
-  const _CanteiroSugeridoCard({
-    required this.index,
-    required this.sugestao,
-    required this.onRename,
+  const _InfoChip({
+    required this.icon,
+    required this.label,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final plantas = List<Map<String, dynamic>>.from(sugestao['plantas']);
+    return Chip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+    );
+  }
+}
 
-    double area = 0.0;
-    try {
-      area = double.parse(sugestao['areaTotal'].toString());
-    } catch (_) {}
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onReprocessar;
 
-    final double custoMaoDeObra = area * 0.25;
-    final isConsorcio = plantas.length > 1;
+  const _EmptyState({
+    required this.onReprocessar,
+  });
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppTokens.sm),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(
-            color: isConsorcio ? cs.primary : cs.outlineVariant,
-            width: isConsorcio ? 1.5 : 1.0),
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-      ),
-      color: cs.surface,
-      child: ExpansionTile(
-        backgroundColor: Colors.transparent,
-        shape: const Border(),
-        leading: CircleAvatar(
-          backgroundColor:
-              isConsorcio ? cs.primary : cs.surfaceContainerHighest,
-          child: Text('#$index',
-              style: TextStyle(
-                  color: isConsorcio ? cs.onPrimary : cs.onSurface,
-                  fontWeight: FontWeight.bold)),
-        ),
-        title: Text(
-          sugestao['nome'],
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(Icons.crop_free, size: 14, color: cs.onSurfaceVariant),
-                const SizedBox(width: 4),
-                Text('${area.toStringAsFixed(1)} m²',
-                    style: TextStyle(color: cs.onSurfaceVariant)),
-                const SizedBox(width: 12),
-                Icon(Icons.handyman, size: 14, color: cs.onSurfaceVariant),
-                const SizedBox(width: 4),
-                Text('Fase 1: ${custoMaoDeObra.toStringAsFixed(1)}h',
-                    style: TextStyle(color: cs.onSurfaceVariant)),
-              ],
+            const Icon(Icons.info_outline, size: 44),
+            const SizedBox(height: 12),
+            const Text(
+              'Nada para organizar ainda.',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              textAlign: TextAlign.center,
             ),
-            if (isConsorcio) ...[
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: cs.primaryContainer,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text('CONSÓRCIO INTELIGENTE',
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: cs.onPrimaryContainer)),
-              )
-            ]
+            const SizedBox(height: 6),
+            Text(
+              'Volte ao planejamento, selecione as culturas e tente de novo.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            AppButtons.outlinedIcon(
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reprocessar'),
+              onPressed: onReprocessar,
+            ),
           ],
         ),
-        trailing: IconButton(
-          icon: Icon(Icons.edit_outlined, color: cs.outline),
-          onPressed: onRename,
-          tooltip: 'Renomear',
-        ),
-        children: [
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(AppTokens.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('COMPOSIÇÃO DO LOTE:',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                        color: cs.primary, fontWeight: FontWeight.bold)),
-                const SizedBox(height: AppTokens.sm),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: plantas.map((p) {
-                    return Chip(
-                      avatar: CircleAvatar(
-                        backgroundColor: cs.secondary,
-                        child: Text(
-                          p['mudas'].toString(),
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: cs.onSecondary,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      label: Text(p['planta'].toString()),
-                      backgroundColor: cs.secondaryContainer,
-                      side: BorderSide.none,
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -41,7 +41,9 @@ class FirebasePaths {
   // =========================
 
   // Canteiros
-  static CollectionReference<Map<String, dynamic>> canteirosCol(String tenantId) =>
+  static CollectionReference<Map<String, dynamic>> canteirosCol(
+    String tenantId,
+  ) =>
       tenantRef(tenantId).collection('canteiros');
 
   static DocumentReference<Map<String, dynamic>> canteiroRef(
@@ -78,12 +80,18 @@ class FirebasePaths {
       tenantRef(tenantId).collection('analises_solo');
 
   // (Preparado) Irrigação, Pragas, Finanças, etc.
-  static CollectionReference<Map<String, dynamic>> irrigacaoCol(String tenantId) =>
+  static CollectionReference<Map<String, dynamic>> irrigacaoCol(
+    String tenantId,
+  ) =>
       tenantRef(tenantId).collection('irrigacao');
 
-  static CollectionReference<Map<String, dynamic>> pragasCol(String tenantId) =>
+  static CollectionReference<Map<String, dynamic>> pragasCol(
+    String tenantId,
+  ) =>
       tenantRef(tenantId).collection('pragas');
 
-  static CollectionReference<Map<String, dynamic>> financeiroCol(String tenantId) =>
+  static CollectionReference<Map<String, dynamic>> financeiroCol(
+    String tenantId,
+  ) =>
       tenantRef(tenantId).collection('financeiro');
 }
