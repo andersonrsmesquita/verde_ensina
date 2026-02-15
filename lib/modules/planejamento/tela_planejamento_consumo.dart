@@ -330,7 +330,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           height: altura,
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
           child: SafeArea(
@@ -338,22 +338,26 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(Icons.grid_view, color: Colors.green),
-                    SizedBox(width: 10),
-                    Text(
-                      'Salvar em qual lote?',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    const Row(
+                      children: [
+                        Icon(Icons.grid_view, color: Colors.green),
+                        SizedBox(width: 10),
+                        Text('Salvar em qual Lote?',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
+                      ],
                     ),
+                    IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(sheetContext)),
                   ],
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Selecione o local onde este planejamento ficará salvo.',
-                  style: TextStyle(color: Colors.grey),
-                ),
+                const Text('Selecione o local onde este plantio ficará salvo.',
+                    style: TextStyle(color: Colors.grey)),
                 const SizedBox(height: 16),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
@@ -361,18 +365,18 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                         .where('ativo', isEqualTo: true)
                         .snapshots(),
                     builder: (sbContext, snapshot) {
-                      if (snapshot.hasError) {
+                      if (snapshot.hasError)
                         return const Center(
                             child: Text('Erro ao carregar lotes.'));
-                      }
-                      if (snapshot.connectionState == ConnectionState.waiting) {
+                      if (snapshot.connectionState == ConnectionState.waiting)
                         return const Center(child: CircularProgressIndicator());
-                      }
 
                       final docs = snapshot.data?.docs ?? [];
                       if (docs.isEmpty) {
                         return const Center(
-                            child: Text('Você ainda não tem lotes ativos.'));
+                            child: Text(
+                                'Você ainda não tem lotes ativos. Vá no menu "Locais" e crie um lote primeiro.',
+                                textAlign: TextAlign.center));
                       }
 
                       final ordenados = [...docs]..sort((a, b) {
@@ -396,17 +400,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           final selecionado = _canteiroId == doc.id;
 
                           return ListTile(
-                            title: Text(
-                              nome,
-                              style: TextStyle(
-                                fontWeight: selecionado
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: selecionado
-                                    ? Colors.green.shade800
-                                    : Colors.black87,
-                              ),
-                            ),
+                            title: Text(nome,
+                                style: TextStyle(
+                                    fontWeight: selecionado
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: selecionado
+                                        ? Colors.green.shade800
+                                        : Colors.black87)),
                             trailing: selecionado
                                 ? const Icon(Icons.check_circle,
                                     color: Colors.green)
@@ -496,7 +497,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       return;
     }
     if (_canteiroId == null) {
-      _snack('Selecione um lote no menu superior antes de gerar.',
+      _snack(
+          'Por favor, selecione um lote no aviso laranja antes de gerar o plano.',
           isError: true);
       _selecionarCanteiro();
       return;
@@ -564,10 +566,9 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         maoDeObraTotal: horasMaoDeObraTotal,
       );
 
-      // Desliga o loading ANTES do navegador (isso evita o crash Assert dependent)
+      // Desliga o loading ANTES do navegador para não bugar a árvore do Flutter
       if (mounted) setState(() => _salvando = false);
 
-      // Delay minúsculo pro framework respirar e desenhar o botão normal
       await Future.delayed(const Duration(milliseconds: 100));
 
       if (!mounted) return;
@@ -586,6 +587,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final listaCulturasOrdenada = _dadosProdutividade.keys.toList()..sort();
 
     double areaTotal = 0;
@@ -624,20 +626,20 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           (areaItem * 0.016);
       horasSemanaisTotal += (horasItem / cicloSemanas);
 
-      return Container(
+      return Card(
         margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: cs.outlineVariant),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
         ),
         child: ListTile(
           contentPadding: const EdgeInsets.all(12),
           leading: CircleAvatar(
-            backgroundColor: Colors.green.shade50,
+            backgroundColor: cs.primaryContainer,
             child: Text('${plantasReais}x',
                 style: TextStyle(
-                    color: Colors.green.shade700,
+                    color: cs.onPrimaryContainer,
                     fontWeight: FontWeight.bold,
                     fontSize: 12)),
           ),
@@ -647,7 +649,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('${meta.toStringAsFixed(1)} ${info['unit']} desejados',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
               const SizedBox(height: 4),
               Text('Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',
                   style: const TextStyle(
@@ -655,12 +657,12 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             ],
           ),
           trailing: PopupMenuButton(
-            icon: const Icon(Icons.more_vert, color: Colors.grey),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Editar')),
+            icon: Icon(Icons.more_vert, color: cs.outline),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit', child: Text('Editar')),
               PopupMenuItem(
                   value: 'delete',
-                  child: Text('Remover', style: TextStyle(color: Colors.red))),
+                  child: Text('Remover', style: TextStyle(color: cs.error))),
             ],
             onSelected: (value) {
               if (value == 'edit') _iniciarEdicao(idx);
@@ -675,30 +677,30 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     double aduboTotal = areaTotal * 3.0;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Planejamento de Plantio',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
+          },
+        ),
+        title: const Text('Planejamento',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: false,
+        backgroundColor: cs.surface,
+        foregroundColor: cs.primary,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.green),
-        actions: [
-          TextButton.icon(
-            onPressed: _selecionarCanteiro,
-            icon: const Icon(Icons.grid_view, color: Colors.green),
-            label: Text(_canteiroNome == null ? 'Lote' : 'Trocar Lote',
-                style: const TextStyle(color: Colors.green)),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: cs.surface,
                 borderRadius:
                     const BorderRadius.vertical(bottom: Radius.circular(24)),
                 boxShadow: [
@@ -711,61 +713,76 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _canteiroId == null
-                          ? Colors.orange.shade50
-                          : Colors.green.shade50,
+                  // AVISO LARANJA / VERDE QUE AGORA É UM BOTÃO GIGANTE
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _selecionarCanteiro,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
                           color: _canteiroId == null
-                              ? Colors.orange.shade200
-                              : Colors.green.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                            _canteiroId == null
-                                ? Icons.warning_amber
-                                : Icons.check_circle,
-                            color: _canteiroId == null
-                                ? Colors.orange
-                                : Colors.green),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _canteiroId == null
-                                ? 'Selecione um Lote para salvar o planejamento (Ícone 🟩 acima).'
-                                : 'Salvando em: $_canteiroNome',
-                            style: TextStyle(
-                                color: _canteiroId == null
-                                    ? Colors.orange.shade900
-                                    : Colors.green.shade900,
-                                fontWeight: FontWeight.bold),
-                          ),
+                              ? cs.errorContainer
+                              : cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color:
+                                  _canteiroId == null ? cs.error : cs.primary),
                         ),
-                      ],
+                        child: Row(
+                          children: [
+                            Icon(
+                              _canteiroId == null
+                                  ? Icons.warning_amber
+                                  : Icons.check_circle,
+                              color: _canteiroId == null
+                                  ? cs.onErrorContainer
+                                  : cs.onPrimaryContainer,
+                              size: 28,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _canteiroId == null
+                                    ? 'CLIQUE AQUI PARA SELECIONAR UM LOTE'
+                                    : 'Lote selecionado: $_canteiroNome\n(Clique para trocar)',
+                                style: TextStyle(
+                                  color: _canteiroId == null
+                                      ? cs.onErrorContainer
+                                      : cs.onPrimaryContainer,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Icon(Icons.touch_app,
+                                color: _canteiroId == null
+                                    ? cs.onErrorContainer
+                                    : cs.onPrimaryContainer),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 32),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                           _editandoIndex != null
-                              ? 'Editando...'
+                              ? 'Editando Planta...'
                               : 'O que vamos plantar?',
                           style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
+                              fontSize: 18, fontWeight: FontWeight.bold)),
                       if (_editandoIndex != null)
                         TextButton.icon(
                             onPressed: _cancelarEdicao,
-                            icon: const Icon(Icons.close,
-                                size: 16, color: Colors.red),
-                            label: const Text('Cancelar',
-                                style: TextStyle(color: Colors.red))),
+                            icon: Icon(Icons.close, size: 16, color: cs.error),
+                            label: Text('Cancelar',
+                                style: TextStyle(color: cs.error))),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -784,7 +801,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                               )
                             : DropdownButtonFormField<String>(
                                 value: _culturaSelecionada,
-                                hint: const Text('Selecione...'),
+                                hint: const Text('Selecione a planta...'),
                                 isExpanded: true,
                                 items: listaCulturasOrdenada
                                     .map((k) => DropdownMenuItem(
@@ -806,9 +823,10 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           _culturaSelecionada = null;
                           _customNameController.clear();
                         }),
+                        tooltip: 'Digitar outro nome',
                         icon: Icon(
                             _modoPersonalizado ? Icons.list : Icons.keyboard,
-                            color: Colors.green),
+                            color: cs.primary),
                       ),
                       Expanded(
                         flex: 2,
@@ -835,10 +853,10 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
-                    height: 48,
+                    height: 50,
                     child: ElevatedButton.icon(
                       onPressed: _salvarItem,
                       icon: Icon(_editandoIndex != null
@@ -850,8 +868,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                               : 'ADICIONAR À LISTA',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                          foregroundColor: Colors.white,
+                          backgroundColor: cs.primary,
+                          foregroundColor: cs.onPrimary,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12))),
                     ),
@@ -865,12 +883,12 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                 child: Column(
                   children: [
                     Icon(Icons.spa_outlined,
-                        size: 80, color: Colors.grey.shade300),
+                        size: 80, color: cs.outlineVariant),
                     const SizedBox(height: 16),
-                    const Text('Sua lista está vazia.',
+                    Text('Sua lista está vazia.',
                         style: TextStyle(
                             fontSize: 16,
-                            color: Colors.grey,
+                            color: cs.onSurfaceVariant,
                             fontWeight: FontWeight.bold)),
                   ],
                 ),
@@ -885,16 +903,27 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                          color: Colors.green.shade800,
-                          borderRadius: BorderRadius.circular(16)),
+                        gradient: LinearGradient(
+                            colors: [cs.primary, cs.secondary],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                              color: cs.primary.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5))
+                        ],
+                      ),
                       child: Column(
                         children: [
                           const Text('ESTIMATIVA TOTAL DO SISTEMA',
                               style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 12)),
-                          const Divider(color: Colors.white24, height: 25),
+                                  fontSize: 12,
+                                  letterSpacing: 1.0)),
+                          const Divider(color: Colors.white24, height: 30),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
@@ -912,7 +941,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                                   label: 'Água Aprox.'),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 20),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
@@ -941,7 +970,15 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
-        color: Colors.white,
+        decoration: BoxDecoration(
+          color: cs.surface,
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5))
+          ],
+        ),
         child: ElevatedButton.icon(
           onPressed: _salvando ? null : _gerarESalvarEIrParaGerador,
           icon: _salvando
@@ -954,11 +991,12 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           label: Text(_salvando ? 'PROCESSANDO...' : 'GERAR PLANO INTELIGENTE',
               style: const TextStyle(fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue.shade800,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12))),
+            backgroundColor: cs.primary,
+            foregroundColor: cs.onPrimary,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
         ),
       ),
     );
@@ -994,7 +1032,7 @@ class _InfoResumo extends StatelessWidget {
             Text(valor,
                 style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold)),
             const SizedBox(width: 4),
             Text(unidade,

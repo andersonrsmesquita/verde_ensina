@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/ui/app_ui.dart';
 import '../../core/firebase/firebase_paths.dart';
@@ -32,9 +31,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     });
   }
 
-  // ===========================================================================
-  // Helpers Robustos (Anti-Crash)
-  // ===========================================================================
   double _asDouble(dynamic v) {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
@@ -65,9 +61,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     return [];
   }
 
-  // ===========================================================================
-  // Inteligência de Agrupamento (Consórcio e Alelopatia)
-  // ===========================================================================
   void _processarInteligencia() async {
     try {
       setState(() {
@@ -75,8 +68,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         _erroProcessamento = null;
       });
 
-      await Future.delayed(
-          const Duration(milliseconds: 500)); // UX de processamento
+      await Future.delayed(const Duration(milliseconds: 500));
 
       final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
       fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
@@ -203,9 +195,12 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   }
 
   // ===========================================================================
-  // Persistência no Banco (Firebase)
+  // MÁGICA: SALVAMENTO PROTEGIDO (FIM DA MULTIPLICAÇÃO)
   // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
+    if (_salvando)
+      return; // 🛡️ Bloqueio de Duplo Clique! Se já estiver salvando, ignora novos cliques.
+
     final appSession = SessionScope.sessionOf(context);
     if (appSession == null) {
       AppMessenger.error('Sessão inválida. Faça login novamente.');
@@ -245,7 +240,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
         batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
-        // Cria o histórico de "Plantio" na linha do tempo
+        // Cria o histórico de "Plantio"
         final histRef =
             FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
 
@@ -274,13 +269,14 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       await batch.commit();
 
       if (!mounted) return;
+
+      AppMessenger.success('Sucesso! Lotes gerados inteligentemente.');
+      // O popUntil garante que a tela feche com segurança até voltar para o início.
       Navigator.of(context).popUntil((route) => route.isFirst);
-      AppMessenger.success(
-          'Sucesso! ${_canteirosSugeridos.length} Lotes gerados inteligentemente.');
     } catch (e) {
       AppMessenger.error('Erro ao salvar os lotes. Tente novamente.');
-    } finally {
-      if (mounted) setState(() => _salvando = false);
+      if (mounted)
+        setState(() => _salvando = false); // Libera o botão se der erro
     }
   }
 
@@ -399,7 +395,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     );
   }
 
-  // Painel Inteligente baseado no manual de Consórcio e Rotação
   Widget _buildAgronomicInsightPanel(ThemeData theme, ColorScheme cs) {
     return Container(
       margin: const EdgeInsets.all(AppTokens.md),
@@ -468,7 +463,6 @@ class _CanteiroSugeridoCard extends StatelessWidget {
       area = double.parse(sugestao['areaTotal'].toString());
     } catch (_) {}
 
-    // Custo Operacional Fase 1: 0.25h / m² para preparar o lote, adubar e plantar
     final double custoMaoDeObra = area * 0.25;
 
     final isConsorcio = plantas.length > 1;
