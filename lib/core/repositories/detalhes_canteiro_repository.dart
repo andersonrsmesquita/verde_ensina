@@ -1,6 +1,57 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firebase_paths.dart';
 
+// ===========================================================================
+// ENUM E CALCULADORA AGRONÔMICA CENTRALIZADA
+// Baseada nos manuais oficiais de olericultura e agricultura orgânica.
+// ===========================================================================
+
+enum TipoAdubo { bovinoOuComposto, avesOuBokashi, tortaMamona }
+
+class CalculadoraAgronomica {
+  /// Calcula a água diária: 5L por m² (em dias sem chuva)
+  static double calcularAguaDiariaL(double areaM2) => areaM2 * 5.0;
+
+  /// Calcula a adubação base para canteiros de acordo com o tipo de adubo orgânico
+  static double calcularAduboBaseKg(double areaM2, TipoAdubo tipo) {
+    switch (tipo) {
+      case TipoAdubo.bovinoOuComposto:
+        return areaM2 * 3.0; // 3 kg/m²
+      case TipoAdubo.avesOuBokashi:
+        return areaM2 * 1.0; // 1 kg/m²
+      case TipoAdubo.tortaMamona:
+        return areaM2 * 0.3; // 300g/m²
+    }
+  }
+
+  /// Calcula calcário: 200g/m² (padrão) ou 250g/m² (solo argiloso)
+  static double calcularCalcarioKg(double areaM2, {bool soloArgiloso = false}) {
+    return areaM2 * (soloArgiloso ? 0.25 : 0.20);
+  }
+
+  /// Calcula fosfato: 150g/m² (padrão) ou 200g/m² (solo argiloso)
+  static double calcularFosfatoKg(double areaM2, {bool soloArgiloso = false}) {
+    return areaM2 * (soloArgiloso ? 0.20 : 0.15);
+  }
+
+  /// Calcula o tempo de Mão de Obra total do ciclo (em horas)
+  static double calcularMaoDeObraTotalHoras(double areaM2, int diasCiclo) {
+    int semanas = (diasCiclo / 7).ceil();
+    if (semanas < 1) semanas = 1;
+
+    final horasFase1 = areaM2 * 0.25; // Limpeza, canteiro, adubação, plantio
+    final horasFase2 =
+        areaM2 * 0.083 * semanas; // Irrigação, pulverização, capina
+    final horasFase3 = areaM2 * 0.016; // Monitoramento, colheita, gestão
+
+    return horasFase1 + horasFase2 + horasFase3;
+  }
+}
+
+// ===========================================================================
+// REPOSITÓRIO
+// ===========================================================================
+
 class DetalhesCanteiroRepository {
   final String tenantId;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -15,6 +66,10 @@ class DetalhesCanteiroRepository {
     final s = v.toString().trim().replaceAll(',', '.');
     return double.tryParse(s) ?? 0.0;
   }
+
+  // ===========================================================================
+  // CONSULTAS (READ / WATCH)
+  // ===========================================================================
 
   // Escuta os dados do Canteiro em Tempo Real
   Stream<DocumentSnapshot<Map<String, dynamic>>> watchCanteiro(
@@ -32,6 +87,10 @@ class DetalhesCanteiroRepository {
         .where('uid_usuario', isEqualTo: uid)
         .orderBy('data', descending: true);
   }
+
+  // ===========================================================================
+  // EDIÇÃO SIMPLES E EXCLUSÃO
+  // ===========================================================================
 
   // Atualizar Status (Ocupado, Livre, Manutenção)
   Future<void> atualizarStatus(String canteiroId, String novoStatus) async {
@@ -61,6 +120,117 @@ class DetalhesCanteiroRepository {
   Future<void> excluirItemHistorico(String historicoId) async {
     await FirebasePaths.historicoManejoCol(tenantId).doc(historicoId).delete();
   }
+
+  // ===========================================================================
+  // NOVO: PLANEJAMENTO (USANDO A CALCULADORA AGRONÔMICA)
+  // ===========================================================================
+
+  Future<String> gerarESalvarPlanejamento({
+    required String uid,
+    required String canteiroId,
+    required List<Map<String, dynamic>> listaDesejos,
+    required Map<String, Map<String, dynamic>>
+        dadosCulturas, // O GuiaCulturas.dados
+    TipoAdubo tipoAduboSelecionado =
+        TipoAdubo.bovinoOuComposto, // Configuração padrão
+    String regiaoBase = 'Sudeste',
+  }) async {
+    double areaTotalCalculada = 0.0;
+    double horasMaoDeObraTotal = 0.0;
+
+    final itensProcessados = listaDesejos.map((item) {
+      final nome = item['planta'] as String;
+      final meta = (item['meta'] as num).toDouble();
+
+      // Busca dados agronômicos do GuiaCulturas (fallback seguro se não existir)
+      final info = dadosCulturas[nome] ??
+          {
+            'yield': 1.0,
+            'unit': 'un',
+            'espaco': 0.5,
+            'cicloDias': 60,
+            'evitar': <dynamic>[],
+            'par': <dynamic>[],
+            'cat': 'Geral',
+            'icone': '🌱'
+          };
+
+      final yieldVal = (info['yield'] as num).toDouble();
+      final espacoVal = (info['espaco'] as num).toDouble();
+      final cicloDias = (info['cicloDias'] as int?) ?? 60;
+
+      // Cálculo: Margem de segurança de 10% na estimativa de mudas
+      final mudasCalc = meta / yieldVal;
+      final mudasReais = (mudasCalc * 1.1).ceil();
+      final areaNecessaria = mudasReais * espacoVal;
+
+      // Chama a Calculadora Centralizada
+      final horasTotaisCultura =
+          CalculadoraAgronomica.calcularMaoDeObraTotalHoras(
+              areaNecessaria, cicloDias);
+
+      areaTotalCalculada += areaNecessaria;
+      horasMaoDeObraTotal += horasTotaisCultura;
+
+      return <String, dynamic>{
+        'planta': nome,
+        'mudas': mudasReais,
+        'area': areaNecessaria,
+        'ciclo_dias': cicloDias,
+        'horas_totais': horasTotaisCultura,
+        'evitar': info['evitar'] ?? <dynamic>[],
+        'par': info['par'] ?? <dynamic>[],
+        'cat': info['cat'] ?? 'Geral',
+        'icone': info['icone'] ?? '🌱',
+      };
+    }).toList();
+
+    // Cálculos Consolidados do Lote/Canteiro usando a Calculadora
+    final aguaTotal =
+        CalculadoraAgronomica.calcularAguaDiariaL(areaTotalCalculada);
+    final aduboTotal = CalculadoraAgronomica.calcularAduboBaseKg(
+        areaTotalCalculada, tipoAduboSelecionado);
+
+    // Persistência no Firebase (Batch para garantir Atomicidade)
+    final batch = _db.batch();
+    final canteiroRef = FirebasePaths.canteiroRef(tenantId, canteiroId);
+    final planejamentoRef =
+        FirebasePaths.canteiroPlanejamentosCol(tenantId, canteiroId).doc();
+
+    final resumo = <String, dynamic>{
+      'itens_qtd': listaDesejos.length,
+      'area_ocupada_m2': areaTotalCalculada,
+      'agua_l_dia': aguaTotal,
+      'adubo_kg_ciclo': aduboTotal,
+      'mao_de_obra_h_total': horasMaoDeObraTotal,
+      'regiao_base': regiaoBase,
+      'planejamentoId': planejamentoRef.id,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    batch.set(planejamentoRef, {
+      'uid_criador': uid,
+      'tipo': 'consumo',
+      'status': 'ativo',
+      'itens_input': listaDesejos,
+      'itens_calculados': itensProcessados,
+      'metricas': resumo,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.update(canteiroRef, {
+      'planejamento_ativo': resumo,
+      'planejamento_ativo_id': planejamentoRef.id,
+      'ultima_atividade': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+    return planejamentoRef.id;
+  }
+
+  // ===========================================================================
+  // TRANSAÇÕES PREMIUM: MANEJO, PLANTIO, COLHEITA E PERDA
+  // ===========================================================================
 
   // Transação Premium: Irrigação
   Future<void> registrarIrrigacao({

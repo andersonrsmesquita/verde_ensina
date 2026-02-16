@@ -9,7 +9,6 @@ import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/app_session.dart';
 import '../../core/session/session_scope.dart';
 
-// Certifique-se de que este arquivo exporta 'GuiaCulturas' e 'culturasPorRegiaoMes'
 import '../canteiros/guia_culturas.dart';
 import '../planejamento/tela_gerador_canteiros.dart';
 import '../canteiros/widgets/canteiro_picker_dropdown.dart';
@@ -25,14 +24,13 @@ class TelaPlanejamentoConsumo extends StatefulWidget {
 class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   User? get _user => FirebaseAuth.instance.currentUser;
 
-  // Lista local dos itens desejados
   final List<Map<String, dynamic>> _listaDesejos = [];
 
   String? _canteiroId;
-  double _areaTotalDoCanteiroSelecionado = 0.0; // Área real vinda do Firestore
-
+  double _areaTotalDoCanteiroSelecionado = 0.0;
   String? _culturaSelecionada;
   String _regiaoSelecionada = 'Sudeste';
+
   final List<String> _regioes = [
     'Norte',
     'Nordeste',
@@ -56,15 +54,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   }
 
   // --- UI Helpers ---
-
   void _toast(String msg, {bool isError = false}) {
     if (!mounted) return;
-    if (isError) {
-      AppMessenger.error(msg);
-    } else {
-      AppMessenger.success(msg);
-    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
+
+  // --- Lógica de Dados ---
 
   String _formatarTexto(String texto) {
     final t = texto.trim();
@@ -97,19 +96,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return meses[DateTime.now().month - 1];
   }
 
-  // --- LÓGICA DE INTELIGÊNCIA E DADOS ---
-
-  // 1. Busca a área do canteiro selecionado para a barra de progresso
   Future<void> _fetchAreaCanteiro(String canteiroId, AppSession session) async {
     try {
       final doc = await FirebaseFirestore.instance
           .doc(FirebasePaths.canteiroRef(session.tenantId, canteiroId).path)
           .get();
-
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         setState(() {
-          // Tenta pegar o campo calculado 'area_m2', se não existir, calcula na hora
           if (data.containsKey('area_m2')) {
             _areaTotalDoCanteiroSelecionado =
                 (data['area_m2'] as num).toDouble();
@@ -123,88 +117,235 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         });
       }
     } catch (e) {
-      debugPrint("Erro ao buscar área do canteiro: $e");
+      debugPrint("Erro ao buscar área: $e");
     }
   }
 
-  // 2. Verifica se a planta está na época ideal para a região selecionada
+  // --- NOVA FUNÇÃO: CRIAÇÃO RÁPIDA DE CANTEIRO ---
+  Future<void> _criarCanteiroRapido(AppSession session) async {
+    final nomeCtl = TextEditingController();
+    final compCtl = TextEditingController();
+    final largCtl = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Novo Local de Plantio"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Crie um canteiro ou vaso rapidamente para usar agora."),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nomeCtl,
+              decoration: const InputDecoration(
+                  labelText: "Nome (ex: Canteiro 1, Vaso Grande)",
+                  border: OutlineInputBorder()),
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: compCtl,
+                    decoration: const InputDecoration(
+                        labelText: "Comp. (m)",
+                        border: OutlineInputBorder(),
+                        hintText: "ex: 2.0"),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: largCtl,
+                    decoration: const InputDecoration(
+                        labelText: "Larg. (m)",
+                        border: OutlineInputBorder(),
+                        hintText: "ex: 1.0"),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancelar")),
+          ElevatedButton(
+            onPressed: () async {
+              final nome = nomeCtl.text.trim();
+              final comp =
+                  double.tryParse(compCtl.text.replaceAll(',', '.')) ?? 0.0;
+              final larg =
+                  double.tryParse(largCtl.text.replaceAll(',', '.')) ?? 0.0;
+
+              if (nome.isEmpty || comp <= 0 || larg <= 0) {
+                // Feedback rápido de erro
+                return;
+              }
+
+              try {
+                // 1. Salva no Firestore
+                final docRef = await FirebaseFirestore.instance
+                    .collection(
+                        FirebasePaths.canteirosCol(session.tenantId).path)
+                    .add({
+                  'nome': nome,
+                  'comprimento': comp,
+                  'largura': larg,
+                  'area_m2': (comp * larg), // Já salva a área calculada
+                  'tipo': 'canteiro', // Default
+                  'createdAt': FieldValue.serverTimestamp(),
+                });
+
+                if (!mounted) return;
+                Navigator.pop(ctx); // Fecha dialog
+
+                // 2. Seleciona automaticamente o novo canteiro
+                setState(() {
+                  _canteiroId = docRef.id;
+                });
+
+                // 3. Atualiza a barra de progresso
+                _fetchAreaCanteiro(docRef.id, session);
+
+                _toast("Local '$nome' criado e selecionado!");
+              } catch (e) {
+                _toast("Erro ao criar: $e", isError: true);
+              }
+            },
+            child: const Text("Criar e Usar"),
+          )
+        ],
+      ),
+    );
+  }
+  // ------------------------------------------------
+
   bool _isNaEpoca(String planta) {
     try {
-      // Usa a função do seu arquivo guia_culturas.dart
       List<String> recomendadas =
           culturasPorRegiaoMes(_regiaoSelecionada, _obterMesAtual());
-      // Normaliza strings para evitar erros de case/trim
       return recomendadas.any((r) => r.toLowerCase() == planta.toLowerCase());
     } catch (e) {
-      // Fallback caso a função não exista ou falhe
       return true;
     }
   }
 
-  // 3. Calcula quanto espaço os itens da lista já ocupam
   double _calcularAreaOcupadaAtual() {
     double area = 0.0;
     for (var item in _listaDesejos) {
       final nome = item['planta'] as String;
       final meta = (item['meta'] as num).toDouble();
-
       final info = GuiaCulturas.dados[nome] ?? {'yield': 1.0, 'espaco': 0.5};
       final yieldVal = (info['yield'] as num).toDouble();
       final espacoVal = (info['espaco'] as num).toDouble();
-
-      // Cálculo: Meta / Produtividade = Mudas. Adiciona 10% margem de segurança.
       final mudas = ((meta / yieldVal) * 1.1).ceil();
       area += mudas * espacoVal;
     }
     return area;
   }
 
-  // 4. Lógica da Sugestão Mágica (Consórcio + Época + Espaço)
+  // --- Funcionalidades de Ajuda e Reset ---
+
+  void _mostrarTutorial() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.help_outline, color: Colors.blue),
+          SizedBox(width: 8),
+          Text("Como funciona?")
+        ]),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _TutorialStep(
+                  num: "1",
+                  text:
+                      "Escolha o Local. Se não tiver, clique no '+' para criar um rápido."),
+              _TutorialStep(
+                  num: "2",
+                  text:
+                      "Adicione as culturas. O sistema avisa se está na época certa!"),
+              _TutorialStep(
+                  num: "3",
+                  text: "Use o botão 'Sugerir' se sobrar espaço no canteiro."),
+              _TutorialStep(
+                  num: "4", text: "Finalize para gerar o calendário."),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Entendi")),
+        ],
+      ),
+    );
+  }
+
+  void _confirmarLimpeza() {
+    if (_listaDesejos.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Limpar lista?"),
+        content: const Text("Isso removerá todos os itens adicionados."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancelar")),
+          TextButton(
+              onPressed: () {
+                setState(() => _listaDesejos.clear());
+                Navigator.pop(ctx);
+              },
+              child: const Text("Limpar", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+  }
+
   void _adicionarSugestaoInteligente() {
     final areaLivre =
         _areaTotalDoCanteiroSelecionado - _calcularAreaOcupadaAtual();
-
     if (areaLivre < 0.2) {
       _toast("Seu canteiro já está cheio!", isError: true);
       return;
     }
 
     final todasCulturas = GuiaCulturas.dados.keys.toList();
-    // Filtra apenas o que está na época
     final naEpoca = todasCulturas.where((p) => _isNaEpoca(p)).toList();
 
     String? melhorCandidata;
-    int melhorScore = -100; // Começa negativo
+    int melhorScore = -100;
 
     for (var candidata in naEpoca) {
-      // Pula se já está na lista
       if (_listaDesejos.any((e) => e['planta'] == candidata)) continue;
 
       final infoCand = GuiaCulturas.dados[candidata]!;
-      // Verifica se cabe (usa yield padrão 1.0 e meta 1.0 para teste)
       final espacoCand = (infoCand['espaco'] as num).toDouble();
       if (espacoCand > areaLivre) continue;
 
       int score = 0;
       bool conflitoFatal = false;
-
       final evitarCand = (infoCand['evitar'] as List?)?.cast<String>() ?? [];
       final parCand = (infoCand['par'] as List?)?.cast<String>() ?? [];
 
-      // Compara com quem já está na lista
       for (var itemExistente in _listaDesejos) {
         String plantaExistente = itemExistente['planta'];
-
-        // Se são inimigas
         if (evitarCand.contains(plantaExistente)) {
           conflitoFatal = true;
           break;
         }
-
-        // Se são amigas
-        if (parCand.contains(plantaExistente)) {
-          score += 5; // Grande bônus para consórcio
-        }
+        if (parCand.contains(plantaExistente)) score += 5;
       }
 
       if (!conflitoFatal) {
@@ -218,15 +359,13 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     if (melhorCandidata != null) {
       setState(() {
         _culturaSelecionada = melhorCandidata;
-        _qtdController.text = "1"; // Sugere 1 unidade/kg
-        _toast("Sugestão: $melhorCandidata (Perfeita para seu espaço!)");
+        _qtdController.text = "1";
+        _toast("Sugestão: $melhorCandidata");
       });
     } else {
-      _toast("Sem sugestões ideais para o espaço restante.");
+      _toast("Sem sugestões ideais para o espaço.");
     }
   }
-
-  // --- AÇÕES DO USUÁRIO ---
 
   Future<void> _salvarItem() async {
     String nomeFinal;
@@ -250,7 +389,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       return;
     }
 
-    // Validação Proativa de Espaço
     if (_canteiroId != null && _areaTotalDoCanteiroSelecionado > 0) {
       final info =
           GuiaCulturas.dados[nomeFinal] ?? {'yield': 1.0, 'espaco': 0.5};
@@ -258,27 +396,21 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       final areaItem = mudas * (info['espaco'] as num);
       final ocupada = _calcularAreaOcupadaAtual();
 
-      // Ignora o próprio item se estiver editando (para não somar duplicado)
-      double areaItemEditando = 0.0;
-      if (_editandoIndex != null) {
-        // Lógica simplificada: remove a área antiga do cálculo temporariamente
-        // (Omitido para brevidade, assumindo acréscimo)
-      }
-
       if (ocupada + areaItem > _areaTotalDoCanteiroSelecionado) {
         bool? confirmar = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
                   title: const Text('Falta de Espaço'),
                   content: Text(
-                      'Este item requer ${areaItem.toStringAsFixed(1)}m², mas você só tem ${(_areaTotalDoCanteiroSelecionado - ocupada).toStringAsFixed(1)}m² livres.\n\nDeseja adicionar mesmo assim?'),
+                      'Este item requer ${areaItem.toStringAsFixed(1)}m², mas só restam ${(_areaTotalDoCanteiroSelecionado - ocupada).toStringAsFixed(1)}m².\n\nAdicionar assim mesmo?'),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         child: const Text('Cancelar')),
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Adicionar')),
+                        child: const Text('Adicionar',
+                            style: TextStyle(color: Colors.orange))),
                   ],
                 ));
         if (confirmar != true) return;
@@ -317,7 +449,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       } else {
         _modoPersonalizado = true;
         _customNameController.text = nome;
-        _culturaSelecionada = null;
       }
     });
   }
@@ -325,22 +456,13 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   void _removerItem(int index) {
     setState(() {
       _listaDesejos.removeAt(index);
-      if (_editandoIndex == index) _cancelarEdicao();
+      if (_editandoIndex == index) {
+        _editandoIndex = null;
+        _qtdController.clear();
+        _customNameController.clear();
+      }
     });
   }
-
-  void _cancelarEdicao() {
-    setState(() {
-      _editandoIndex = null;
-      _culturaSelecionada = null;
-      _qtdController.clear();
-      _customNameController.clear();
-      _modoPersonalizado = false;
-      FocusScope.of(context).unfocus();
-    });
-  }
-
-  // --- LÓGICA DE SALVAMENTO COMPLETA (Mão de Obra, Água, Adubo) ---
 
   Future<void> _gerarESalvarEIrParaGerador(AppSession session) async {
     if (_listaDesejos.isEmpty) {
@@ -358,14 +480,11 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
     try {
       double areaTotalCalculada = 0.0;
-      double horasTotaisProjeto = 0.0; // Soma de todas as horas do ciclo
+      double horasTotaisProjeto = 0.0;
 
-      // Processa cada item para gerar os cálculos finais
       final itensProcessados = _listaDesejos.map((item) {
         final nome = item['planta'] as String;
         final meta = (item['meta'] as num).toDouble();
-
-        // Pega dados do Guia ou usa Padrão
         final info = GuiaCulturas.dados[nome] ??
             {
               'yield': 1.0,
@@ -375,30 +494,23 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
               'evitar': [],
               'par': [],
               'cat': 'Geral',
-              'icone': '🌱',
+              'icone': '🌱'
             };
 
         final yieldVal = (info['yield'] as num).toDouble();
         final espacoVal = (info['espaco'] as num).toDouble();
         final cicloDias = (info['cicloDias'] as int?) ?? 60;
 
-        // 1. Cálculo de Área e Mudas
         final mudasCalc = meta / yieldVal;
-        final mudasReais = (mudasCalc * 1.1).ceil(); // +10% margem
+        final mudasReais = (mudasCalc * 1.1).ceil();
         final areaNecessaria = mudasReais * espacoVal;
 
-        // 2. Cálculo de Mão de Obra (Baseado no PDF "Custo mão de obra")
-        // Ciclo em semanas
         int nSemanas = (cicloDias / 7).ceil();
         if (nSemanas < 1) nSemanas = 1;
 
-        // Fase 1 (Preparo): 0.25h/m²
         final horasFase1 = areaNecessaria * 0.25;
-        // Fase 2 (Manutenção): 0.083h/m² * Semanas
         final horasFase2 = areaNecessaria * 0.083 * nSemanas;
-        // Fase 3 (Colheita): 0.016h/m²
         final horasFase3 = areaNecessaria * 0.016;
-
         final totalHorasItem = horasFase1 + horasFase2 + horasFase3;
 
         areaTotalCalculada += areaNecessaria;
@@ -410,50 +522,54 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           'area': areaNecessaria,
           'ciclo_dias': cicloDias,
           'ciclo_semanas': nSemanas,
-          'horas_fase1': horasFase1,
-          'horas_fase2': horasFase2,
-          'horas_fase3': horasFase3,
           'horas_totais': totalHorasItem,
-          'evitar': info['evitar'] ?? [],
-          'par': info['par'] ?? [],
           'cat': info['cat'] ?? 'Geral',
           'icone': info['icone'] ?? '🌱',
         };
       }).toList();
 
-      // 3. Cálculos Globais (Baseados nos PDFs)
-      // Água: 5L/m² por dia (PDF "Água")
       final aguaTotalDia = areaTotalCalculada * 5.0;
-
-      // Adubo: Média de 3kg/m² esterco (PDF "Adubação")
       final aduboTotalCiclo = areaTotalCalculada * 3.0;
 
-      // Mão de Obra Semanal Média (aprox.)
-      // Divide-se o total de horas pelo maior ciclo aproximado (ex: 8 semanas)
-      // Ou exibe o total acumulado do projeto.
-      // Aqui usaremos uma média ponderada simples para exibição.
-      final semanasMedia = 8;
-      final maoDeObraSemanal = horasTotaisProjeto / semanasMedia;
+      final batch = FirebaseFirestore.instance.batch();
+      final canteiroRef =
+          FirebasePaths.canteiroRef(session.tenantId, _canteiroId!);
+      final planRef =
+          FirebasePaths.canteiroPlanejamentosCol(session.tenantId, _canteiroId!)
+              .doc();
 
-      // 4. Salvar no Firestore
-      await _salvarNoFirestore(
-        session: session,
-        canteiroId: _canteiroId!,
-        uid: user.uid,
-        itensDesejados: _listaDesejos,
-        itensProcessados: itensProcessados,
-        areaTotal: areaTotalCalculada,
-        aguaDia: aguaTotalDia,
-        aduboTotal: aduboTotalCiclo,
-        horasTotaisProjeto: horasTotaisProjeto,
-        regiao: _regiaoSelecionada,
-      );
+      final resumo = {
+        'itens_qtd': _listaDesejos.length,
+        'area_ocupada_m2': areaTotalCalculada,
+        'agua_l_dia': aguaTotalDia,
+        'adubo_kg_ciclo': aduboTotalCiclo,
+        'horas_trabalho_total': horasTotaisProjeto,
+        'regiao_base': _regiaoSelecionada,
+        'planejamentoId': planRef.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      batch.set(planRef, {
+        'uid_criador': user.uid,
+        'tipo': 'consumo',
+        'status': 'ativo',
+        'itens_input': _listaDesejos,
+        'itens_calculados': itensProcessados,
+        'metricas': resumo,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      batch.update(canteiroRef, {
+        'planejamento_ativo': resumo,
+        'planejamento_ativo_id': planRef.id,
+        'ultima_atividade': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
 
       if (!mounted) return;
       setState(() => _salvando = false);
-      _toast("Planejamento salvo com sucesso!");
 
-      // Navegar para a próxima tela
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -467,78 +583,25 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     }
   }
 
-  Future<void> _salvarNoFirestore({
-    required AppSession session,
-    required String canteiroId,
-    required String uid,
-    required List itensDesejados,
-    required List itensProcessados,
-    required double areaTotal,
-    required double aguaDia,
-    required double aduboTotal,
-    required double horasTotaisProjeto,
-    required String regiao,
-  }) async {
-    final batch = FirebaseFirestore.instance.batch();
-
-    // Referência do canteiro
-    final canteiroRef = FirebasePaths.canteiroRef(session.tenantId, canteiroId);
-
-    // Nova coleção de planejamentos dentro do canteiro
-    final planRef =
-        FirebasePaths.canteiroPlanejamentosCol(session.tenantId, canteiroId)
-            .doc();
-
-    final resumo = {
-      'itens_qtd': itensDesejados.length,
-      'area_ocupada_m2': areaTotal,
-      'agua_l_dia': aguaDia,
-      'adubo_kg_ciclo': aduboTotal,
-      'horas_trabalho_total': horasTotaisProjeto,
-      'regiao_base': regiao,
-      'planejamentoId': planRef.id,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-
-    // Salva o documento detalhado do planejamento
-    batch.set(planRef, {
-      'uid_criador': uid,
-      'tipo': 'consumo',
-      'status': 'ativo',
-      'itens_input': itensDesejados,
-      'itens_calculados': itensProcessados,
-      'metricas': resumo,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    // Atualiza o canteiro com o resumo do planejamento atual
-    batch.update(canteiroRef, {
-      'planejamento_ativo': resumo,
-      'planejamento_ativo_id': planRef.id,
-      'ultima_atividade': FieldValue.serverTimestamp(),
-    });
-
-    await batch.commit();
-  }
-
-  // --- CONSTRUÇÃO DA TELA (BUILD) ---
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final session = SessionScope.of(context).session;
 
-    if (session == null)
-      return const Center(child: CircularProgressIndicator());
+    if (session == null) {
+      return const PageContainer(
+        title: 'Carregando...',
+        scroll: false,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    // Ordenação Inteligente do Dropdown: Na época primeiro
     final listaCulturas = GuiaCulturas.dados.keys.toList();
     final naEpoca = listaCulturas.where((c) => _isNaEpoca(c)).toList()..sort();
     final foraEpoca = listaCulturas.where((c) => !_isNaEpoca(c)).toList()
       ..sort();
     final listaOrdenada = [...naEpoca, ...foraEpoca];
 
-    // Cálculos para KPIs em tempo real
     double areaTotalItens = 0;
     for (var item in _listaDesejos) {
       final nome = item['planta'] as String;
@@ -552,15 +615,72 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       title: 'Plano de Consumo',
       subtitle: 'Assistente Inteligente',
       scroll: true,
+      bottomBar: SizedBox(
+        height: 50,
+        child: AppButtons.elevatedIcon(
+          onPressed:
+              _salvando ? null : () => _gerarESalvarEIrParaGerador(session),
+          icon: _salvando
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
+              : const Icon(Icons.check_circle),
+          label: Text(_salvando ? 'PROCESSANDO...' : 'FINALIZAR PLANEJAMENTO'),
+        ),
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. CONFIGURAÇÃO E OCUPAÇÃO
+          // BARRA DE FERRAMENTAS SUPERIOR
+          Container(
+            margin: const EdgeInsets.only(bottom: AppTokens.md),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: cs.surfaceVariant.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Voltar',
+                  onPressed: () => Navigator.pop(context),
+                ),
+                Expanded(
+                  child: Text(
+                    "Configuração do Plantio",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.help_outline),
+                  color: Colors.blue.shade700,
+                  tooltip: 'Guia Rápido',
+                  onPressed: _mostrarTutorial,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.red.shade700,
+                  tooltip: 'Limpar Lista',
+                  onPressed: _confirmarLimpeza,
+                ),
+              ],
+            ),
+          ),
+
+          // SEÇÃO 1
           SectionCard(
             title: '1) Local e Ocupação',
             child: Column(
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       flex: 3,
@@ -571,6 +691,19 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           setState(() => _canteiroId = id);
                           if (id != null) _fetchAreaCanteiro(id, session);
                         },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // BOTÃO DE CRIAR NOVO CANTEIRO (AQUI!)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 2),
+                      decoration: BoxDecoration(
+                          color: cs.primaryContainer,
+                          borderRadius: BorderRadius.circular(8)),
+                      child: IconButton(
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        tooltip: 'Criar Novo Local Agora',
+                        onPressed: () => _criarCanteiroRapido(session),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -598,19 +731,18 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                   ],
                 ),
                 const SizedBox(height: 16),
-
-                // BARRA DE OCUPAÇÃO
                 if (_canteiroId != null &&
                     _areaTotalDoCanteiroSelecionado > 0) ...[
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Ocupação Estimada',
+                      Text('Ocupação',
                           style: TextStyle(
                               color: cs.onSurfaceVariant, fontSize: 12)),
                       Text(
                           '${areaTotalItens.toStringAsFixed(1)} / ${_areaTotalDoCanteiroSelecionado.toStringAsFixed(1)} m²',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 12)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -628,7 +760,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                   ),
                 ] else
                   const Text(
-                      'Selecione um canteiro para ver a disponibilidade.',
+                      'Selecione um local ou crie um novo para ver o espaço.',
                       style:
                           TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
               ],
@@ -637,29 +769,24 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
           const SizedBox(height: AppTokens.md),
 
-          // 2. ADICIONAR ITENS
-          // SEÇÃO 2: ADICIONAR COM INTELIGÊNCIA
+          // SEÇÃO 2
           SectionCard(
             title:
                 _editandoIndex != null ? 'Editando item' : '2) O que plantar?',
             child: Column(
               children: [
-                // --- BOTÃO DE SUGESTÃO MOVIDO PARA DENTRO ---
                 if (!_modoPersonalizado)
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
                       onPressed: _adicionarSugestaoInteligente,
                       icon: const Icon(Icons.auto_awesome, size: 16),
-                      label: const Text('Sugerir Melhor Opção'),
+                      label: const Text('Sugestão Mágica'),
                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.orange.shade800,
-                        visualDensity: VisualDensity.compact,
-                      ),
+                          foregroundColor: Colors.orange.shade800,
+                          visualDensity: VisualDensity.compact),
                     ),
                   ),
-                // ---------------------------------------------
-
                 Row(
                   children: [
                     Expanded(
@@ -667,16 +794,13 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                       child: _modoPersonalizado
                           ? AppTextField(
                               controller: _customNameController,
-                              labelText: 'Nome manual',
-                              prefixIcon: Icons.edit,
-                            )
+                              labelText: 'Nome manual')
                           : DropdownButtonFormField<String>(
                               value: _culturaSelecionada,
                               isExpanded: true,
                               decoration: const InputDecoration(
-                                labelText: 'Selecione a cultura',
-                                border: OutlineInputBorder(),
-                              ),
+                                  labelText: 'Cultura',
+                                  border: OutlineInputBorder()),
                               items: listaOrdenada.map((k) {
                                 final isIdeal = naEpoca.contains(k);
                                 final icone =
@@ -691,19 +815,11 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                                       Text(k),
                                       if (isIdeal) ...[
                                         const Spacer(),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                              color: Colors.green.shade100,
-                                              borderRadius:
-                                                  BorderRadius.circular(4)),
-                                          child: Text('IDEAL',
-                                              style: TextStyle(
-                                                  fontSize: 9,
-                                                  color: Colors.green.shade800,
-                                                  fontWeight: FontWeight.bold)),
-                                        )
+                                        const Text('IDEAL',
+                                            style: TextStyle(
+                                                fontSize: 9,
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.bold)),
                                       ]
                                     ],
                                   ),
@@ -718,7 +834,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                           () => _modoPersonalizado = !_modoPersonalizado),
                       icon: Icon(
                           _modoPersonalizado ? Icons.list : Icons.keyboard),
-                      tooltip: 'Alternar Manual/Lista',
                     )
                   ],
                 ),
@@ -728,7 +843,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                     Expanded(
                       child: AppTextField(
                         controller: _qtdController,
-                        labelText: 'Quantidade',
+                        labelText: 'Qtd',
                         suffixText: _culturaSelecionada != null
                             ? (GuiaCulturas.dados[_culturaSelecionada]
                                         ?['unit'] ??
@@ -757,7 +872,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
           const SizedBox(height: AppTokens.md),
 
-          // 3. LISTA DE ITENS
+          // SEÇÃO 3
           SectionCard(
             title: '3) Sua Lista (${_listaDesejos.length})',
             child: _listaDesejos.isEmpty
@@ -771,35 +886,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                   ),
           ),
 
-          const SizedBox(height: 20),
-
-          // RESUMO FINAL (OPCIONAL)
-          if (_listaDesejos.isNotEmpty) _buildResumoGeral(areaTotalItens, cs),
+          if (_listaDesejos.isNotEmpty) ...[
+            const SizedBox(height: AppTokens.md),
+            _buildResumoGeral(areaTotalItens, cs),
+          ],
 
           const SizedBox(height: 80),
         ],
       ),
-      bottomBar: SizedBox(
-        height: 50,
-        child: AppButtons.elevatedIcon(
-          // CORREÇÃO: Removemos a linha duplicada e mantemos apenas a correta
-          onPressed:
-              _salvando ? null : () => _gerarESalvarEIrParaGerador(session),
-
-          icon: _salvando
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.check_circle),
-          label: Text(_salvando ? 'PROCESSANDO...' : 'FINALIZAR PLANEJAMENTO'),
-        ),
-      ),
     );
   }
-
-  // --- WIDGETS AUXILIARES ---
 
   Widget _buildSmartListItem(
       int index, Map<String, dynamic> item, ColorScheme cs) {
@@ -807,7 +903,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     final meta = item['meta'];
     final info = GuiaCulturas.dados[nome];
 
-    // Verifica consórcios na lista
     bool temAmigo = false;
     bool temInimigo = false;
 
@@ -845,13 +940,9 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             Text(nome, style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
             if (temAmigo)
-              const Tooltip(
-                  message: 'Combina com outra planta da lista!',
-                  child: Icon(Icons.favorite, size: 16, color: Colors.green)),
+              const Icon(Icons.favorite, size: 16, color: Colors.green),
             if (temInimigo)
-              const Tooltip(
-                  message: 'Conflito com outra planta da lista!',
-                  child: Icon(Icons.warning, size: 16, color: Colors.red)),
+              const Icon(Icons.warning, size: 16, color: Colors.red),
           ],
         ),
         subtitle: Text('Meta: $meta ${(info?['unit'] ?? 'un')}'),
@@ -876,7 +967,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.playlist_add, size: 40, color: cs.outline),
+            Icon(Icons.playlist_add,
+                size: 40, color: cs.outline.withOpacity(0.5)),
             const SizedBox(height: 8),
             Text('Nenhuma cultura adicionada.',
                 style: TextStyle(color: cs.outline)),
@@ -887,26 +979,29 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   }
 
   Widget _buildResumoGeral(double area, ColorScheme cs) {
-    final agua = area * 5.0; // 5L/m2
-    final adubo = area * 3.0; // 3kg/m2
+    final agua = area * 5.0;
+    final adubo = area * 3.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: cs.primaryContainer.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(8),
-      ),
+          color: cs.primary.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: cs.primary.withOpacity(0.2))),
       child: Column(
         children: [
-          const Text("Estimativa de Recursos",
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          Text("Estimativa de Recursos",
+              style: TextStyle(fontWeight: FontWeight.bold, color: cs.primary)),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _miniInfo("Água", "${agua.toStringAsFixed(0)} L/dia"),
-              _miniInfo("Adubo", "${adubo.toStringAsFixed(1)} kg"),
-              _miniInfo("Área", "${area.toStringAsFixed(1)} m²"),
+              _miniInfo("Água", "${agua.toStringAsFixed(0)} L/dia",
+                  Icons.water_drop, Colors.blue),
+              _miniInfo("Adubo", "${adubo.toStringAsFixed(1)} kg", Icons.grass,
+                  Colors.brown),
+              _miniInfo("Área", "${area.toStringAsFixed(1)} m²",
+                  Icons.aspect_ratio, Colors.green),
             ],
           )
         ],
@@ -914,13 +1009,42 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     );
   }
 
-  Widget _miniInfo(String label, String val) {
+  Widget _miniInfo(String label, String val, IconData icon, Color color) {
     return Column(
       children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
         Text(val,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         Text(label, style: const TextStyle(fontSize: 12)),
       ],
+    );
+  }
+}
+
+// Widget auxiliar simples para o texto do tutorial
+class _TutorialStep extends StatelessWidget {
+  final String num;
+  final String text;
+  const _TutorialStep({required this.num, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+              radius: 10,
+              backgroundColor: Colors.blue.shade100,
+              child: Text(num,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold))),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
+        ],
+      ),
     );
   }
 }

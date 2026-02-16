@@ -7,12 +7,20 @@ import '../../core/ui/app_ui.dart';
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
 
+// ARQUIVO: lib/modules/planejamento/tela_gerador_canteiros.dart
+
 class TelaGeradorCanteiros extends StatefulWidget {
-  final List<Map<String, dynamic>> itensPlanejados;
+  final List itensPlanejados;
+  // ADICIONE ESTES DOIS PARÂMETROS:
+  final String? planejamentoId;
+  final String? canteiroId;
 
   const TelaGeradorCanteiros({
     super.key,
     required this.itensPlanejados,
+    // ADICIONE AQUI NO CONSTRUTOR:
+    this.planejamentoId,
+    this.canteiroId,
   });
 
   @override
