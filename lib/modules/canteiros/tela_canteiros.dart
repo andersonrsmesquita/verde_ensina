@@ -1,10 +1,10 @@
+// FILE: lib/modules/canteiros/tela_canteiros.dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/repositories/canteiro_repository.dart';
 import '../../core/session/session_scope.dart';
@@ -24,10 +24,12 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
 
   bool get _enableHardDelete => kDebugMode;
 
+  // Variáveis de Filtro e Ordem
   String _filtroAtivo = 'ativos'; // ativos | arquivados | todos
   String _filtroStatus = 'todos'; // todos | livre | ocupado | manutencao
   String _filtroTipo = 'todos'; // todos | canteiro | vaso
-  String _ordem = 'recentes';
+  String _ordem =
+      'recentes'; // recentes | nome_az | nome_za | medida_maior | medida_menor
   String _busca = '';
 
   final TextEditingController _buscaCtrl = TextEditingController();
@@ -38,7 +40,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     super.initState();
     _buscaCtrl.addListener(() {
       if (!mounted) return;
-      setState(() {});
+      // Removido setState vazio para evitar rebuilds desnecessários. O debounce cuida disso.
     });
   }
 
@@ -94,22 +96,22 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   Color _getCorStatus(String? status, ColorScheme cs) {
     switch (status) {
       case 'ocupado':
-        return cs.error;
+        return cs.primary; // Verde para produzindo
       case 'manutencao':
-        return Colors.orange.shade700;
+        return Colors.orange.shade700; // Laranja para manutenção
       default:
-        return cs.primary;
+        return cs.outline; // Cinza para livre
     }
   }
 
   String _getTextoStatus(String? status) {
     switch (status) {
       case 'ocupado':
-        return 'Ocupado';
+        return 'Produzindo';
       case 'manutencao':
-        return 'Manutenção';
+        return 'Em Tratamento';
       default:
-        return 'Livre';
+        return 'Livre (Pronto)';
     }
   }
 
@@ -132,17 +134,21 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     var list = docs.where((doc) {
       final d = doc.data();
 
+      // Filtro Ativo/Arquivado
       final isAtivo = (d['ativo'] ?? true) == true;
       if (_filtroAtivo == 'ativos' && !isAtivo) return false;
       if (_filtroAtivo == 'arquivados' && isAtivo) return false;
 
+      // Filtro Status
       final status = (d['status'] ?? 'livre').toString();
       if (_filtroStatus != 'todos' && status != _filtroStatus) return false;
 
+      // Filtro Tipo
       final tipo = (d['tipo'] ?? 'Canteiro').toString();
       if (_filtroTipo == 'canteiro' && tipo == 'Vaso') return false;
       if (_filtroTipo == 'vaso' && tipo != 'Vaso') return false;
 
+      // Busca de Texto
       if (buscaTerm.isNotEmpty) {
         final nomeLower =
             (d['nome_lower'] ?? (d['nome'] ?? '')).toString().toLowerCase();
@@ -165,6 +171,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
         ? d['data_criacao']
         : Timestamp.fromMillisecondsSinceEpoch(0);
 
+    // Ordenação
     switch (_ordem) {
       case 'nome_az':
         list.sort(
@@ -218,8 +225,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     if (tipoLocal != 'Canteiro' && tipoLocal != 'Vaso') tipoLocal = 'Canteiro';
 
     String finalidade = (dados['finalidade'] ?? 'consumo').toString().trim();
-    if (finalidade != 'consumo' && finalidade != 'comercio')
+    if (finalidade != 'consumo' && finalidade != 'comercio') {
       finalidade = 'consumo';
+    }
 
     String statusLocal = (dados['status'] ?? 'livre').toString().trim();
     if (statusLocal != 'livre' &&
@@ -256,10 +264,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     areaM2 = comp * larg;
                   } else {
                     volumeL = _doubleFromController(volumeCtrl);
-                    // 🛡️ CORREÇÃO IMPORTANTE: Converte o Litro do Vaso em m² aproximado.
-                    // Se não tiver área, o gerador de plantio diz que não tem espaço!
-                    // Aproximadamente 1L de terra de cultivo equivale a 0.005 m² de superfície.
-                    areaM2 = volumeL * 0.005;
+                    areaM2 = volumeL *
+                        0.005; // Conversão estimada de Litros para Área
                   }
 
                   final payload = <String, dynamic>{
@@ -269,7 +275,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     'tipo': tipoLocal,
                     'comprimento_m': comp,
                     'largura_m': larg,
-                    'area_m2': areaM2, // Agora o vaso também tem área útil!
+                    'area_m2': areaM2,
                     'volume_l': volumeL,
                     'finalidade': finalidade,
                     'status': statusLocal,
@@ -387,7 +393,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                           const SizedBox(height: AppTokens.lg),
                           if (tipoLocal == 'Canteiro') ...[
-                            // 🟢 Dica Agronômica
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
@@ -438,7 +443,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               ],
                             ),
                           ] else ...[
-                            // 🟢 Dica Agronômica para Vasos
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
@@ -555,108 +559,77 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
   }
 
-  void _alterarStatus(String id, String nome, String atual) {
+  void _abrirModalOrdenacao() {
     final cs = Theme.of(context).colorScheme;
-
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return Container(
-          decoration: BoxDecoration(
-              color: cs.surface,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24))),
-          padding: const EdgeInsets.all(AppTokens.lg),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Status do local',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: AppTokens.sm),
-                Text(nome,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: cs.onSurfaceVariant)),
-                const SizedBox(height: AppTokens.lg),
-                _statusTile(ctx, id, 'livre', atual),
-                _statusTile(ctx, id, 'ocupado', atual),
-                _statusTile(ctx, id, 'manutencao', atual),
-                const SizedBox(height: AppTokens.md),
-                AppButtons.outlinedIcon(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close),
-                    label: const Text('FECHAR')),
-              ],
-            ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ordenar por',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              RadioListTile<String>(
+                title: const Text('Mais Recentes'),
+                value: 'recentes',
+                groupValue: _ordem,
+                activeColor: cs.primary,
+                onChanged: (val) {
+                  setState(() => _ordem = val!);
+                  Navigator.pop(ctx);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Ordem Alfabética (A-Z)'),
+                value: 'nome_az',
+                groupValue: _ordem,
+                activeColor: cs.primary,
+                onChanged: (val) {
+                  setState(() => _ordem = val!);
+                  Navigator.pop(ctx);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Ordem Alfabética (Z-A)'),
+                value: 'nome_za',
+                groupValue: _ordem,
+                activeColor: cs.primary,
+                onChanged: (val) {
+                  setState(() => _ordem = val!);
+                  Navigator.pop(ctx);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Maior Espaço'),
+                value: 'medida_maior',
+                groupValue: _ordem,
+                activeColor: cs.primary,
+                onChanged: (val) {
+                  setState(() => _ordem = val!);
+                  Navigator.pop(ctx);
+                },
+              ),
+              RadioListTile<String>(
+                title: const Text('Menor Espaço'),
+                value: 'medida_menor',
+                groupValue: _ordem,
+                activeColor: cs.primary,
+                onChanged: (val) {
+                  setState(() => _ordem = val!);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _statusTile(BuildContext ctx, String id, String status, String atual) {
-    final cs = Theme.of(context).colorScheme;
-    final isSel = status == atual;
-
-    return ListTile(
-      leading: Icon(isSel ? Icons.radio_button_checked : Icons.radio_button_off,
-          color: isSel ? cs.primary : cs.outline),
-      title: Text(_getTextoStatus(status),
-          style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(status),
-      onTap: () async {
-        try {
-          await _repo!.atualizarStatus(id, status);
-          if (ctx.mounted) Navigator.pop(ctx);
-          _msg('Status atualizado.');
-        } catch (e) {
-          _msg('Erro ao atualizar status', isError: true);
-        }
-      },
-    );
-  }
-
-  Future<void> _duplicar(
-      QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
-    final d = doc.data();
-    final nome = (d['nome'] ?? 'Sem nome').toString();
-    final ctrl = TextEditingController(text: 'Cópia - $nome');
-
-    final novoNome = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Duplicar local'),
-        content: TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(
-                labelText: 'Novo nome', border: OutlineInputBorder())),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Duplicar')),
-        ],
+        ),
       ),
     );
-
-    ctrl.dispose();
-    if (novoNome == null || novoNome.trim().isEmpty) return;
-    try {
-      await _repo!.duplicar(data: d, novoNome: novoNome.trim());
-      _msg('Duplicado com sucesso.');
-    } catch (e) {
-      _msg('Falha ao duplicar', isError: true);
-    }
   }
 
   void _confirmarExclusao(String id, String nome) {
@@ -713,15 +686,24 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       required String current,
       required void Function(String) onSelect}) {
     final selected = current == key;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelect(key),
-      selectedColor: cs.primaryContainer,
-      labelStyle: TextStyle(
-          color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-          fontWeight: selected ? FontWeight.w800 : FontWeight.w500),
-      side: BorderSide(color: cs.outlineVariant.withOpacity(0.6)),
+    return Padding(
+      padding: const EdgeInsets.only(right: 8.0),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onSelect(key),
+        selectedColor: cs.primaryContainer,
+        backgroundColor: cs.surface,
+        labelStyle: TextStyle(
+            color: selected ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            fontSize: 12),
+        side: BorderSide(
+            color: selected
+                ? Colors.transparent
+                : cs.outlineVariant.withOpacity(0.5)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
     );
   }
 
@@ -736,24 +718,42 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _buscaCtrl,
-            decoration: InputDecoration(
-              hintText: 'Buscar lote...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _buscaCtrl.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _buscaCtrl.clear();
-                        setState(() => _busca = '');
-                      }),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
-              isDense: true,
-            ),
-            onChanged: _onBuscaChanged,
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _buscaCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar lote ou vaso...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _buscaCtrl.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _buscaCtrl.clear();
+                              setState(() => _busca = '');
+                            }),
+                    border: OutlineInputBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppTokens.radiusMd)),
+                    isDense: true,
+                  ),
+                  onChanged: _onBuscaChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                    color: cs.primaryContainer.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
+                child: IconButton(
+                  icon: Icon(Icons.sort, color: cs.primary),
+                  tooltip: 'Ordenar',
+                  onPressed: _abrirModalOrdenacao,
+                ),
+              )
+            ],
           ),
           const SizedBox(height: AppTokens.md),
           SingleChildScrollView(
@@ -766,20 +766,70 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     label: 'Ativos',
                     current: _filtroAtivo,
                     onSelect: (v) => setState(() => _filtroAtivo = v)),
-                const SizedBox(width: 8),
                 _chip(
                     cs: cs,
                     key: 'arquivados',
                     label: 'Arquivados',
                     current: _filtroAtivo,
                     onSelect: (v) => setState(() => _filtroAtivo = v)),
-                const SizedBox(width: 8),
                 _chip(
                     cs: cs,
                     key: 'todos',
-                    label: 'Todos',
+                    label: 'Todos os Lotes',
                     current: _filtroAtivo,
                     onSelect: (v) => setState(() => _filtroAtivo = v)),
+                Container(
+                    width: 1,
+                    height: 20,
+                    color: cs.outlineVariant,
+                    margin: const EdgeInsets.symmetric(horizontal: 8)),
+                _chip(
+                    cs: cs,
+                    key: 'todos',
+                    label: 'Todos Status',
+                    current: _filtroStatus,
+                    onSelect: (v) => setState(() => _filtroStatus = v)),
+                _chip(
+                    cs: cs,
+                    key: 'livre',
+                    label: 'Livres',
+                    current: _filtroStatus,
+                    onSelect: (v) => setState(() => _filtroStatus = v)),
+                _chip(
+                    cs: cs,
+                    key: 'ocupado',
+                    label: 'Produzindo',
+                    current: _filtroStatus,
+                    onSelect: (v) => setState(() => _filtroStatus = v)),
+                _chip(
+                    cs: cs,
+                    key: 'manutencao',
+                    label: 'Em Tratamento',
+                    current: _filtroStatus,
+                    onSelect: (v) => setState(() => _filtroStatus = v)),
+                Container(
+                    width: 1,
+                    height: 20,
+                    color: cs.outlineVariant,
+                    margin: const EdgeInsets.symmetric(horizontal: 8)),
+                _chip(
+                    cs: cs,
+                    key: 'todos',
+                    label: 'Ambos os Tipos',
+                    current: _filtroTipo,
+                    onSelect: (v) => setState(() => _filtroTipo = v)),
+                _chip(
+                    cs: cs,
+                    key: 'canteiro',
+                    label: 'Solo',
+                    current: _filtroTipo,
+                    onSelect: (v) => setState(() => _filtroTipo = v)),
+                _chip(
+                    cs: cs,
+                    key: 'vaso',
+                    label: 'Vasos',
+                    current: _filtroTipo,
+                    onSelect: (v) => setState(() => _filtroTipo = v)),
               ],
             ),
           ),
@@ -792,49 +842,73 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final cs = Theme.of(context).colorScheme;
     int ativos = 0;
+    int emProducao = 0;
+    int emManutencao = 0;
     double totalArea = 0;
 
     for (final d in docs) {
       final data = d.data();
-      if ((data['ativo'] ?? true) == true) ativos++;
-      if ((data['tipo'] ?? 'Canteiro').toString() != 'Vaso') {
-        totalArea += double.tryParse(data['area_m2']?.toString() ?? '0') ?? 0.0;
+      if ((data['ativo'] ?? true) == true) {
+        ativos++;
+        final status = (data['status'] ?? 'livre').toString();
+        if (status == 'ocupado') emProducao++;
+        if (status == 'manutencao') emManutencao++;
+
+        final tipo = (data['tipo'] ?? 'Canteiro').toString();
+        if (tipo == 'Vaso') {
+          final vol =
+              double.tryParse(data['volume_l']?.toString() ?? '0') ?? 0.0;
+          totalArea += vol * 0.005; // Estimativa de area de vaso pra o dash
+        } else {
+          totalArea +=
+              double.tryParse(data['area_m2']?.toString() ?? '0') ?? 0.0;
+        }
       }
     }
 
     return SectionCard(
-      title: 'Visão Geral dos Lotes',
+      title: 'Visão Geral do Filtro',
       child: Row(
         children: [
           Expanded(
-              child: _miniKpi('Área de Solo Útil',
-                  '${totalArea.toStringAsFixed(1)} m²', Icons.crop_free, cs)),
+              child: _miniKpi('Área Útil', '${totalArea.toStringAsFixed(1)} m²',
+                  Icons.crop_free, cs.primary, cs)),
           Container(
               width: 1, height: 40, color: cs.outlineVariant.withOpacity(0.5)),
           Expanded(
-              child: _miniKpi(
-                  'Lotes/Vasos Ativos', '$ativos', Icons.eco_outlined, cs)),
+              child: _miniKpi('Produzindo', '$emProducao', Icons.spa,
+                  Colors.green.shade700, cs)),
+          if (emManutencao > 0) ...[
+            Container(
+                width: 1,
+                height: 40,
+                color: cs.outlineVariant.withOpacity(0.5)),
+            Expanded(
+                child: _miniKpi('Tratamento', '$emManutencao',
+                    Icons.build_circle, Colors.orange.shade800, cs)),
+          ]
         ],
       ),
     );
   }
 
-  Widget _miniKpi(String label, String value, IconData icon, ColorScheme cs) {
+  Widget _miniKpi(
+      String label, String value, IconData icon, Color cor, ColorScheme cs) {
     return Column(
       children: [
-        Icon(icon, color: cs.primary, size: 24),
+        Icon(icon, color: cor, size: 24),
         const SizedBox(height: 8),
         Text(
           value,
-          style: TextStyle(
-              color: cs.onSurface, fontSize: 24, fontWeight: FontWeight.w900),
+          style:
+              TextStyle(color: cor, fontSize: 20, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 2),
         Text(
           label,
           style: TextStyle(
               color: cs.onSurfaceVariant,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600),
         ),
       ],
@@ -922,11 +996,19 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           final String status =
                               (dados['status'] ?? 'livre').toString();
                           final corStatus = _getCorStatus(status, cs);
+                          final textoStatus = _getTextoStatus(status);
+
+                          // Ícone do Status
+                          IconData iconeStatus = Icons.check_circle_outline;
+                          if (status == 'ocupado') iconeStatus = Icons.spa;
+                          if (status == 'manutencao')
+                            iconeStatus = Icons.build_circle;
 
                           return Card(
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                                side: BorderSide(color: cs.outlineVariant),
+                                side: BorderSide(
+                                    color: cs.outlineVariant.withOpacity(0.5)),
                                 borderRadius:
                                     BorderRadius.circular(AppTokens.radiusMd)),
                             child: InkWell(
@@ -973,7 +1055,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                                       ? null
                                                       : TextDecoration
                                                           .lineThrough)),
-                                          const SizedBox(height: 4),
+                                          const SizedBox(height: 6),
                                           Row(
                                             children: [
                                               Icon(_iconeMedida(tipo),
@@ -983,8 +1065,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                                   style: TextStyle(
                                                       color:
                                                           cs.onSurfaceVariant,
-                                                      fontSize: 13)),
-                                              const SizedBox(width: 8),
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
+                                              const SizedBox(width: 12),
                                               Container(
                                                   padding: const EdgeInsets
                                                       .symmetric(
@@ -993,20 +1077,42 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                                   decoration: BoxDecoration(
                                                       color: ativo
                                                           ? corStatus
-                                                          : cs.outline,
+                                                              .withOpacity(0.1)
+                                                          : cs.outline
+                                                              .withOpacity(0.1),
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                              4)),
-                                                  child: Text(
-                                                      ativo
-                                                          ? _getTextoStatus(
-                                                              status)
-                                                          : 'ARQUIVADO',
-                                                      style: const TextStyle(
-                                                          fontSize: 10,
-                                                          color: Colors.white,
-                                                          fontWeight: FontWeight
-                                                              .bold))),
+                                                              4),
+                                                      border: Border.all(
+                                                          color: ativo
+                                                              ? corStatus
+                                                                  .withOpacity(
+                                                                      0.5)
+                                                              : cs.outline
+                                                                  .withOpacity(
+                                                                      0.5))),
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(iconeStatus,
+                                                          size: 10,
+                                                          color: ativo
+                                                              ? corStatus
+                                                              : cs.outline),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                          ativo
+                                                              ? textoStatus
+                                                              : 'ARQUIVADO',
+                                                          style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: ativo
+                                                                  ? corStatus
+                                                                  : cs.outline,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold)),
+                                                    ],
+                                                  )),
                                             ],
                                           ),
                                         ],

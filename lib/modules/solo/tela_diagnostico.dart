@@ -1,3 +1,4 @@
+// FILE: lib/modules/solo/tela_diagnostico.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/app_session.dart';
 import '../../core/session/session_scope.dart';
+import '../../core/ui/app_ui.dart'; // ✅ Usando a base de design premium
 
 class TelaDiagnostico extends StatefulWidget {
   final String? canteiroIdOrigem;
@@ -19,36 +21,32 @@ class TelaDiagnostico extends StatefulWidget {
 
 class _TelaDiagnosticoState extends State<TelaDiagnostico>
     with SingleTickerProviderStateMixin {
-  // Auth
   User? get _user => FirebaseAuth.instance.currentUser;
 
-  // SaaS / Multi-tenant
   AppSession? get _sessionOrNull => SessionScope.of(context).session;
   AppSession get appSession =>
       _sessionOrNull ?? (throw StateError('Sessão não inicializada'));
 
-  // UI
   late TabController _tabController;
   final _formKey = GlobalKey<FormState>();
   bool _salvando = false;
   bool _carregandoCanteiro = false;
 
-  // Canteiro (premium: seleção + header)
   String? _canteiroSelecionadoId;
   String _nomeCanteiro = '';
   double _areaCanteiro = 0;
   bool _bloquearSelecaoCanteiro = false;
 
-  // Diagnóstico Manual
+  // --- Inteligência Agronômica Visual (Baseado no PDF) ---
   String? _texturaEstimada;
-  String? _sintomaVisual;
+  String _sintomaLocal = 'nenhum'; // nenhum, novas, velhas, frutos
+  String _sintomaAparencia = 'nenhum';
 
   // Pré-diagnóstico (live)
-  String _previewStatus = 'neutro'; // neutro|ok|atencao|critico
+  String _previewStatus = 'neutro';
   List<String> _previewAlertas = [];
   List<String> _previewAcoes = [];
 
-  // --- Referência de culturas (mínimo viável premium) ---
   final Map<String, Map<String, double>> _referenciaCulturas = const {
     'Alface': {'ph_min': 6.0, 'ph_max': 6.8, 'v_ideal': 70},
     'Tomate': {'ph_min': 5.5, 'ph_max': 6.8, 'v_ideal': 80},
@@ -59,7 +57,7 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
 
   String _culturaSelecionada = 'Geral (Horta)';
 
-  // Controladores
+  // Controladores do Laudo
   final _phController = TextEditingController();
   final _vPercentController = TextEditingController();
   final _moController = TextEditingController();
@@ -78,24 +76,19 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       _culturaSelecionada = widget.culturaAtual!;
     }
 
-    // Se veio canteiro travado
     if (widget.canteiroIdOrigem != null) {
       _canteiroSelecionadoId = widget.canteiroIdOrigem;
       _bloquearSelecaoCanteiro = true;
       _carregarDadosCanteiro(widget.canteiroIdOrigem!);
     }
 
-    // Live preview quando digitar pH/V%
-    _phController.addListener(_recalcularPreview);
-    _vPercentController.addListener(_recalcularPreview);
+    _phController.addListener(_recalcularPreviewLaboratorio);
+    _vPercentController.addListener(_recalcularPreviewLaboratorio);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _phController.removeListener(_recalcularPreview);
-    _vPercentController.removeListener(_recalcularPreview);
-
     _phController.dispose();
     _vPercentController.dispose();
     _moController.dispose();
@@ -106,27 +99,22 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     super.dispose();
   }
 
-  // ---------- Helpers ----------
   double? _parseNullable(TextEditingController controller) {
     final raw = controller.text.trim();
     if (raw.isEmpty) return null;
-    final txt = raw.replaceAll(',', '.');
-    return double.tryParse(txt);
+    return double.tryParse(raw.replaceAll(',', '.'));
   }
 
-  String _fmt(num v, {int dec = 2}) {
-    return v.toStringAsFixed(dec).replaceAll('.', ',');
-  }
+  String _fmt(num v, {int dec = 2}) =>
+      v.toStringAsFixed(dec).replaceAll('.', ',');
 
-  void _snack(String msg, {Color? cor}) {
+  void _toast(String msg, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: cor,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (isError) {
+      AppMessenger.error(msg);
+    } else {
+      AppMessenger.success(msg);
+    }
   }
 
   Future<void> _carregarDadosCanteiro(String id) async {
@@ -135,35 +123,83 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
 
     setState(() => _carregandoCanteiro = true);
     try {
-      final appSession = SessionScope.of(context).session;
-      if (appSession == null) return;
-
-      final doc = await FirebasePaths.canteirosCol(appSession.tenantId)
-          .doc(id)
-          .get();
+      final doc =
+          await FirebasePaths.canteirosCol(appSession.tenantId).doc(id).get();
       if (!doc.exists || !mounted) return;
 
       final data = doc.data() ?? {};
-      // Segurança: se o doc tiver uid_usuario, confere
-      final uidDoc = (data['uid_usuario'] ?? '').toString();
-      if (uidDoc.isNotEmpty && uidDoc != user.uid) return;
-
       setState(() {
         _nomeCanteiro = (data['nome'] ?? 'Canteiro').toString();
-        final area = data['area_m2'];
-        if (area is num) _areaCanteiro = area.toDouble();
-        if (area is String) _areaCanteiro = double.tryParse(area) ?? 0;
+        _areaCanteiro =
+            double.tryParse(data['area_m2']?.toString() ?? '0') ?? 0;
       });
     } catch (e) {
-      _snack('Erro ao carregar canteiro: $e', cor: Colors.red);
+      _toast('Erro ao carregar canteiro: $e', isError: true);
     } finally {
       if (mounted) setState(() => _carregandoCanteiro = false);
     }
   }
 
-  // ---------- Diagnóstico (premium) ----------
-  void _recalcularPreview() {
-    if (_tabController.index != 1) return; // só no Laudo Técnico
+  // ✅ INTELIGÊNCIA AGRONÔMICA: Chave de Diagnóstico Visual (PDF Controle Orgânico)
+  void _recalcularPreviewVisual() {
+    List<String> alertas = [];
+    List<String> acoes = [];
+    String status = 'ok';
+    String sintomaFinal = 'Sem sintomas aparentes';
+
+    if (_sintomaLocal == 'velhas') {
+      status = 'atencao';
+      if (_sintomaAparencia == 'amarelas') {
+        alertas.add('Falta de Nitrogênio (N) ou Magnésio (Mg).');
+        acoes.add('Aplicar adubo rico em N (Esterco, Bokashi).');
+        sintomaFinal = 'Folhas velhas amarelas';
+      } else if (_sintomaAparencia == 'roxas') {
+        alertas.add('Falta de Fósforo (P).');
+        acoes.add('Aplicar Farinha de Osso ou Termofosfato.');
+        sintomaFinal = 'Folhas velhas arroxeadas';
+      } else if (_sintomaAparencia == 'queimadas') {
+        alertas.add('Falta de Potássio (K).');
+        acoes.add('Aplicar Cinzas de Madeira.');
+        sintomaFinal = 'Bordas queimadas nas folhas velhas';
+      }
+    } else if (_sintomaLocal == 'novas') {
+      status = 'atencao';
+      if (_sintomaAparencia == 'amarelas') {
+        alertas.add('Falta de Enxofre (S), Ferro (Fe) ou Manganês (Mn).');
+        acoes.add(
+            'Verificar pH do solo. Pulverizar biofertilizante (Supermagro).');
+        sintomaFinal = 'Folhas novas amarelas';
+      } else if (_sintomaAparencia == 'queimadas') {
+        alertas.add('Falta de Cálcio (Ca) ou Boro (B).');
+        acoes.add('Realizar calagem ou aplicar farinha de casca de ovo.');
+        sintomaFinal = 'Folhas novas deformadas/queimadas';
+      }
+    } else if (_sintomaLocal == 'frutos') {
+      status = 'critico';
+      alertas.add('Fundo preto (Falta Ca) ou Rachaduras (Falta B).');
+      acoes.add('Aumentar fornecimento de Cálcio e Boro na base.');
+      sintomaFinal = 'Frutos com defeito nutricional';
+    }
+
+    if (_texturaEstimada == 'Arenoso') {
+      acoes.add('Solo arenoso: fracione a adubação em mais vezes.');
+    } else if (_texturaEstimada == 'Argiloso') {
+      acoes.add('Solo argiloso: cuidado com o excesso de água.');
+    }
+
+    if (alertas.isEmpty && _texturaEstimada == null) {
+      status = 'neutro';
+    }
+
+    setState(() {
+      _previewStatus = status;
+      _previewAlertas = alertas;
+      _previewAcoes = acoes;
+    });
+  }
+
+  void _recalcularPreviewLaboratorio() {
+    if (_tabController.index != 1) return;
 
     final ph = _parseNullable(_phController);
     final v = _parseNullable(_vPercentController);
@@ -178,30 +214,12 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       return;
     }
 
-    final ref =
-        _referenciaCulturas[_culturaSelecionada] ??
+    final ref = _referenciaCulturas[_culturaSelecionada] ??
         _referenciaCulturas['Geral (Horta)']!;
-    final diag = _avaliarSolo(ph: ph, v: v, ref: ref);
-
-    if (!mounted) return;
-    setState(() {
-      _previewStatus = diag.status;
-      _previewAlertas = diag.alertas;
-      _previewAcoes = diag.acoes;
-    });
-  }
-
-  _DiagnosticoResult _avaliarSolo({
-    required double? ph,
-    required double? v,
-    required Map<String, double> ref,
-  }) {
     final alertas = <String>[];
     final acoes = <String>[];
-
     var status = 'ok';
 
-    // pH
     if (ph != null) {
       if (ph < (ref['ph_min'] ?? 5.5)) {
         alertas.add('Solo muito ácido (pH baixo).');
@@ -209,71 +227,49 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
         status = 'critico';
       } else if (ph > (ref['ph_max'] ?? 6.5)) {
         alertas.add('Solo alcalino (pH alto).');
-        acoes.add('Evite calagem. Ajuste adubação e matéria orgânica.');
+        acoes.add('Evite calagem. Ajuste matéria orgânica.');
         if (status != 'critico') status = 'atencao';
       } else {
-        alertas.add('pH dentro da faixa boa pra ${_culturaSelecionada}.');
+        alertas.add('pH dentro da faixa ideal.');
       }
     }
 
-    // V%
     if (v != null) {
       final vIdeal = (ref['v_ideal'] ?? 70);
       if (v < (vIdeal - 15)) {
-        alertas.add('Fertilidade baixa (V% bem abaixo do ideal).');
-        acoes.add('Calagem + plano de adubação (subir saturação).');
+        alertas.add('Fertilidade baixa (V% muito baixo).');
+        acoes.add('Aumentar dosagem de adubo base e calcário.');
         status = 'critico';
       } else if (v < vIdeal) {
-        alertas.add('Fertilidade ok, mas abaixo do ideal (V%).');
-        acoes.add('Ajuste fino com calagem/adubação.');
+        alertas.add('Fertilidade ok, mas abaixo do teto.');
         if (status != 'critico') status = 'atencao';
       } else {
-        alertas.add('V% ótimo (próximo/acima do ideal).');
+        alertas.add('Saturação por bases (V%) excelente.');
       }
     }
 
-    // Refinamento: se nada gerou alerta relevante, mantém ok
-    if (alertas.isEmpty && acoes.isEmpty) {
-      status = 'neutro';
-    }
-
-    // Enxuga duplicadas
-    return _DiagnosticoResult(
-      status: status,
-      alertas: alertas.toSet().toList(),
-      acoes: acoes.toSet().toList(),
-    );
+    setState(() {
+      _previewStatus = status;
+      _previewAlertas = alertas;
+      _previewAcoes = acoes;
+    });
   }
 
-  // ---------- Salvamento (batch + cache premium no canteiro) ----------
   Future<void> _salvarDados() async {
     FocusScope.of(context).unfocus();
-    final user = _user;
-    if (user == null) {
-      _snack('Faça login para salvar.', cor: Colors.red);
-      return;
-    }
+    if (_user == null) return _toast('Faça login para salvar.', isError: true);
 
-    // Precisa canteiro
     final canteiroId = _canteiroSelecionadoId ?? widget.canteiroIdOrigem;
-    if (canteiroId == null) {
-      _snack('Selecione um canteiro antes de salvar.', cor: Colors.red);
-      return;
-    }
+    if (canteiroId == null)
+      return _toast('Selecione um canteiro.', isError: true);
 
-    // Manual exige textura
     if (_tabController.index == 0 && _texturaEstimada == null) {
-      _snack('Selecione a textura do solo.', cor: Colors.red);
-      return;
+      return _toast('Selecione a textura do solo na Etapa 1.', isError: true);
     }
 
-    // Laudo exige validação do form
-    if (_tabController.index == 1) {
-      final ok = _formKey.currentState?.validate() ?? false;
-      if (!ok) {
-        _snack('Verifique os campos obrigatórios do laudo.', cor: Colors.red);
-        return;
-      }
+    if (_tabController.index == 1 &&
+        !(_formKey.currentState?.validate() ?? false)) {
+      return _toast('Preencha os campos obrigatórios do laudo.', isError: true);
     }
 
     setState(() => _salvando = true);
@@ -281,12 +277,10 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
     try {
       final metodo = _tabController.index == 0 ? 'manual' : 'laboratorial';
       final precisao = _tabController.index == 0 ? 'baixa' : 'alta';
-
       final nowServer = FieldValue.serverTimestamp();
 
-      // Base
       final dadosAnalise = <String, dynamic>{
-        'uid_usuario': user.uid,
+        'uid_usuario': _user!.uid,
         'canteiro_id': canteiroId,
         'canteiro_nome': _nomeCanteiro.isEmpty ? null : _nomeCanteiro,
         'cultura_referencia': _culturaSelecionada,
@@ -294,135 +288,75 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
         'precisao': precisao,
         'createdAt': nowServer,
         'updatedAt': nowServer,
+        'diagnostico': {
+          'status': _previewStatus,
+          'alertas': _previewAlertas,
+          'acoes': _previewAcoes,
+        }
       };
 
       String resumoHistorico = '';
       String? obsAlerta;
-      String statusFinal = 'neutro';
-      List<String> alertasFinal = [];
-      List<String> acoesFinal = [];
 
       if (metodo == 'manual') {
         dadosAnalise['textura_estimada'] = _texturaEstimada;
-        dadosAnalise['sintoma_visual'] = _sintomaVisual;
+        dadosAnalise['sintoma_local'] = _sintomaLocal;
+        dadosAnalise['sintoma_aparencia'] = _sintomaAparencia;
 
-        // “diagnóstico provável” (sem prometer milagre)
-        final acoes = <String>[];
-        final alertas = <String>[];
-
-        alertas.add('Diagnóstico por observação (sem laudo).');
-        if (_texturaEstimada == 'Arenoso') {
-          acoes.add(
-            'Reforçar matéria orgânica e irrigação (solo drena rápido).',
-          );
-        } else if (_texturaEstimada == 'Argiloso') {
-          acoes.add(
-            'Atenção a encharcamento/compactação. Use cobertura e composto.',
-          );
-        } else {
-          acoes.add('Solo médio: mantenha adubação orgânica e cobertura.');
-        }
-
-        if (_sintomaVisual != null && _sintomaVisual != 'Sem sintomas') {
-          alertas.add('Sintoma informado: $_sintomaVisual');
-          acoes.add('Ajustar adubação conforme o sintoma (N/P/K/Fe/S).');
-        }
-
-        statusFinal = 'atencao';
-        alertasFinal = alertas;
-        acoesFinal = acoes;
-
-        resumoHistorico = 'Análise Visual: Solo $_texturaEstimada.';
-        if (_sintomaVisual != null) {
-          resumoHistorico += ' Sintoma: $_sintomaVisual.';
+        resumoHistorico = 'Clínica Visual: Solo $_texturaEstimada.';
+        if (_previewAlertas.isNotEmpty) {
+          resumoHistorico += ' Diagnóstico: ${_previewAlertas.first}';
         }
       } else {
         final ph = _parseNullable(_phController)!;
         final v = _parseNullable(_vPercentController)!;
 
-        final mo = _parseNullable(_moController);
-        final p = _parseNullable(_fosforoController);
-        final k = _parseNullable(_potassioController);
-        final ca = _parseNullable(_calcioController);
-        final mg = _parseNullable(_magnesioController);
-
-        // Salva só o que veio preenchido (premium: sem "0" fake)
         dadosAnalise['ph'] = ph;
         dadosAnalise['v_percent'] = v;
-        if (mo != null) dadosAnalise['mo'] = mo;
-        if (p != null) dadosAnalise['fosforo'] = p;
-        if (k != null) dadosAnalise['potassio'] = k;
-        if (ca != null) dadosAnalise['calcio'] = ca;
-        if (mg != null) dadosAnalise['magnesio'] = mg;
+        dadosAnalise['mo'] = _parseNullable(_moController);
+        dadosAnalise['fosforo'] = _parseNullable(_fosforoController);
+        dadosAnalise['potassio'] = _parseNullable(_potassioController);
+        dadosAnalise['calcio'] = _parseNullable(_calcioController);
+        dadosAnalise['magnesio'] = _parseNullable(_magnesioController);
 
-        // Unidades (do jeito que a UI pede hoje — evita confusão depois)
-        dadosAnalise['unidades'] = {
-          'ph': 'H2O',
-          'v_percent': '%',
-          'mo': 'g/dm³',
-          'fosforo': 'mg/dm³',
-          'potassio': 'mmol',
-          'calcio': 'mmol',
-          'magnesio': 'mmol',
-        };
+        resumoHistorico =
+            'Laudo de Laboratório: pH ${_fmt(ph)} | V% ${_fmt(v)}';
 
-        resumoHistorico = 'Laudo Técnico: pH ${_fmt(ph)} | V% ${_fmt(v)}';
-
-        final ref =
-            _referenciaCulturas[_culturaSelecionada] ??
-            _referenciaCulturas['Geral (Horta)']!;
-        final diag = _avaliarSolo(ph: ph, v: v, ref: ref);
-
-        statusFinal = diag.status;
-        alertasFinal = diag.alertas;
-        acoesFinal = diag.acoes;
-
-        if (statusFinal == 'critico') {
-          obsAlerta = '⚠️ Atenção: condição crítica. Veja recomendações.';
-        } else if (statusFinal == 'atencao') {
-          obsAlerta = '⚠️ Ajustes recomendados para melhorar desempenho.';
-        } else {
-          obsAlerta = '✅ Solo em boa condição para a cultura.';
+        if (_previewStatus == 'critico') {
+          obsAlerta = '⚠️ Atenção: condição crítica do solo.';
+        } else if (_previewStatus == 'ok') {
+          obsAlerta = '✅ Solo em excelente condição.';
         }
       }
-
-      dadosAnalise['diagnostico'] = {
-        'status': statusFinal,
-        'alertas': alertasFinal,
-        'acoes': acoesFinal,
-      };
-
-      // Batch (premium: grava tudo junto)
-      final appSession = SessionScope.of(context).session;
-      if (appSession == null) throw Exception('Sem tenant selecionado');
 
       final fs = FirebaseFirestore.instance;
       final batch = fs.batch();
 
-      final analiseRef = FirebasePaths.analisesSoloCol(appSession.tenantId).doc();
+      final analiseRef =
+          FirebasePaths.analisesSoloCol(appSession.tenantId).doc();
       batch.set(analiseRef, _limparNulos(dadosAnalise));
 
-      final historicoRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
+      final historicoRef =
+          FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
       batch.set(
         historicoRef,
         _limparNulos({
           'canteiro_id': canteiroId,
-          'uid_usuario': user.uid,
+          'uid_usuario': _user!.uid,
           'data': FieldValue.serverTimestamp(),
-          'tipo_manejo': 'Análise de Solo',
-          'produto': metodo == 'manual'
-              ? 'Teste Físico/Visual'
-              : 'Laudo Químico',
+          'tipo_manejo': 'Análise de Solo / Clínica',
+          'produto':
+              metodo == 'manual' ? 'Diagnóstico Visual' : 'Laudo Químico',
           'detalhes': resumoHistorico,
-          'observacao_extra': obsAlerta,
+          'observacao_extra': obsAlerta ?? _previewAcoes.join(', '),
           'quantidade_g': 0,
           'ref_analise_id': analiseRef.id,
-          'status': statusFinal,
+          'status': _previewStatus,
         }),
       );
 
-      // Cache no canteiro (zera recalcular lendo tudo depois)
-      final canteiroRef = FirebasePaths.canteirosCol(appSession.tenantId).doc(canteiroId);
+      final canteiroRef =
+          FirebasePaths.canteirosCol(appSession.tenantId).doc(canteiroId);
       batch.set(
         canteiroRef,
         _limparNulos({
@@ -430,17 +364,8 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
           'ult_analise_solo': {
             'analise_id': analiseRef.id,
             'metodo': metodo,
-            'precisao': precisao,
-            'status': statusFinal,
-            'cultura_referencia': _culturaSelecionada,
+            'status': _previewStatus,
             'resumo': resumoHistorico,
-            // Só salva pH/V no cache quando laudo
-            'ph': metodo == 'laboratorial'
-                ? _parseNullable(_phController)
-                : null,
-            'v_percent': metodo == 'laboratorial'
-                ? _parseNullable(_vPercentController)
-                : null,
             'atualizadoEm': FieldValue.serverTimestamp(),
           },
         }),
@@ -450,10 +375,10 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
       await batch.commit();
 
       if (!mounted) return;
-      _snack('✅ Diagnóstico salvo com sucesso!', cor: Colors.green);
+      _toast('✅ Diagnóstico salvo com sucesso!');
       Navigator.pop(context);
     } catch (e) {
-      _snack('Erro ao salvar: $e', cor: Colors.red);
+      _toast('Erro ao salvar: $e', isError: true);
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
@@ -462,53 +387,42 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   Map<String, dynamic> _limparNulos(Map<String, dynamic> map) {
     final out = <String, dynamic>{};
     map.forEach((k, v) {
-      if (v == null) return;
-      if (v is Map<String, dynamic>) {
-        final vv = _limparNulos(v);
-        if (vv.isEmpty) return;
-        out[k] = vv;
-        return;
-      }
-      out[k] = v;
+      if (v != null) out[k] = v;
     });
     return out;
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = _user;
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Diagnóstico Inteligente'),
-          backgroundColor: Colors.green[700],
-          foregroundColor: Colors.white,
-        ),
-        body: const Center(child: Text('Faça login para usar o diagnóstico.')),
+    if (_user == null) {
+      return const PageContainer(
+        title: 'Clínica da Planta',
+        body: Center(child: Text('Faça login para usar.')),
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text(
-          'Diagnóstico Inteligente',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Clínica e Solo',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.green[800],
+        foregroundColor: Theme.of(context).colorScheme.primary,
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          labelColor: Colors.green[800],
+          labelColor: Theme.of(context).colorScheme.primary,
           unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.green,
+          indicatorColor: Theme.of(context).colorScheme.primary,
           indicatorWeight: 3,
-          onTap: (_) => _recalcularPreview(),
+          onTap: (index) {
+            if (index == 0) _recalcularPreviewVisual();
+            if (index == 1) _recalcularPreviewLaboratorio();
+          },
           tabs: const [
-            Tab(text: 'Teste Prático', icon: Icon(Icons.back_hand)),
-            Tab(text: 'Laudo Técnico', icon: Icon(Icons.science)),
+            Tab(text: 'Diagnóstico Visual', icon: Icon(Icons.visibility)),
+            Tab(text: 'Laudo de Laboratório', icon: Icon(Icons.science)),
           ],
         ),
       ),
@@ -518,388 +432,377 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
             controller: _tabController,
             children: [_buildAbaManual(), _buildAbaLaboratorio()],
           ),
-          if (_salvando) _SavingOverlay(),
+          if (_salvando)
+            const ModalBarrier(dismissible: false, color: Colors.black26),
+          if (_salvando) const Center(child: CircularProgressIndicator()),
         ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTokens.md),
+          child: AppButtons.elevatedIcon(
+            onPressed: _salvando ? null : _salvarDados,
+            icon: const Icon(Icons.save),
+            label: const Text('SALVAR DIAGNÓSTICO'),
+          ),
+        ),
       ),
     );
   }
 
-  // ---------- UI: Header Canteiro ----------
   Widget _headerLocal() {
-    final user = _user!;
-    if (_carregandoCanteiro) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: LinearProgressIndicator(),
-      );
-    }
+    final cs = Theme.of(context).colorScheme;
+
+    if (_carregandoCanteiro) return const LinearProgressIndicator();
 
     if (_bloquearSelecaoCanteiro) {
-      return _CanteiroCard(
-        titulo: _nomeCanteiro.isEmpty ? 'Canteiro' : _nomeCanteiro,
-        subtitulo: _areaCanteiro > 0 ? 'Área: ${_fmt(_areaCanteiro)} m²' : null,
-        travado: true,
+      return Container(
+        padding: const EdgeInsets.all(AppTokens.md),
+        decoration: BoxDecoration(
+          color: cs.primaryContainer.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.place, color: cs.primary),
+            const SizedBox(width: AppTokens.sm),
+            Text(
+              _nomeCanteiro.isEmpty ? 'Canteiro Atual' : _nomeCanteiro,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
       );
     }
 
-    // Seleção de canteiro (premium)
     return StreamBuilder<QuerySnapshot>(
       stream: FirebasePaths.canteirosCol(appSession.tenantId)
           .where('ativo', isEqualTo: true)
           .snapshots(),
       builder: (context, snap) {
-        if (snap.hasError) {
-          return _InfoBox(
-            icon: Icons.error_outline,
-            cor: Colors.red,
-            texto: 'Erro ao carregar canteiros: ${snap.error}',
-          );
-        }
         if (!snap.hasData) return const LinearProgressIndicator();
-
         final docs = snap.data!.docs;
-        if (docs.isEmpty) {
-          return _InfoBox(
-            icon: Icons.warning_amber,
-            cor: Colors.orange,
-            texto: 'Nenhum canteiro ativo. Crie um primeiro.',
-          );
-        }
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+        return DropdownButtonFormField<String>(
+          value: _canteiroSelecionadoId,
+          decoration: InputDecoration(
+            labelText: 'Selecione o Lote / Canteiro',
+            prefixIcon: Icon(Icons.place, color: cs.primary),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
+            filled: true,
+            fillColor: Colors.white,
           ),
-          child: Row(
-            children: [
-              Icon(Icons.place, color: Colors.green[700]),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: _canteiroSelecionadoId,
-                    hint: const Text('Selecione um canteiro'),
-                    items: docs.map((d) {
-                      final data = (d.data() as Map<String, dynamic>? ?? {});
-                      final nome = (data['nome'] ?? 'Canteiro').toString();
-                      final area = data['area_m2'];
-                      double areaM2 = 0;
-                      if (area is num) areaM2 = area.toDouble();
-                      if (area is String) areaM2 = double.tryParse(area) ?? 0;
-                      return DropdownMenuItem<String>(
-                        value: d.id,
-                        child: Text('$nome (${_fmt(areaM2)} m²)'),
-                      );
-                    }).toList(),
-                    onChanged: (id) async {
-                      if (id == null) return;
-                      setState(() {
-                        _canteiroSelecionadoId = id;
-                        _nomeCanteiro = '';
-                        _areaCanteiro = 0;
-                      });
-                      await _carregarDadosCanteiro(id);
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
+          items: docs.map((d) {
+            final nome = ((d.data() as Map)['nome'] ?? 'Lote').toString();
+            return DropdownMenuItem(value: d.id, child: Text(nome));
+          }).toList(),
+          onChanged: (id) async {
+            if (id != null) {
+              setState(() => _canteiroSelecionadoId = id);
+              await _carregarDadosCanteiro(id);
+            }
+          },
         );
       },
     );
   }
 
-  // ---------- Aba Manual ----------
+  // ✅ ABA MANUAL (VISUAL E INTELIGENTE)
   Widget _buildAbaManual() {
+    final cs = Theme.of(context).colorScheme;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTokens.md),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _headerLocal(),
-          const SizedBox(height: 14),
-
-          _InfoBox(
-            icon: Icons.lightbulb,
-            cor: Colors.orange,
-            texto:
-                'Sem análise química? Use o "teste da mão" e observe as folhas para um diagnóstico rápido (sem promessas mágicas).',
-          ),
-          const SizedBox(height: 18),
-
-          _SectionTitle('1. Textura do Solo'),
-          const SizedBox(height: 10),
-          _OpcaoManual(
-            titulo: 'Arenoso',
-            descricao: 'Esfarela na mão, não molda. Drena rápido.',
-            valor: 'Arenoso',
-            grupo: _texturaEstimada,
-            onChanged: (v) => setState(() => _texturaEstimada = v),
-          ),
-          _OpcaoManual(
-            titulo: 'Médio (Franco)',
-            descricao: 'Molda mas quebra ao dobrar. Ideal.',
-            valor: 'Médio',
-            grupo: _texturaEstimada,
-            onChanged: (v) => setState(() => _texturaEstimada = v),
-          ),
-          _OpcaoManual(
-            titulo: 'Argiloso',
-            descricao: 'Molda bem (massinha). Retém água.',
-            valor: 'Argiloso',
-            grupo: _texturaEstimada,
-            onChanged: (v) => setState(() => _texturaEstimada = v),
-          ),
-
-          const SizedBox(height: 18),
-          _SectionTitle('2. Sintomas nas Plantas (Opcional)'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _sintomaVisual,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 15,
-                vertical: 15,
-              ),
+          const SizedBox(height: AppTokens.lg),
+          SectionCard(
+            title: 'Etapa 1: Textura do Solo',
+            child: Column(
+              children: [
+                _chipOpcao('Arenoso', 'Solto, drena rápido.', _texturaEstimada,
+                    (v) {
+                  setState(() {
+                    _texturaEstimada = v;
+                    _recalcularPreviewVisual();
+                  });
+                }, cs),
+                _chipOpcao('Médio (Franco)', 'Molda como massinha leve.',
+                    _texturaEstimada, (v) {
+                  setState(() {
+                    _texturaEstimada = v;
+                    _recalcularPreviewVisual();
+                  });
+                }, cs),
+                _chipOpcao('Argiloso', 'Pesado, gruda e retém muita água.',
+                    _texturaEstimada, (v) {
+                  setState(() {
+                    _texturaEstimada = v;
+                    _recalcularPreviewVisual();
+                  });
+                }, cs),
+              ],
             ),
-            isExpanded: true,
-            hint: const Text('Selecione um sintoma...'),
-            items: const [
-              DropdownMenuItem(
-                value: 'Sem sintomas',
-                child: Text('🌱 Plantas Saudáveis'),
-              ),
-              DropdownMenuItem(
-                value: 'Falta N',
-                child: Text('🍂 Folhas VELHAS amareladas (Falta N)'),
-              ),
-              DropdownMenuItem(
-                value: 'Falta Fe/S',
-                child: Text('🌿 Folhas NOVAS amareladas (Falta Fe/S)'),
-              ),
-              DropdownMenuItem(
-                value: 'Falta P',
-                child: Text('🟣 Folhas arroxeadas (Falta P)'),
-              ),
-              DropdownMenuItem(
-                value: 'Falta K',
-                child: Text('🔥 Bordas queimadas (Falta K)'),
-              ),
-            ],
-            onChanged: (v) => setState(() => _sintomaVisual = v),
           ),
-
-          const SizedBox(height: 18),
-          _InfoBox(
-            icon: Icons.shield_outlined,
-            cor: Colors.blue,
-            texto:
-                'Dica premium: esse diagnóstico manual serve como registro e direção. O laudo técnico é o que “bate martelo”.',
+          const SizedBox(height: AppTokens.lg),
+          SectionCard(
+            title: 'Etapa 2: Sintomas nas Folhas',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Onde está o problema?',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'nenhum', label: Text('Tudo Verde')),
+                    ButtonSegment(
+                        value: 'velhas', label: Text('Folhas Velhas (Baixo)')),
+                    ButtonSegment(
+                        value: 'novas', label: Text('Folhas Novas (Topo)')),
+                  ],
+                  selected: {_sintomaLocal},
+                  onSelectionChanged: (set) => setState(() {
+                    _sintomaLocal = set.first;
+                    _recalcularPreviewVisual();
+                  }),
+                ),
+                if (_sintomaLocal != 'nenhum') ...[
+                  const SizedBox(height: 16),
+                  const Text('Qual a aparência?',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                          label: const Text('Amareladas'),
+                          selected: _sintomaAparencia == 'amarelas',
+                          onSelected: (v) => setState(() {
+                                _sintomaAparencia = 'amarelas';
+                                _recalcularPreviewVisual();
+                              })),
+                      ChoiceChip(
+                          label: const Text('Arroxeadas'),
+                          selected: _sintomaAparencia == 'roxas',
+                          onSelected: (v) => setState(() {
+                                _sintomaAparencia = 'roxas';
+                                _recalcularPreviewVisual();
+                              })),
+                      ChoiceChip(
+                          label: const Text('Bordas Queimadas'),
+                          selected: _sintomaAparencia == 'queimadas',
+                          onSelected: (v) => setState(() {
+                                _sintomaAparencia = 'queimadas';
+                                _recalcularPreviewVisual();
+                              })),
+                    ],
+                  )
+                ]
+              ],
+            ),
           ),
-
-          const SizedBox(height: 24),
-          _PrimaryButton(texto: 'SALVAR OBSERVAÇÃO', onPressed: _salvarDados),
+          if (_previewStatus != 'neutro') ...[
+            const SizedBox(height: AppTokens.lg),
+            _DiagnosticoPreview(
+                status: _previewStatus,
+                alertas: _previewAlertas,
+                acoes: _previewAcoes),
+          ]
         ],
       ),
     );
   }
 
-  // ---------- Aba Laboratório ----------
+  Widget _chipOpcao(String titulo, String desc, String? selecionado,
+      ValueChanged<String> onTap, ColorScheme cs) {
+    bool isSel = selecionado == titulo;
+    return InkWell(
+      onTap: () => onTap(titulo),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+            color: isSel ? cs.primaryContainer : Colors.white,
+            border: Border.all(color: isSel ? cs.primary : cs.outlineVariant),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd)),
+        child: Row(
+          children: [
+            Icon(isSel ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: isSel ? cs.primary : cs.outline),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(desc,
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ ABA LABORATÓRIO (USANDO APP UI COMPONENTES)
   Widget _buildAbaLaboratorio() {
-    final ref =
-        _referenciaCulturas[_culturaSelecionada] ??
+    final ref = _referenciaCulturas[_culturaSelecionada] ??
         _referenciaCulturas['Geral (Horta)']!;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTokens.md),
       child: Form(
         key: _formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _headerLocal(),
-            const SizedBox(height: 14),
-
-            // Cultura alvo
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+            const SizedBox(height: AppTokens.lg),
+            SectionCard(
+              title: 'Cultura de Referência',
+              child: DropdownButtonFormField<String>(
+                isExpanded: true,
+                decoration: const InputDecoration(border: InputBorder.none),
+                value: _culturaSelecionada,
+                items: _referenciaCulturas.keys
+                    .map(
+                        (c) => DropdownMenuItem(value: c, child: Text('🌱 $c')))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _culturaSelecionada = v);
+                    _recalcularPreviewLaboratorio();
+                  }
+                },
               ),
+            ),
+            const SizedBox(height: AppTokens.sm),
+            Text(
+              '  Valores ideais: pH ${_fmt(ref['ph_min']!)}–${_fmt(ref['ph_max']!)} | V% ~ ${_fmt(ref['v_ideal']!, dec: 0)}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: AppTokens.lg),
+            if (_previewStatus != 'neutro') ...[
+              _DiagnosticoPreview(
+                  status: _previewStatus,
+                  alertas: _previewAlertas,
+                  acoes: _previewAcoes),
+              const SizedBox(height: AppTokens.lg),
+            ],
+            SectionCard(
+              title: 'Índices Essenciais',
               child: Row(
                 children: [
-                  Icon(Icons.local_florist, color: Colors.green[700]),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: _culturaSelecionada,
-                        icon: const Icon(Icons.keyboard_arrow_down),
-                        items: _referenciaCulturas.keys.map((cultura) {
-                          return DropdownMenuItem<String>(
-                            value: cultura,
-                            child: Text('Cultura alvo: $cultura'),
-                          );
-                        }).toList(),
-                        onChanged: (v) {
-                          if (v == null) return;
-                          setState(() => _culturaSelecionada = v);
-                          _recalcularPreview();
-                        },
-                      ),
+                    child: AppTextField(
+                      controller: _phController,
+                      labelText: 'pH (H2O)',
+                      hintText: 'Ex: 6,5',
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]'))
+                      ],
+                      validator: (v) =>
+                          _toNum(v) == null ? 'Obrigatório' : null,
+                    ),
+                  ),
+                  const SizedBox(width: AppTokens.md),
+                  Expanded(
+                    child: AppTextField(
+                      controller: _vPercentController,
+                      labelText: 'V% (Sat.)',
+                      hintText: 'Ex: 70',
+                      suffixText: '%',
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]'))
+                      ],
+                      validator: (v) =>
+                          _toNum(v) == null ? 'Obrigatório' : null,
                     ),
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 14),
-
-            // Caixa de referência rápida
-            _InfoBox(
-              icon: Icons.rule,
-              cor: Colors.green,
-              texto:
-                  'Referência (${_culturaSelecionada}): pH ${_fmt(ref['ph_min']!)}–${_fmt(ref['ph_max']!)} | V% ideal ~ ${_fmt(ref['v_ideal']!, dec: 0)}',
-            ),
-
-            const SizedBox(height: 14),
-
-            // Pré-diagnóstico live
-            if (_previewStatus != 'neutro')
-              _DiagnosticoPreview(
-                status: _previewStatus,
-                alertas: _previewAlertas,
-                acoes: _previewAcoes,
+            const SizedBox(height: AppTokens.lg),
+            SectionCard(
+              title: 'Nutrientes (Opcional)',
+              child: Column(
+                children: [
+                  AppTextField(
+                    controller: _moController,
+                    labelText: 'Matéria Orgânica (M.O.)',
+                    suffixText: 'g/dm³',
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  const SizedBox(height: AppTokens.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppTextField(
+                          controller: _fosforoController,
+                          labelText: 'Fósforo (P)',
+                          suffixText: 'mg/dm³',
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                        ),
+                      ),
+                      const SizedBox(width: AppTokens.md),
+                      Expanded(
+                        child: AppTextField(
+                          controller: _potassioController,
+                          labelText: 'Potássio (K)',
+                          suffixText: 'mmol',
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppTokens.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppTextField(
+                          controller: _calcioController,
+                          labelText: 'Cálcio (Ca)',
+                          suffixText: 'mmol',
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                        ),
+                      ),
+                      const SizedBox(width: AppTokens.md),
+                      Expanded(
+                        child: AppTextField(
+                          controller: _magnesioController,
+                          labelText: 'Magnésio (Mg)',
+                          suffixText: 'mmol',
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-
-            if (_previewStatus != 'neutro') const SizedBox(height: 14),
-
-            // Campos principais
-            Row(
-              children: [
-                Expanded(
-                  child: _InputComMonitoramento(
-                    controller: _phController,
-                    label: 'pH (H2O)',
-                    referencias: ref,
-                    tipoDado: 'ph',
-                    obrigatorio: true,
-                    ajudaTitulo: 'pH do Solo',
-                    ajudaTexto:
-                        'Mede a acidez. Muito baixo (ácido) trava nutrientes; muito alto também atrapalha.',
-                    validator: (v) {
-                      final val = _toNum(v);
-                      if (val == null) return 'Obrigatório';
-                      if (val < 0 || val > 14) return 'pH inválido';
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _InputComMonitoramento(
-                    controller: _vPercentController,
-                    label: 'V% (Saturação)',
-                    referencias: ref,
-                    tipoDado: 'v',
-                    obrigatorio: true,
-                    ajudaTitulo: 'V% - Saturação por Bases',
-                    ajudaTexto:
-                        'É o “nível da bateria” do solo. Quanto mais perto do ideal da cultura, melhor.',
-                    validator: (v) {
-                      final val = _toNum(v);
-                      if (val == null) return 'Obrigatório';
-                      if (val < 0 || val > 100) return '0 a 100';
-                      return null;
-                    },
-                  ),
-                ),
-              ],
             ),
-
-            const SizedBox(height: 14),
-            _SectionTitle('Nutrientes (opcional)'),
-            const SizedBox(height: 10),
-
-            _InputSimples(
-              controller: _moController,
-              label: 'Matéria Orgânica (M.O.)',
-              unidade: 'g/dm³',
-            ),
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _InputSimples(
-                    controller: _fosforoController,
-                    label: 'Fósforo (P)',
-                    unidade: 'mg/dm³',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _InputSimples(
-                    controller: _potassioController,
-                    label: 'Potássio (K)',
-                    unidade: 'mmol',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: _InputSimples(
-                    controller: _calcioController,
-                    label: 'Cálcio (Ca)',
-                    unidade: 'mmol',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _InputSimples(
-                    controller: _magnesioController,
-                    label: 'Magnésio (Mg)',
-                    unidade: 'mmol',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 22),
-            _PrimaryButton(texto: 'ANALISAR E SALVAR', onPressed: _salvarDados),
           ],
         ),
       ),
@@ -907,145 +810,12 @@ class _TelaDiagnosticoState extends State<TelaDiagnostico>
   }
 
   double? _toNum(String? v) {
-    if (v == null) return null;
-    final t = v.trim();
-    if (t.isEmpty) return null;
-    return double.tryParse(t.replaceAll(',', '.'));
+    if (v == null || v.trim().isEmpty) return null;
+    return double.tryParse(v.trim().replaceAll(',', '.'));
   }
 }
 
-// ================== COMPONENTES PREMIUM ==================
-
-class _SavingOverlay extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black.withOpacity(0.20),
-      child: const Center(
-        child: Card(
-          elevation: 8,
-          child: Padding(
-            padding: EdgeInsets.all(18),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 14),
-                Text('Salvando...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 16,
-        color: Colors.black87,
-      ),
-    );
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  final String texto;
-  final VoidCallback onPressed;
-
-  const _PrimaryButton({required this.texto, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green[700],
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        child: Text(
-          texto,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: .5,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CanteiroCard extends StatelessWidget {
-  final String titulo;
-  final String? subtitulo;
-  final bool travado;
-
-  const _CanteiroCard({
-    required this.titulo,
-    this.subtitulo,
-    this.travado = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.place, color: Colors.green[700]),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  titulo,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (subtitulo != null)
-                  Text(
-                    subtitulo!,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-              ],
-            ),
-          ),
-          if (travado) const Icon(Icons.lock, size: 18, color: Colors.grey),
-        ],
-      ),
-    );
-  }
-}
-
+// ================== COMPONENTE VISUAL DO DIAGNÓSTICO ==================
 class _DiagnosticoPreview extends StatelessWidget {
   final String status;
   final List<String> alertas;
@@ -1062,440 +832,56 @@ class _DiagnosticoPreview extends StatelessWidget {
       case 'critico':
         return Colors.red;
       case 'atencao':
-        return Colors.orange;
+        return Colors.orange.shade800;
       case 'ok':
-        return Colors.green;
+        return Colors.green.shade700;
       default:
         return Colors.blueGrey;
-    }
-  }
-
-  String get _titulo {
-    switch (status) {
-      case 'critico':
-        return 'Situação crítica';
-      case 'atencao':
-        return 'Atenção';
-      case 'ok':
-        return 'Tudo certo';
-      default:
-        return 'Pré-diagnóstico';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _cor.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _cor.withOpacity(0.35)),
+        color: _cor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _cor.withOpacity(0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.insights, color: _cor),
+              Icon(Icons.analytics, color: _cor),
               const SizedBox(width: 8),
               Text(
-                _titulo,
+                'Parecer do Assistente Agronômico',
                 style: TextStyle(
-                  color: _cor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                    color: _cor, fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ],
           ),
           if (alertas.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            ...alertas
-                .take(4)
-                .map(
-                  (a) => Text(
-                    '• $a',
-                    style: TextStyle(color: _cor.withOpacity(0.9)),
-                  ),
-                ),
+            const SizedBox(height: 12),
+            ...alertas.map((a) => Text('• $a',
+                style: TextStyle(color: Colors.grey.shade800, fontSize: 13))),
           ],
           if (acoes.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Ações sugeridas:',
-              style: TextStyle(color: _cor, fontWeight: FontWeight.bold),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Divider(),
             ),
-            const SizedBox(height: 6),
-            ...acoes
-                .take(4)
-                .map(
-                  (a) => Text(
-                    '→ $a',
-                    style: TextStyle(color: _cor.withOpacity(0.9)),
-                  ),
-                ),
+            const Text('Ação Recomendada:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            const SizedBox(height: 4),
+            ...acoes.map((a) => Text('👉 $a',
+                style: TextStyle(
+                    color: _cor, fontWeight: FontWeight.bold, fontSize: 13))),
           ],
         ],
       ),
     );
   }
-}
-
-class _InputComMonitoramento extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-  final Map<String, double> referencias;
-  final String tipoDado; // 'ph' ou 'v'
-  final bool obrigatorio;
-  final String ajudaTitulo;
-  final String ajudaTexto;
-  final String? Function(String?)? validator;
-
-  const _InputComMonitoramento({
-    required this.controller,
-    required this.label,
-    required this.referencias,
-    required this.tipoDado,
-    required this.ajudaTitulo,
-    required this.ajudaTexto,
-    this.obrigatorio = false,
-    this.validator,
-  });
-
-  @override
-  State<_InputComMonitoramento> createState() => _InputComMonitoramentoState();
-}
-
-class _InputComMonitoramentoState extends State<_InputComMonitoramento> {
-  String? _alerta;
-  Color _corBorda = Colors.grey.shade300;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_validar);
-    _validar();
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_validar);
-    super.dispose();
-  }
-
-  void _validar() {
-    final txt = widget.controller.text.replaceAll(',', '.').trim();
-    if (txt.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _alerta = null;
-        _corBorda = Colors.grey.shade300;
-      });
-      return;
-    }
-
-    final val = double.tryParse(txt);
-    if (val == null) return;
-
-    String novoAlerta = '';
-    Color novaCor = Colors.green;
-
-    if (widget.tipoDado == 'ph') {
-      final min = widget.referencias['ph_min'] ?? 5.5;
-      final max = widget.referencias['ph_max'] ?? 6.5;
-      if (val < min) {
-        novoAlerta = 'Muito ácido';
-        novaCor = Colors.red;
-      } else if (val > max) {
-        novoAlerta = 'Muito alcalino';
-        novaCor = Colors.orange;
-      } else {
-        novoAlerta = 'Faixa ok';
-        novaCor = Colors.green;
-      }
-    } else {
-      final ideal = widget.referencias['v_ideal'] ?? 70;
-      if (val < (ideal - 15)) {
-        novoAlerta = 'Fertilidade baixa';
-        novaCor = Colors.red;
-      } else if (val < ideal) {
-        novoAlerta = 'Abaixo do ideal';
-        novaCor = Colors.orange;
-      } else {
-        novoAlerta = 'Ótimo';
-        novaCor = Colors.green;
-      }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _alerta = novoAlerta;
-      _corBorda = novaCor;
-    });
-  }
-
-  void _mostrarAjuda(BuildContext ctx) {
-    showModalBottomSheet(
-      context: ctx,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (c) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.ajudaTitulo,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            const SizedBox(height: 10),
-            Text(widget.ajudaTexto),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              widget.label,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            GestureDetector(
-              onTap: () => _mostrarAjuda(context),
-              child: Icon(
-                Icons.help_outline,
-                size: 18,
-                color: Colors.blue[300],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: widget.controller,
-          validator: widget.validator,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-            LengthLimitingTextInputFormatter(6),
-          ],
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            isDense: true,
-            hintText: widget.obrigatorio ? 'Obrigatório' : 'Opcional',
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: _corBorda),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: _corBorda, width: 2),
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            suffixIcon: _alerta != null
-                ? Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: Icon(Icons.circle, color: _corBorda, size: 12),
-                  )
-                : null,
-            suffixIconConstraints: const BoxConstraints(minWidth: 20),
-          ),
-        ),
-        if (_alerta != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 4),
-            child: Text(
-              _alerta!,
-              style: TextStyle(
-                color: _corBorda,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _InputSimples extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final String unidade;
-
-  const _InputSimples({
-    required this.controller,
-    required this.label,
-    required this.unidade,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$label ($unidade)',
-          style: TextStyle(
-            color: Colors.grey[700],
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-            LengthLimitingTextInputFormatter(10),
-          ],
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: Colors.white,
-            isDense: true,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.green.shade600, width: 2),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _OpcaoManual extends StatelessWidget {
-  final String titulo;
-  final String descricao;
-  final String valor;
-  final String? grupo;
-  final ValueChanged<String?> onChanged;
-
-  const _OpcaoManual({
-    required this.titulo,
-    required this.descricao,
-    required this.valor,
-    required this.grupo,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final sel = valor == grupo;
-    return GestureDetector(
-      onTap: () => onChanged(valor),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: sel ? Colors.green.shade50 : Colors.white,
-          border: Border.all(color: sel ? Colors.green : Colors.grey.shade200),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(
-              sel ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: sel ? Colors.green : Colors.grey,
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titulo,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    descricao,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoBox extends StatelessWidget {
-  final IconData icon;
-  final Color cor;
-  final String texto;
-
-  const _InfoBox({required this.icon, required this.cor, required this.texto});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: cor.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: cor.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: cor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              texto,
-              style: TextStyle(
-                color: cor.withOpacity(0.90),
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------- Model ----------
-class _DiagnosticoResult {
-  final String status;
-  final List<String> alertas;
-  final List<String> acoes;
-
-  _DiagnosticoResult({
-    required this.status,
-    required this.alertas,
-    required this.acoes,
-  });
 }
