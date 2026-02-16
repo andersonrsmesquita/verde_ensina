@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'firestore_writer.dart';
+
 class UserRepository {
   static final _fs = FirebaseFirestore.instance;
 
@@ -22,14 +24,13 @@ class UserRepository {
     };
 
     if (!snap.exists) {
-      await docRef.set(base);
+      await FirestoreWriter.create(docRef, base);
       return;
     }
 
     // Já existe: só atualiza login/updatedAt (não destrói dados antigos)
-    await docRef.update({
+    await FirestoreWriter.update(docRef, {
       'email': user.email,
-      'updatedAt': FieldValue.serverTimestamp(),
       'lastLoginAt': FieldValue.serverTimestamp(),
     });
   }

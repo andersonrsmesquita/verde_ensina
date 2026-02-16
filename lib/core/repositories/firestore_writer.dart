@@ -75,6 +75,44 @@ class FirestoreWriter {
     }
   }
 
+  /// Escrita de create (set) em um DocumentReference com timestamps + sanitização.
+  ///
+  /// Útil quando você quer controlar o ID do doc (ex: ref = col.doc()).
+  static Future<void> create(
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> payload, {
+    String createdField = 'createdAt',
+    String updatedField = 'updatedAt',
+    String? legacyCreatedField,
+    String? legacyUpdatedField,
+  }) async {
+    try {
+      final enriched = withTimestamps(
+        payload,
+        isCreate: true,
+        createdField: createdField,
+        updatedField: updatedField,
+        legacyCreatedField: legacyCreatedField,
+        legacyUpdatedField: legacyUpdatedField,
+      );
+      final safe = sanitize(enriched);
+      await ref.set(safe, SetOptions(merge: false));
+    } catch (e) {
+      throw AppFriendlyException.from(e);
+    }
+  }
+
+  /// Delete blindado.
+  static Future<void> delete(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      await ref.delete();
+    } catch (e) {
+      throw AppFriendlyException.from(e);
+    }
+  }
+
   /// Escrita de update com timestamps + sanitização.
   static Future<void> update(
     DocumentReference<Map<String, dynamic>> ref,
@@ -143,9 +181,12 @@ class AppFriendlyException implements Exception {
             original: e,
           );
         case 'not-found':
-          return AppFriendlyException('Registro não encontrado. (not-found)', original: e);
+          return AppFriendlyException('Registro não encontrado. (not-found)',
+              original: e);
         case 'already-exists':
-          return AppFriendlyException('Esse registro já existe. (already-exists)', original: e);
+          return AppFriendlyException(
+              'Esse registro já existe. (already-exists)',
+              original: e);
         case 'invalid-argument':
           return AppFriendlyException(
             'Dados inválidos pra salvar. Confere os campos e tenta de novo. (invalid-argument)',
@@ -164,7 +205,9 @@ class AppFriendlyException implements Exception {
       return AppFriendlyException(e.message.toString(), original: e);
     }
     if (e is UnsupportedError) {
-      return AppFriendlyException(e.message ?? 'Tipo não suportado para salvar.', original: e);
+      return AppFriendlyException(
+          e.message ?? 'Tipo não suportado para salvar.',
+          original: e);
     }
 
     // Fallback

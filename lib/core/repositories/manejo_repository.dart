@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../firebase/firebase_paths.dart';
-import 'firestore_sanitizer.dart';
+import 'firestore_writer.dart';
 
 class ManejoRepository {
   final FirebaseFirestore _fs;
-  ManejoRepository({FirebaseFirestore? fs}) : _fs = fs ?? FirebaseFirestore.instance;
+  ManejoRepository({FirebaseFirestore? fs})
+      : _fs = fs ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _tenantCol(String tenantId) =>
       FirebasePaths.tenantSubCol(tenantId, 'historico_manejo');
@@ -45,12 +46,11 @@ class ManejoRepository {
       'data': FieldValue.serverTimestamp(),
       'quantidade_g': quantidadeG,
       'concluido': concluido,
-      'data_colheita_prevista':
-          dataColheitaPrevista != null ? Timestamp.fromDate(dataColheitaPrevista) : null,
+      'data_colheita_prevista': dataColheitaPrevista != null
+          ? Timestamp.fromDate(dataColheitaPrevista)
+          : null,
     };
-
-    final safe = FirestoreSanitizer.sanitizeMap(payload);
-    await ref.set(safe);
+    await FirestoreWriter.create(ref, payload);
 
     return ref.id;
   }

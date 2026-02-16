@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firebase_paths.dart';
+import 'firestore_writer.dart';
 
 class DiarioRepository {
   final String tenantId;
@@ -58,17 +59,19 @@ class DiarioRepository {
       throw ArgumentError('uid_usuario é obrigatório');
     }
 
-    await ref.set(data);
+    await FirestoreWriter.create(ref, data);
   }
 
   Future<void> excluirManejo(String id) async {
-    await _col.doc(id).delete();
+    await FirestoreWriter.delete(_col.doc(id));
   }
 
   Future<void> toggleConcluido(String id, bool atual) async {
-    await _col.doc(id).update({
-      'concluido': !atual,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    await FirestoreWriter.update(
+      _col.doc(id),
+      {
+        'concluido': !atual,
+      },
+    );
   }
 }
