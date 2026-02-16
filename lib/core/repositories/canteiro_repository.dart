@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firebase_paths.dart';
 
+import 'firestore_writer.dart';
+
 class CanteiroRepository {
   final String tenantId;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -15,31 +17,61 @@ class CanteiroRepository {
 
   Future<void> salvarLocal(
       {String? docId, required Map<String, dynamic> payload}) async {
+    final col = FirebasePaths.canteirosCol(tenantId)
+        as CollectionReference<Map<String, dynamic>>;
+
+    // Blindagem: nunca muta o map recebido (evita efeito colateral na UI)
+    final data = Map<String, dynamic>.from(payload);
+
+    // Defaults seguros
+    data['ativo'] = (data['ativo'] ?? true) == true;
+    final status = (data['status'] ?? '').toString().trim();
+    if (status.isEmpty) data['status'] = 'livre';
+
     if (docId == null) {
-      payload['data_criacao'] = FieldValue.serverTimestamp();
-      payload['ativo'] = true;
-      if (payload['status'] == null || payload['status']!.isEmpty) {
-        payload['status'] = 'livre';
-      }
-      await FirebasePaths.canteirosCol(tenantId).add(payload);
+      // Compat: mantém campos antigos e já cria os novos
+      await FirestoreWriter.add(
+        col,
+        data,
+        legacyCreatedField: 'data_criacao',
+        legacyUpdatedField: 'data_atualizacao',
+      );
     } else {
-      payload['data_atualizacao'] = FieldValue.serverTimestamp();
-      await FirebasePaths.canteirosCol(tenantId).doc(docId).update(payload);
+      final ref = col.doc(docId);
+      await FirestoreWriter.update(
+        ref,
+        data,
+        legacyUpdatedField: 'data_atualizacao',
+      );
     }
   }
 
   Future<void> alternarStatusAtivo(String docId, bool ativoAtual) async {
-    await FirebasePaths.canteirosCol(tenantId).doc(docId).update({
-      'ativo': !ativoAtual,
-      'data_atualizacao': FieldValue.serverTimestamp(),
-    });
+    final ref = (FirebasePaths.canteirosCol(tenantId)
+            as CollectionReference<Map<String, dynamic>>)
+        .doc(docId);
+
+    await FirestoreWriter.update(
+      ref,
+      {
+        'ativo': !ativoAtual,
+      },
+      legacyUpdatedField: 'data_atualizacao',
+    );
   }
 
   Future<void> atualizarStatus(String docId, String status) async {
-    await FirebasePaths.canteirosCol(tenantId).doc(docId).update({
-      'status': status,
-      'data_atualizacao': FieldValue.serverTimestamp(),
-    });
+    final ref = (FirebasePaths.canteirosCol(tenantId)
+            as CollectionReference<Map<String, dynamic>>)
+        .doc(docId);
+
+    await FirestoreWriter.update(
+      ref,
+      {
+        'status': status,
+      },
+      legacyUpdatedField: 'data_atualizacao',
+    );
   }
 
   Future<void> duplicar(
@@ -47,8 +79,13 @@ class CanteiroRepository {
     final payload = Map<String, dynamic>.from(data);
     payload['nome'] = novoNome;
     payload['nome_lower'] = novoNome.toLowerCase();
+    // Compat + padrão novo
     payload['data_criacao'] = FieldValue.serverTimestamp();
+    payload['createdAt'] = FieldValue.serverTimestamp();
+    payload['updatedAt'] = FieldValue.serverTimestamp();
     payload.remove('data_atualizacao');
+    payload
+        .remove('data_criacao'); // será recolocado via writer (evita duplicar)
     payload['status'] = 'livre';
     payload.remove('agg_ciclo_id');
     payload.remove('agg_ciclo_inicio');
@@ -60,7 +97,15 @@ class CanteiroRepository {
     payload['agg_ciclo_custo'] = 0.0;
     payload['agg_ciclo_receita'] = 0.0;
 
-    await FirebasePaths.canteirosCol(tenantId).add(payload);
+    final col = FirebasePaths.canteirosCol(tenantId)
+        as CollectionReference<Map<String, dynamic>>;
+
+    await FirestoreWriter.add(
+      col,
+      payload,
+      legacyCreatedField: 'data_criacao',
+      legacyUpdatedField: 'data_atualizacao',
+    );
   }
 
   Future<void> excluirDefinitivoCascade(String uid, String canteiroId) async {

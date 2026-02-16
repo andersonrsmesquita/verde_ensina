@@ -289,7 +289,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                       ? 'Local atualizado com sucesso.'
                       : 'Local criado com sucesso.');
                 } catch (e) {
-                  _msg('Erro ao salvar.', isError: true);
+                  _msg('Erro ao salvar: ${e.toString()}', isError: true);
                   setModalState(() => salvando = false);
                 }
               }

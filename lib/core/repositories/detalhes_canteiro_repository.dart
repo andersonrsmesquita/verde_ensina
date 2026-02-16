@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firebase_paths.dart';
 
+import 'firestore_sanitizer.dart';
+
 // ===========================================================================
 // ENUM E CALCULADORA AGRONÔMICA CENTRALIZADA
 // Baseada nos manuais oficiais de olericultura e agricultura orgânica.
@@ -103,17 +105,27 @@ class DetalhesCanteiroRepository {
   // Editar Nome e Medidas
   Future<void> editarCanteiro(
       String canteiroId, Map<String, dynamic> dados) async {
-    dados['updatedAt'] = FieldValue.serverTimestamp();
-    await FirebasePaths.canteiroRef(tenantId, canteiroId).update(dados);
+    final patch = Map<String, dynamic>.from(dados);
+    patch['updatedAt'] = FieldValue.serverTimestamp();
+    patch['data_atualizacao'] =
+        FieldValue.serverTimestamp(); // compat canteiros
+
+    await FirebasePaths.canteiroRef(tenantId, canteiroId)
+        .update(FirestoreSanitizer.sanitizeMap(patch));
   }
 
   // Editar Texto do Histórico
   Future<void> editarTextoHistorico(
       String historicoId, String detalhes, String obs) async {
-    await FirebasePaths.historicoManejoCol(tenantId).doc(historicoId).update({
+    final patch = <String, dynamic>{
       'detalhes': detalhes,
       'observacao_extra': obs,
-    });
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await FirebasePaths.historicoManejoCol(tenantId)
+        .doc(historicoId)
+        .update(FirestoreSanitizer.sanitizeMap(patch));
   }
 
   // Excluir Item do Histórico

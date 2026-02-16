@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../firebase/firebase_paths.dart';
 
+import 'firestore_sanitizer.dart';
+
 class IrrigacaoRepository {
   final String tenantId;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -57,7 +59,7 @@ class IrrigacaoRepository {
     // 1. Cria o documento principal de histórico
     final docRef = FirebasePaths.historicoManejoCol(tenantId).doc();
 
-    batch.set(docRef, {
+    final historico = <String, dynamic>{
       'canteiro_id': ids.length == 1 ? ids.first : 'LOTE',
       'canteiro_nome': ids.length > 1 ? '${ids.length} Locais' : nomes,
       'canteiros_detalhe': nomes,
@@ -74,7 +76,9 @@ class IrrigacaoRepository {
       'createdAt': agora,
       'concluido': true,
       'origem': 'assistente_irrigacao_pro',
-    });
+    };
+
+    batch.set(docRef, FirestoreSanitizer.sanitizeMap(historico));
 
     // 2. Atualiza os dados dentro de CADA canteiro selecionado para manter o dashboard do usuário atualizado
     for (var c in canteirosSelecionados) {
@@ -84,19 +88,30 @@ class IrrigacaoRepository {
       // Calcula o volume individual (5 litros por metro quadrado)
       final volumeCanteiro = area * 5.0;
 
+      // IMPORTANTE: Firestore não aceita campo com '.' no nome.
+      // Pra atualizar nested, usa map aninhado (e SetOptions(merge: true)).
+      final patch = <String, dynamic>{
+        // Padrão novo
+        'updatedAt': agora,
+        // Compat canteiros (legado)
+        'data_atualizacao': agora,
+
+        'totais_insumos': {
+          'agua_litros': FieldValue.increment(volumeCanteiro),
+        },
+        'ult_manejo': {
+          'tipo': 'Irrigação',
+          'hist_id': docRef.id,
+          'resumo': '$metodo (${volumeCanteiro.toStringAsFixed(0)} L)',
+          'atualizadoEm': agora,
+        }
+      };
+
       batch.set(
-          canteiroRef,
-          {
-            'updatedAt': agora,
-            'totais_insumos.agua_litros': FieldValue.increment(volumeCanteiro),
-            'ult_manejo': {
-              'tipo': 'Irrigação',
-              'hist_id': docRef.id,
-              'resumo': '$metodo (${volumeCanteiro.toStringAsFixed(0)} L)',
-              'atualizadoEm': agora,
-            }
-          },
-          SetOptions(merge: true));
+        canteiroRef,
+        FirestoreSanitizer.sanitizeMap(patch),
+        SetOptions(merge: true),
+      );
     }
 
     // 3. Salva tudo de uma vez no Firebase
