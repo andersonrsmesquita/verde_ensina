@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/ui/app_ui.dart';
 import '../../core/session/session_scope.dart';
 import '../../core/repositories/detalhes_canteiro_repository.dart';
+import '../../core/firebase/firebase_paths.dart';
 
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
@@ -40,11 +42,10 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   bool _loadingFirst = true;
   bool _loadingMore = false;
   bool _hasMore = true;
-  bool _isFetching = false; // 🛡️ Trava Anti-Duplicação
+  bool _isFetching = false;
 
   DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
-  Object? _err;
 
   bool _aggInitChecked = false;
 
@@ -80,7 +81,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   Color _getCorStatus(String status, ColorScheme cs) {
     if (status == 'ocupado') return cs.error;
-    if (status == 'manutencao') return Colors.orange.shade700;
+    if (status == 'manutencao') return Colors.orange.shade800;
     return cs.primary;
   }
 
@@ -116,16 +117,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     return {};
   }
 
-  Timestamp _nowTs() => Timestamp.now();
-
-  String _friendlyError(Object e) {
-    final msg = e.toString().toLowerCase();
-    if (msg.contains('requires an index')) {
-      return 'Falta criar um índice no Firestore. Verifique o console.';
-    }
-    return msg;
-  }
-
   Widget _buildFirestoreError(Object? error) {
     return Container(
       margin: const EdgeInsets.all(AppTokens.md),
@@ -135,7 +126,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         borderRadius: BorderRadius.circular(AppTokens.radiusMd),
       ),
       child: Text(
-        '❌ Erro: ${_friendlyError(error ?? "Desconhecido")}',
+        '❌ Erro ao carregar dados.',
         style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
       ),
     );
@@ -157,7 +148,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       final session = SessionScope.of(context).session;
       if (session != null) {
         _repo = DetalhesCanteiroRepository(session.tenantId);
-        // Só carrega o histórico UMA VEZ aqui de forma segura
         _refreshHistorico();
       }
     }
@@ -172,9 +162,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     super.dispose();
   }
 
-  // ===========================================================================
-  // Navegações e Banco de Dados
-  // ===========================================================================
   void _irParaDiagnostico() {
     Navigator.push(
       context,
@@ -241,7 +228,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
 
   Future<void> _refreshHistorico() async {
     if (!_isLogado || _repo == null) return;
-    if (_isFetching) return; // 🛡️ Evita chamadas concorrentes
+    if (_isFetching) return;
 
     _isFetching = true;
     setState(() {
@@ -250,7 +237,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       _hasMore = true;
       _lastDoc = null;
       _docs.clear();
-      _err = null;
     });
 
     await _loadMore();
@@ -271,17 +257,14 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       final snap = await q.get();
       if (snap.docs.isNotEmpty) {
         _lastDoc = snap.docs.last;
-
-        // 🛡️ Filtro Anti-Duplicação Definitivo: Só adiciona se o ID não existir na lista
         final existingIds = _docs.map((d) => d.id).toSet();
         final newDocs =
             snap.docs.where((d) => !existingIds.contains(d.id)).toList();
-
         _docs.addAll(newDocs);
       }
       if (snap.docs.length < _pageSize) _hasMore = false;
     } catch (e) {
-      _err = e;
+      // ignore
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -291,147 +274,26 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
   // Modais de Manejo Premium
   // ===========================================================================
 
-  void _mostrarDialogoIrrigacao() {
-    if (!_isLogado || _repo == null) return;
-
-    String metodo = 'Gotejamento';
-    final tempoController = TextEditingController(text: '30');
-    final chuvaController = TextEditingController(text: '0');
-    final custoController = TextEditingController(text: '0,00');
-
+  void _mostrarDialogoIrrigacao(double areaCanteiro) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-        child: Container(
-          decoration: BoxDecoration(
-              color: Theme.of(ctx).colorScheme.surfaceContainerLowest,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24))),
-          padding: const EdgeInsets.all(AppTokens.xl),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Registrar Irrigação',
-                        style: Theme.of(ctx)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close)),
-                  ],
-                ),
-                const SizedBox(height: AppTokens.md),
-                DropdownButtonFormField<String>(
-                  value: metodo,
-                  items: ['Manual', 'Gotejamento', 'Aspersão', 'Regador']
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-                  onChanged: (v) => metodo = v ?? metodo,
-                  decoration: InputDecoration(
-                      labelText: 'Sistema',
-                      border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppTokens.radiusMd))),
-                ),
-                const SizedBox(height: AppTokens.md),
-                Row(
-                  children: [
-                    Expanded(
-                        child: TextField(
-                            controller: tempoController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                                labelText: 'Tempo (min)',
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(
-                                        AppTokens.radiusMd)),
-                                prefixIcon: const Icon(Icons.timer)))),
-                    const SizedBox(width: AppTokens.md),
-                    Expanded(
-                        child: TextField(
-                            controller: chuvaController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            decoration: InputDecoration(
-                                labelText: 'Chuva (mm)',
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(
-                                        AppTokens.radiusMd)),
-                                prefixIcon: const Icon(Icons.cloud)))),
-                  ],
-                ),
-                const SizedBox(height: AppTokens.md),
-                TextField(
-                    controller: custoController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                        labelText: 'Custo Operacional (R\$)',
-                        hintText: 'Água, Luz...',
-                        border: OutlineInputBorder(
-                            borderRadius:
-                                BorderRadius.circular(AppTokens.radiusMd)),
-                        prefixIcon: const Icon(Icons.attach_money))),
-                const SizedBox(height: AppTokens.xl),
-                AppButtons.elevatedIcon(
-                  onPressed: () async {
-                    final tempo =
-                        int.tryParse(tempoController.text.trim()) ?? 0;
-                    final chuva = double.tryParse(
-                            chuvaController.text.trim().replaceAll(',', '.')) ??
-                        0.0;
-                    final custo = double.tryParse(
-                            custoController.text.trim().replaceAll(',', '.')) ??
-                        0.0;
-
-                    Navigator.pop(ctx);
-                    try {
-                      await _repo!.registrarIrrigacao(
-                          uid: _uid!,
-                          canteiroId: widget.canteiroId,
-                          metodo: metodo,
-                          tempo: tempo,
-                          chuva: chuva,
-                          custo: custo);
-                      _snack('✅ Irrigação registrada.');
-                      await _refreshHistorico();
-                    } catch (e) {
-                      _snack('Erro: $e', isError: true);
-                    }
-                  },
-                  icon: const Icon(Icons.save),
-                  label: const Text('SALVAR REGISTRO'),
-                ),
-              ],
-            ),
-          ),
-        ),
+      builder: (_) => _SheetIrrigacao(
+        canteiroId: widget.canteiroId,
+        areaCanteiro: areaCanteiro,
+        uid: _uid!,
+        tenantId: _tenantIdOrNull!,
+        onSaved: _refreshHistorico,
       ),
-    ).whenComplete(() {
-      tempoController.dispose();
-      chuvaController.dispose();
-      custoController.dispose();
-    });
+    );
   }
 
   void _mostrarDialogoPlantio(double areaCanteiro, String tipoLocal) {
     if (!_isLogado || _repo == null) return;
 
-    // 🛡️ Correção do Vaso: Permite plantar em vasos ou espaços pequenos sem travar
     double areaEfetiva = areaCanteiro > 0 ? areaCanteiro : 0.5;
-
     final qtdPorPlanta = <String, int>{};
-    const regiao = 'Sudeste';
-    const mes = 'Fevereiro';
     final obsController = TextEditingController();
     final custoMudasController = TextEditingController(text: '0,00');
 
@@ -471,23 +333,26 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               qtdPorPlanta[p] = qtdInicial;
             }
 
-            final recomendadas = culturasPorRegiaoMes(regiao, mes);
-            final porCategoria = <String, List<String>>{};
-            for (final p in recomendadas) {
-              final cat = (guiaCompleto[p]?['cat'] ?? 'Outros').toString();
-              porCategoria.putIfAbsent(cat, () => []).add(p);
+            final recomendadas = guiaCompleto.keys.toList()..sort();
+
+            final Map<String, List<String>> categorias = {};
+            for (var p in recomendadas) {
+              final cat =
+                  (guiaCompleto[p]?['categoria'] ?? 'Outros').toString();
+              categorias.putIfAbsent(cat, () => []).add(p);
             }
 
             Widget buildChip(String planta) {
               final isSel = qtdPorPlanta.containsKey(planta);
+              final icone = (guiaCompleto[planta]?['icone'] ?? '🌱').toString();
               return FilterChip(
-                label: Text(planta),
+                label: Text('$icone $planta'),
                 selected: isSel,
                 checkmarkColor: cs.onPrimary,
                 selectedColor: cs.primary,
                 backgroundColor: cs.surfaceContainerHighest,
                 labelStyle: TextStyle(
-                    fontSize: 11, color: isSel ? cs.onPrimary : cs.onSurface),
+                    fontSize: 12, color: isSel ? cs.onPrimary : cs.onSurface),
                 onSelected: (v) => setModalState(() {
                   if (v)
                     adicionarPlanta(planta);
@@ -503,7 +368,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   color: cs.surfaceContainerLowest,
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(24))),
-              padding: const EdgeInsets.all(AppTokens.xl),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -513,21 +378,49 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       Text('Novo Plantio',
                           style: Theme.of(contextModal)
                               .textTheme
-                              .titleLarge
+                              .headlineSmall
                               ?.copyWith(fontWeight: FontWeight.bold)),
                       IconButton(
                           onPressed: () => Navigator.pop(ctx),
                           icon: const Icon(Icons.close)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: LinearProgressIndicator(
-                        value: percentualOcupado,
-                        color: estourou ? cs.error : cs.primary,
-                        minHeight: 10,
-                        backgroundColor: cs.surfaceContainerHighest),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: estourou
+                            ? cs.errorContainer
+                            : cs.primaryContainer.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Ocupação do Lote',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: estourou ? cs.error : cs.primary)),
+                            Text(
+                                '${(percentualOcupado * 100).toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: estourou ? cs.error : cs.primary)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                              value: percentualOcupado,
+                              color: estourou ? cs.error : cs.primary,
+                              minHeight: 8,
+                              backgroundColor: cs.surface),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -535,106 +428,98 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                  color: cs.primaryContainer,
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: Text('✅ Recomendados para a Época:',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: cs.onPrimaryContainer))),
-                          const SizedBox(height: 8),
-                          ...porCategoria.entries.map((e) => Column(
+                          ...categorias.entries.map((entry) => Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Padding(
-                                      padding: const EdgeInsets.only(
-                                          top: 8, bottom: 4),
-                                      child: Text(e.key.toUpperCase(),
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                              color: cs.outline))),
+                                    padding: const EdgeInsets.only(
+                                        top: 16, bottom: 8),
+                                    child: Text(entry.key.toUpperCase(),
+                                        style: TextStyle(
+                                            color: cs.outline,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                            letterSpacing: 1.2)),
+                                  ),
                                   Wrap(
-                                      spacing: 5,
-                                      children: e.value
-                                          .map((p) => buildChip(p))
-                                          .toList()),
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: entry.value
+                                        .map((p) => buildChip(p))
+                                        .toList(),
+                                  ),
                                 ],
                               )),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 24),
                           if (qtdPorPlanta.isNotEmpty) ...[
                             const Divider(),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                  color: cs.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(12)),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text('Ajuste a Quantidade',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: cs.onSecondaryContainer)),
-                                  const SizedBox(height: 10),
-                                  ...qtdPorPlanta.entries.map((entry) {
-                                    return Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                            child: Text(entry.key,
-                                                style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14))),
-                                        IconButton(
-                                            icon: Icon(Icons.remove_circle,
-                                                color: cs.error),
-                                            onPressed: () => setModalState(() {
-                                                  if (entry.value > 1)
-                                                    qtdPorPlanta[entry.key] =
-                                                        entry.value - 1;
-                                                })),
-                                        Text('${entry.value}',
+                            const SizedBox(height: 16),
+                            Text('Ajustar Quantidades',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: cs.onSurface)),
+                            const SizedBox(height: 16),
+                            ...qtdPorPlanta.entries.map((entry) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: cs.outlineVariant),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                        child: Text(entry.key,
                                             style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold)),
-                                        IconButton(
-                                            icon: Icon(Icons.add_circle,
-                                                color: cs.primary),
-                                            onPressed: () => setModalState(() {
-                                                  qtdPorPlanta[entry.key] =
-                                                      entry.value + 1;
-                                                })),
-                                      ],
-                                    );
-                                  }),
-                                ],
-                              ),
-                            ),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14))),
+                                    IconButton(
+                                        icon: Icon(Icons.remove_circle_outline,
+                                            color: cs.error),
+                                        onPressed: () => setModalState(() {
+                                              if (entry.value > 1) {
+                                                qtdPorPlanta[entry.key] =
+                                                    entry.value - 1;
+                                              } else {
+                                                qtdPorPlanta.remove(entry.key);
+                                              }
+                                            })),
+                                    Text('${entry.value} un',
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold)),
+                                    IconButton(
+                                        icon: Icon(Icons.add_circle_outline,
+                                            color: cs.primary),
+                                        onPressed: () => setModalState(() {
+                                              qtdPorPlanta[entry.key] =
+                                                  entry.value + 1;
+                                            })),
+                                  ],
+                                ),
+                              );
+                            }),
                             const SizedBox(height: 16),
                             TextField(
                                 controller: obsController,
-                                decoration: InputDecoration(
+                                decoration: const InputDecoration(
                                     labelText: 'Observação do Plantio',
-                                    border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12)))),
+                                    border: OutlineInputBorder())),
                             const SizedBox(height: 16),
                             TextField(
                                 controller: custoMudasController,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                         decimal: true),
-                                decoration: InputDecoration(
+                                decoration: const InputDecoration(
                                     labelText: 'Custo de Mudas/Sementes (R\$)',
-                                    prefixIcon:
-                                        const Icon(Icons.monetization_on),
-                                    border: OutlineInputBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12)))),
+                                    prefixIcon: Icon(Icons.monetization_on),
+                                    border: OutlineInputBorder())),
                           ],
                         ],
                       ),
@@ -642,47 +527,52 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   ),
                   const SizedBox(height: 16),
                   if (qtdPorPlanta.isNotEmpty)
-                    AppButtons.elevatedIcon(
-                      onPressed: estourou
-                          ? null
-                          : () async {
-                              final custo = double.tryParse(custoMudasController
-                                      .text
-                                      .trim()
-                                      .replaceAll(',', '.')) ??
-                                  0.0;
-                              Navigator.pop(ctx);
+                    SizedBox(
+                      height: 55,
+                      child: ElevatedButton.icon(
+                        onPressed: estourou
+                            ? null
+                            : () async {
+                                final custo = double.tryParse(
+                                        custoMudasController.text
+                                            .trim()
+                                            .replaceAll(',', '.')) ??
+                                    0.0;
+                                Navigator.pop(ctx);
 
-                              String resumo = "Plantio ($regiao/$mes):\n";
-                              final nomes = <String>[];
-                              qtdPorPlanta.forEach((planta, qtd) {
-                                nomes.add(planta);
-                                final ciclo = _toInt(
-                                    guiaCompleto[planta]?['ciclo'] ?? 90);
-                                resumo +=
-                                    "- $planta: $qtd mudas ($ciclo dias)\n";
-                              });
+                                String resumo = "Plantio Registrado:\n";
+                                final nomes = <String>[];
+                                qtdPorPlanta.forEach((planta, qtd) {
+                                  nomes.add(planta);
+                                  resumo += "- $planta: $qtd mudas\n";
+                                });
 
-                              try {
-                                await _repo!.registrarPlantio(
-                                    uid: _uid!,
-                                    canteiroId: widget.canteiroId,
-                                    qtdPorPlanta: qtdPorPlanta,
-                                    resumo: resumo,
-                                    observacao: obsController.text.trim(),
-                                    custo: custo,
-                                    produto: nomes.join(' + '));
-                                _snack(
-                                    '✅ Plantio registrado! Lote em PRODUÇÃO.');
-                                await _refreshHistorico();
-                              } catch (e) {
-                                _snack('Erro: $e', isError: true);
-                              }
-                            },
-                      icon: Icon(estourou ? Icons.warning : Icons.check_circle),
-                      label: Text(estourou
-                          ? 'ESPAÇO INSUFICIENTE'
-                          : 'CONFIRMAR PLANTIO'),
+                                try {
+                                  await _repo!.registrarPlantio(
+                                      uid: _uid!,
+                                      canteiroId: widget.canteiroId,
+                                      qtdPorPlanta: qtdPorPlanta,
+                                      resumo: resumo,
+                                      observacao: obsController.text.trim(),
+                                      custo: custo,
+                                      produto: nomes.join(' + '));
+                                  _snack(
+                                      '✅ Plantio registrado! Lote em PRODUÇÃO.');
+                                  await _refreshHistorico();
+                                } catch (e) {
+                                  _snack('Erro: $e', isError: true);
+                                }
+                              },
+                        icon:
+                            Icon(estourou ? Icons.warning : Icons.check_circle),
+                        label: Text(estourou
+                            ? 'ESPAÇO INSUFICIENTE'
+                            : 'CONFIRMAR PLANTIO'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: estourou ? cs.error : cs.primary,
+                            foregroundColor:
+                                estourou ? cs.onError : cs.onPrimary),
+                      ),
                     ),
                 ],
               ),
@@ -694,6 +584,161 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
       obsController.dispose();
       custoMudasController.dispose();
     });
+  }
+
+  void _mostrarDialogoManutencao() {
+    if (!_isLogado || _repo == null) return;
+
+    String tipoManutencao = 'Descanso / Pousio Livre';
+    int diasEstimados = 15;
+    final obsController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Container(
+          decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surfaceContainerLowest,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24))),
+          padding: const EdgeInsets.all(AppTokens.xl),
+          child: StatefulBuilder(builder: (contextModal, setModalState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.build_circle, color: Colors.orange.shade800),
+                      const SizedBox(width: 8),
+                      Text('Colocar em Manutenção',
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                      'Para quebrar o ciclo de doenças ou recuperar o solo, o descanso é fundamental.',
+                      style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          fontSize: 13)),
+                  const SizedBox(height: 24),
+                  DropdownButtonFormField<String>(
+                    value: tipoManutencao,
+                    decoration: const InputDecoration(
+                        labelText: 'Motivo / Tratamento',
+                        border: OutlineInputBorder()),
+                    items: [
+                      'Descanso / Pousio Livre',
+                      'Solarização (Mata Nematóides)',
+                      'Adubação Verde (Recuperação)',
+                      'Reação de Calagem'
+                    ]
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (v) {
+                      setModalState(() {
+                        tipoManutencao = v!;
+                        if (tipoManutencao.contains('Solarização'))
+                          diasEstimados = 30;
+                        else if (tipoManutencao.contains('Adubação Verde'))
+                          diasEstimados = 60;
+                        else if (tipoManutencao.contains('Calagem'))
+                          diasEstimados = 20;
+                        else
+                          diasEstimados = 15;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('Dias Estimados de Bloqueio:',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(ctx).colorScheme.outline)),
+                      ),
+                      IconButton(
+                          icon: Icon(Icons.remove_circle_outline,
+                              color: Theme.of(ctx).colorScheme.error),
+                          onPressed: () => setModalState(() {
+                                if (diasEstimados > 1) diasEstimados--;
+                              })),
+                      Text('$diasEstimados',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      IconButton(
+                          icon: Icon(Icons.add_circle_outline,
+                              color: Theme.of(ctx).colorScheme.primary),
+                          onPressed: () => setModalState(() {
+                                diasEstimados++;
+                              })),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: obsController,
+                    decoration: const InputDecoration(
+                        labelText: 'Observação (Opcional)',
+                        border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 24),
+                  AppButtons.elevatedIcon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final dataFim =
+                            DateTime.now().add(Duration(days: diasEstimados));
+                        await _repo!.editarCanteiro(widget.canteiroId, {
+                          'status': 'manutencao',
+                          'manutencao_motivo': tipoManutencao,
+                          'manutencao_data_inicio':
+                              FieldValue.serverTimestamp(),
+                          'manutencao_dias': diasEstimados,
+                          'manutencao_data_fim': Timestamp.fromDate(dataFim),
+                        });
+
+                        await FirebaseFirestore.instance
+                            .collection('tenants')
+                            .doc(_tenantIdOrNull)
+                            .collection('historico_manejo')
+                            .add({
+                          'canteiro_id': widget.canteiroId,
+                          'uid_usuario': _uid,
+                          'tipo_manejo': 'Manutenção',
+                          'produto': 'Pousio / Tratamento',
+                          'detalhes':
+                              '$tipoManutencao por $diasEstimados dias. ${obsController.text}',
+                          'data': FieldValue.serverTimestamp(),
+                          'custo_estimado': 0.0,
+                        });
+
+                        _snack('✅ Lote em manutenção. O solo agradece!');
+                        await _refreshHistorico();
+                      } catch (e) {
+                        _snack('Erro ao salvar', isError: true);
+                      }
+                    },
+                    icon: const Icon(Icons.lock_clock),
+                    label: const Text('INICIAR TRATAMENTO'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade800,
+                        foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    ).whenComplete(() => obsController.dispose());
   }
 
   void _mostrarDialogoColheita({
@@ -917,16 +962,238 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     });
   }
 
-  void _mostrarDialogoPerda(
-      {required String idPlantioAtivo,
-      required Map<String, int> mapaPlantioAtual}) {
-    if (!_isLogado || _repo == null) return;
-    final culturas = mapaPlantioAtual.keys.toList()..sort();
-    if (culturas.isEmpty) return;
+  // ===========================================================================
+  // MENU PRINCIPAL DE MANEJO
+  // ===========================================================================
+  void _mostrarOpcoesManejo(double areaCanteiro, String statusAtual,
+      String tipoLocal, Map<String, int> cicloMapa, String cicloId) {
+    final cs = Theme.of(context).colorScheme;
 
-    String culturaSel = culturas.first;
-    final qtdCtrl = TextEditingController();
-    final motivoCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.sizeOf(ctx).height * 0.75,
+        decoration: BoxDecoration(
+            color: cs.surfaceContainerLowest,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: cs.outlineVariant,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('Painel de Manejo',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                children: [
+                  _buildListAction(
+                    title: 'Irrigação',
+                    subtitle: 'Registrar rega e volume de água',
+                    icon: Icons.water_drop,
+                    color: Colors.blue.shade700,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _mostrarDialogoIrrigacao(areaCanteiro);
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Novo Plantio',
+                    subtitle: 'Adicionar sementes ou mudas ao lote',
+                    icon: Icons.spa,
+                    color: (statusAtual == 'livre')
+                        ? Colors.green.shade700
+                        : cs.outline,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      if (statusAtual != 'livre') {
+                        _snack(
+                            'O lote não está livre para um novo plantio total.',
+                            isError: true);
+                        return;
+                      }
+                      _mostrarDialogoPlantio(areaCanteiro, tipoLocal);
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Adubação de Cobertura',
+                    subtitle: 'Esterco, Bokashi, Mamona (Mensal)',
+                    icon: Icons.eco,
+                    color: Colors.brown.shade600,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _mostrarDialogoGenerico(
+                        titulo: 'Registrar Adubação',
+                        icone: Icons.eco,
+                        cor: Colors.brown.shade600,
+                        opcoesDropdown: [
+                          'Esterco Bovino',
+                          'Bokashi',
+                          'Torta de Mamona',
+                          'NPK',
+                          'Composto Orgânico'
+                        ],
+                        labelDropdown: 'Tipo de Adubo',
+                        labelObs: 'Quantidade / Observações',
+                        tipoManejo: 'Adubação',
+                      );
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Pulverização e Defensivos',
+                    subtitle: 'Calda Bordalesa, Óleo de Nim, etc',
+                    icon: Icons.bug_report,
+                    color: Colors.purple.shade600,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _mostrarDialogoGenerico(
+                        titulo: 'Controle / Pulverização',
+                        icone: Icons.bug_report,
+                        cor: Colors.purple.shade600,
+                        opcoesDropdown: [
+                          'Óleo de Nim',
+                          'Calda Bordalesa',
+                          'Calda Sulfocálcica',
+                          'Supermagro',
+                          'Calda de Pimenta',
+                          'Outros'
+                        ],
+                        labelDropdown: 'Produto Utilizado',
+                        labelObs: 'Alvo (Ex: Pulgão, Ferrugem)',
+                        tipoManejo: 'Pulverização',
+                      );
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Tratos Culturais',
+                    subtitle: 'Capina, Poda, Raleio e Limpeza',
+                    icon: Icons.content_cut,
+                    color: Colors.teal.shade700,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _mostrarDialogoGenerico(
+                        titulo: 'Tratos Culturais',
+                        icone: Icons.content_cut,
+                        cor: Colors.teal.shade700,
+                        opcoesDropdown: [
+                          'Capina / Limpeza',
+                          'Poda',
+                          'Raleio',
+                          'Tutoramento'
+                        ],
+                        labelDropdown: 'Atividade',
+                        labelObs: 'Detalhes da operação',
+                        tipoManejo: 'Tratos Culturais',
+                      );
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Clínica da Planta',
+                    subtitle: 'Diagnosticar pragas e doenças',
+                    icon: Icons.health_and_safety,
+                    color: cs.error,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _irParaDiagnostico();
+                    },
+                  ),
+                  _buildListAction(
+                    title: 'Calculadora de Calagem',
+                    subtitle: 'Corrigir acidez do solo',
+                    icon: Icons.landscape,
+                    color: Colors.orange.shade700,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _irParaCalagem();
+                    },
+                  ),
+                  if (statusAtual == 'livre')
+                    _buildListAction(
+                      title: 'Iniciar Manutenção / Pousio',
+                      subtitle: 'Descanso, Solarização ou Adubo Verde',
+                      icon: Icons.build_circle,
+                      color: Colors.orange.shade800,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _mostrarDialogoManutencao();
+                      },
+                    ),
+                  if (statusAtual != 'livre' && statusAtual != 'manutencao')
+                    _buildListAction(
+                      title: 'Baixa / Perda',
+                      subtitle: 'Registrar perdas por clima ou pragas',
+                      icon: Icons.warning_amber,
+                      color: cs.error,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _mostrarDialogoPerda(
+                            idPlantioAtivo: cicloId,
+                            mapaPlantioAtual: cicloMapa);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListAction(
+      {required String title,
+      required String subtitle,
+      required IconData icon,
+      required Color color,
+      required VoidCallback onTap}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+          side: BorderSide(color: color.withOpacity(0.3)),
+          borderRadius: BorderRadius.circular(12)),
+      color: color.withOpacity(0.05),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: color.withOpacity(0.2),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(title,
+            style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // Dialogo Genérico para Adubação, Pulverização e Tratos
+  // ===========================================================================
+  void _mostrarDialogoGenerico({
+    required String titulo,
+    required IconData icone,
+    required Color cor,
+    required List<String> opcoesDropdown,
+    required String labelDropdown,
+    required String labelObs,
+    required String tipoManejo,
+  }) {
+    if (!_isLogado || _tenantIdOrNull == null) return;
+    String selecionado = opcoesDropdown.first;
+    final obsCtrl = TextEditingController();
+    final custoCtrl = TextEditingController(text: '0,00');
 
     showModalBottomSheet(
       context: context,
@@ -940,88 +1207,93 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(24))),
           padding: const EdgeInsets.all(AppTokens.xl),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Registrar Perda',
-                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(ctx).colorScheme.error)),
-                    IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: culturaSel,
-                  items: culturas
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => culturaSel = v ?? culturaSel,
-                  decoration: InputDecoration(
-                      labelText: 'Cultura Afetada',
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12))),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                    controller: qtdCtrl,
-                    keyboardType: TextInputType.number,
+          child: StatefulBuilder(builder: (contextModal, setModalState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icone, color: cor),
+                      const SizedBox(width: 8),
+                      Text(titulo,
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  DropdownButtonFormField<String>(
+                    value: selecionado,
                     decoration: InputDecoration(
-                        labelText: 'Quantidade perdida',
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)))),
-                const SizedBox(height: 16),
-                TextField(
-                    controller: motivoCtrl,
+                        labelText: labelDropdown,
+                        border: const OutlineInputBorder()),
+                    items: opcoesDropdown
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (v) => setModalState(() => selecionado = v!),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: obsCtrl,
                     decoration: InputDecoration(
-                        labelText: 'Motivo (Ex: Praga, Chuva)',
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)))),
-                const SizedBox(height: 24),
-                AppButtons.elevatedIcon(
-                  onPressed: () async {
-                    final qtd = int.tryParse(qtdCtrl.text.trim()) ?? 0;
-                    final max = mapaPlantioAtual[culturaSel] ?? 0;
-                    if (qtd <= 0 || qtd > max || motivoCtrl.text.isEmpty) {
-                      _snack('Preencha corretamente', isError: true);
-                      return;
-                    }
+                        labelText: labelObs,
+                        border: const OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: custoCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Custo da Operação (R\$)',
+                        prefixIcon: Icon(Icons.attach_money),
+                        border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 24),
+                  AppButtons.elevatedIcon(
+                    onPressed: () async {
+                      final custo = double.tryParse(
+                              custoCtrl.text.replaceAll(',', '.')) ??
+                          0.0;
+                      Navigator.pop(ctx);
 
-                    Navigator.pop(ctx);
-                    try {
-                      bool liberado = await _repo!.registrarPerda(
-                          uid: _uid!,
-                          canteiroId: widget.canteiroId,
-                          idPlantioAtivo: idPlantioAtivo,
-                          cultura: culturaSel,
-                          qtdPerdida: qtd,
-                          motivo: motivoCtrl.text.trim());
-                      _snack(liberado ? 'Lote liberado.' : 'Perda registrada.');
-                      await _refreshHistorico();
-                    } catch (e) {
-                      _snack('Erro: $e', isError: true);
-                    }
-                  },
-                  icon: const Icon(Icons.warning),
-                  label: const Text('CONFIRMAR PERDA'),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(ctx).colorScheme.error,
-                      foregroundColor: Theme.of(ctx).colorScheme.onError),
-                ),
-              ],
-            ),
-          ),
+                      try {
+                        await FirebaseFirestore.instance
+                            .collection('tenants')
+                            .doc(_tenantIdOrNull)
+                            .collection('historico_manejo')
+                            .add({
+                          'canteiro_id': widget.canteiroId,
+                          'uid_usuario': _uid,
+                          'tipo_manejo': tipoManejo,
+                          'produto': selecionado,
+                          'detalhes': obsCtrl.text.trim(),
+                          'data': FieldValue.serverTimestamp(),
+                          'custo_estimado': custo,
+                        });
+                        _snack('✅ Registro salvo com sucesso!');
+                        await _refreshHistorico();
+                      } catch (e) {
+                        _snack('Erro ao salvar', isError: true);
+                      }
+                    },
+                    icon: const Icon(Icons.save),
+                    label: const Text('SALVAR REGISTRO'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: cor, foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
+            );
+          }),
         ),
       ),
     ).whenComplete(() {
-      qtdCtrl.dispose();
-      motivoCtrl.dispose();
+      obsCtrl.dispose();
+      custoCtrl.dispose();
     });
   }
 
@@ -1031,8 +1303,9 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     _compController.text = _toDouble(d['comprimento']).toString();
     _largController.text = _toDouble(d['largura']).toString();
     String finalidade = (d['finalidade'] ?? 'consumo').toString();
-    if (finalidade != 'consumo' && finalidade != 'comercio')
+    if (finalidade != 'consumo' && finalidade != 'comercio') {
       finalidade = 'consumo';
+    }
 
     showDialog(
       context: context,
@@ -1185,98 +1458,112 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     );
   }
 
-  void _mostrarOpcoesManejo(
-      double areaCanteiro, String statusAtual, String tipoLocal) {
-    final cs = Theme.of(context).colorScheme;
+  void _mostrarDialogoPerda(
+      {required String idPlantioAtivo,
+      required Map<String, int> mapaPlantioAtual}) {
+    if (!_isLogado || _repo == null) return;
+    final culturas = mapaPlantioAtual.keys.toList()..sort();
+    if (culturas.isEmpty) return;
+
+    String culturaSel = culturas.first;
+    final qtdCtrl = TextEditingController();
+    final motivoCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-            color: cs.surfaceContainerLowest,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.all(AppTokens.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: cs.outlineVariant,
-                    borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            Text('Menu de Operações',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 2.2,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Container(
+          decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.surfaceContainerLowest,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24))),
+          padding: const EdgeInsets.all(AppTokens.xl),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildActionCard(
-                    'Irrigação', Icons.water_drop, Colors.blue.shade700, () {
-                  Navigator.pop(ctx);
-                  _mostrarDialogoIrrigacao();
-                }),
-                _buildActionCard('Novo Plantio', Icons.spa,
-                    (statusAtual == 'livre') ? cs.primary : cs.outline, () {
-                  Navigator.pop(ctx);
-                  if (statusAtual != 'livre') {
-                    _snack('Finalize a safra atual antes de plantar.',
-                        isError: true);
-                    return;
-                  }
-                  _mostrarDialogoPlantio(
-                      areaCanteiro, tipoLocal); // ✅ Área efetiva injetada aqui
-                }),
-                _buildActionCard('Clínica', Icons.health_and_safety, cs.error,
-                    () {
-                  Navigator.pop(ctx);
-                  _irParaDiagnostico();
-                }),
-                _buildActionCard(
-                    'Calagem', Icons.landscape, Colors.orange.shade700, () {
-                  Navigator.pop(ctx);
-                  _irParaCalagem();
-                }),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Registrar Perda',
+                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(ctx).colorScheme.error)),
+                    IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: culturaSel,
+                  items: culturas
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => culturaSel = v ?? culturaSel,
+                  decoration: InputDecoration(
+                      labelText: 'Cultura Afetada',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12))),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                    controller: qtdCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                        labelText: 'Quantidade perdida',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)))),
+                const SizedBox(height: 16),
+                TextField(
+                    controller: motivoCtrl,
+                    decoration: InputDecoration(
+                        labelText: 'Motivo (Ex: Praga, Chuva)',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)))),
+                const SizedBox(height: 24),
+                AppButtons.elevatedIcon(
+                  onPressed: () async {
+                    final qtd = int.tryParse(qtdCtrl.text.trim()) ?? 0;
+                    final max = mapaPlantioAtual[culturaSel] ?? 0;
+                    if (qtd <= 0 || qtd > max || motivoCtrl.text.isEmpty) {
+                      _snack('Preencha corretamente', isError: true);
+                      return;
+                    }
+
+                    Navigator.pop(ctx);
+                    try {
+                      bool liberado = await _repo!.registrarPerda(
+                          uid: _uid!,
+                          canteiroId: widget.canteiroId,
+                          idPlantioAtivo: idPlantioAtivo,
+                          cultura: culturaSel,
+                          qtdPerdida: qtd,
+                          motivo: motivoCtrl.text.trim());
+                      _snack(liberado ? 'Lote liberado.' : 'Perda registrada.');
+                      await _refreshHistorico();
+                    } catch (e) {
+                      _snack('Erro: $e', isError: true);
+                    }
+                  },
+                  icon: const Icon(Icons.warning),
+                  label: const Text('CONFIRMAR PERDA'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(ctx).colorScheme.error,
+                      foregroundColor: Theme.of(ctx).colorScheme.onError),
+                ),
               ],
             ),
-          ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildActionCard(
-      String title, IconData icon, Color color, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.3))),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(width: 8),
-            Text(title,
-                style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-          ],
-        ),
-      ),
-    );
+    ).whenComplete(() {
+      qtdCtrl.dispose();
+      motivoCtrl.dispose();
+    });
   }
 
   // ===========================================================================
@@ -1291,7 +1578,7 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final corFundo = _getCorStatus(status, cs);
     final corTexto = (status == 'livre')
         ? cs.primary
-        : (status == 'manutencao' ? Colors.orange.shade900 : cs.error);
+        : (status == 'manutencao' ? Colors.orange.shade800 : cs.error);
 
     final totalCusto = _toDouble(dadosCanteiro['agg_total_custo']);
     final totalReceita = _toDouble(dadosCanteiro['agg_total_receita']);
@@ -1306,6 +1593,16 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final cicloMapa = _intMapFromAny(dadosCanteiro['agg_ciclo_mapa']);
     final temPlantioAtivo =
         (status == 'ocupado') && cicloId.isNotEmpty && !cicloConcluido;
+
+    // Lógica para Exibição do Card de Manutenção
+    final dataFimManutencao = dadosCanteiro['manutencao_data_fim'] is Timestamp
+        ? (dadosCanteiro['manutencao_data_fim'] as Timestamp).toDate()
+        : null;
+    int diasRestantesManutencao = 0;
+    if (dataFimManutencao != null) {
+      diasRestantesManutencao =
+          dataFimManutencao.difference(DateTime.now()).inDays;
+    }
 
     return Column(
       children: [
@@ -1388,6 +1685,64 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       color: corTexto)),
               Text('Área útil',
                   style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+
+              // -------------------------------------------------------------
+              // 🟠 NOVO: CARD DE MANUTENÇÃO (POUSIO/TRATAMENTO)
+              // -------------------------------------------------------------
+              if (status == 'manutencao') ...[
+                const Divider(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.build_circle,
+                              color: Colors.orange.shade800, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                              dadosCanteiro['manutencao_motivo'] ?? 'Em Pousio',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade900)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (dataFimManutencao != null)
+                        Text(
+                            diasRestantesManutencao > 0
+                                ? 'Faltam $diasRestantesManutencao dias para concluir o tratamento.'
+                                : 'O período de tratamento já terminou!',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.orange.shade900)),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: () async {
+                          try {
+                            await _repo!.editarCanteiro(widget.canteiroId, {
+                              'status': 'livre',
+                            });
+                            _snack(
+                                '✅ Manutenção concluída! O lote está livre.');
+                          } catch (_) {}
+                        },
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade800,
+                            foregroundColor: Colors.white),
+                        child: const Text('FINALIZAR MANUTENÇÃO'),
+                      )
+                    ],
+                  ),
+                )
+              ],
+
+              // -------------------------------------------------------------
+              // 🟢 CARD DE SAFRA ATIVA (PRODUÇÃO)
+              // -------------------------------------------------------------
               if (temPlantioAtivo) ...[
                 const Divider(height: 24),
                 Row(
@@ -1445,16 +1800,6 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                       ),
                     );
                   }),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _mostrarDialogoPerda(
-                        idPlantioAtivo: cicloId, mapaPlantioAtual: cicloMapa),
-                    icon: Icon(Icons.bug_report, color: cs.error, size: 16),
-                    label: Text('Baixa / Perda',
-                        style: TextStyle(color: cs.error, fontSize: 12)),
-                  ),
-                ),
               ],
             ],
           ),
@@ -1509,7 +1854,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
         if (finalidade != 'consumo' && finalidade != 'comercio')
           finalidade = 'consumo';
 
-        // 🛡️ A chamada recursiva e bugada foi limpa e removida daqui.
+        final cicloId = (dados['agg_ciclo_id'] ?? '').toString();
+        final cicloMapa = _intMapFromAny(dados['agg_ciclo_mapa']);
 
         return Scaffold(
           backgroundColor: cs.surfaceContainerLowest,
@@ -1537,8 +1883,8 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
           ),
           floatingActionButton: ativo
               ? FloatingActionButton.extended(
-                  onPressed: () => _mostrarOpcoesManejo(area, status,
-                      tipoLocal), // ✅ Passando a área limpa para o Modal
+                  onPressed: () => _mostrarOpcoesManejo(
+                      area, status, tipoLocal, cicloMapa, cicloId),
                   backgroundColor: _getCorStatus(status, cs),
                   foregroundColor: Colors.white,
                   icon: const Icon(Icons.add_task),
@@ -1582,6 +1928,12 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                         if (tipo == 'Irrigação') return Colors.blue.shade700;
                         if (tipo == 'Colheita') return Colors.teal.shade700;
                         if (tipo == 'Perda') return cs.error;
+                        if (tipo == 'Adubação') return Colors.brown.shade600;
+                        if (tipo == 'Pulverização')
+                          return Colors.purple.shade600;
+                        if (tipo == 'Tratos Culturais')
+                          return Colors.teal.shade700;
+                        if (tipo == 'Manutenção') return Colors.orange.shade800;
                         return cs.outline;
                       }
 
@@ -1656,6 +2008,207 @@ class _MiniStat extends StatelessWidget {
         const SizedBox(height: 2),
         Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
       ],
+    );
+  }
+}
+
+// =======================================================================
+// COMPONENTE: SHEET DE IRRIGAÇÃO
+// =======================================================================
+class _SheetIrrigacao extends StatefulWidget {
+  final String canteiroId;
+  final double areaCanteiro;
+  final String uid;
+  final String tenantId;
+  final VoidCallback onSaved;
+
+  const _SheetIrrigacao({
+    required this.canteiroId,
+    required this.areaCanteiro,
+    required this.uid,
+    required this.tenantId,
+    required this.onSaved,
+  });
+
+  @override
+  State<_SheetIrrigacao> createState() => _SheetIrrigacaoState();
+}
+
+class _SheetIrrigacaoState extends State<_SheetIrrigacao> {
+  String _metodo = 'Aspersão';
+  int _tempo = 4;
+  bool _salvando = false;
+
+  double get _metaDiariaLitros => widget.areaCanteiro * 5.0;
+
+  double get _volumeEstimadoLitros {
+    double vazaoLPM = 2.0;
+    if (_metodo == 'Aspersão') vazaoLPM = 10.0;
+    if (_metodo == 'Manual (Mangueira)') vazaoLPM = 15.0;
+    if (_metodo == 'Regador') vazaoLPM = 5.0;
+    return _tempo * vazaoLPM;
+  }
+
+  Future<void> _salvar() async {
+    setState(() => _salvando = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(widget.tenantId)
+          .collection('historico_manejo')
+          .add({
+        'canteiro_id': widget.canteiroId,
+        'uid_usuario': widget.uid,
+        'tipo_manejo': 'Irrigação',
+        'produto': 'Água',
+        'metodo': _metodo,
+        'tempo_minutos': _tempo,
+        'volume_l': _volumeEstimadoLitros,
+        'detalhes':
+            'Regado por $_tempo min via $_metodo. Volume est.: ${_volumeEstimadoLitros.toStringAsFixed(1)}L',
+        'data': FieldValue.serverTimestamp(),
+      });
+      if (mounted) Navigator.pop(context);
+      widget.onSaved();
+    } catch (e) {
+      AppMessenger.error('Erro ao registrar irrigação.');
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        decoration: BoxDecoration(
+            color: cs.surfaceContainerLowest,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.water_drop, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Text('Registrar Irrigação',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<String>(
+                    value: _metodo,
+                    decoration: const InputDecoration(
+                        labelText: 'Método', border: OutlineInputBorder()),
+                    items: [
+                      'Gotejamento',
+                      'Aspersão',
+                      'Manual (Mangueira)',
+                      'Regador'
+                    ]
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (v) => setState(() => _metodo = v!),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 1,
+                  child: TextFormField(
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                        labelText: 'Tempo',
+                        suffixText: 'min',
+                        border: OutlineInputBorder()),
+                    initialValue: _tempo.toString(),
+                    onChanged: (v) =>
+                        setState(() => _tempo = int.tryParse(v) ?? 0),
+                  ),
+                )
+              ]),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.blue.shade100)),
+                child: Column(
+                  children: [
+                    Text('Volume Estimado',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade900.withOpacity(0.7))),
+                    const SizedBox(height: 4),
+                    Text('${_volumeEstimadoLitros.toStringAsFixed(0)} L',
+                        style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.blue.shade900)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.eco, color: Colors.green.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Dica Agronômica',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                        'Sua meta diária (sem chuva) é de ${_metaDiariaLitros.toStringAsFixed(0)}L para a área de ${widget.areaCanteiro.toStringAsFixed(1)}m².',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.green.shade900)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 55,
+                child: ElevatedButton.icon(
+                  onPressed: _salvando ? null : _salvar,
+                  icon: const Icon(Icons.save),
+                  label: const Text('CONFIRMAR REGISTRO'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

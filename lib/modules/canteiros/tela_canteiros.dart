@@ -113,7 +113,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     }
   }
 
-  // A FUNÇÃO QUE FALTAVA (Para não travar a busca)
   void _onBuscaChanged(String v) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
@@ -123,7 +122,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   }
 
   // ===========================================================================
-  // ORDENAÇÃO E FILTRO NA RAM (BLINDAGEM CONTRA ERRO DE FIREBASE)
+  // ORDENAÇÃO E FILTRO NA RAM
   // ===========================================================================
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _filtrarEOrdenarLocal(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
@@ -133,21 +132,17 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     var list = docs.where((doc) {
       final d = doc.data();
 
-      // Filtro Ativo/Arquivado
       final isAtivo = (d['ativo'] ?? true) == true;
       if (_filtroAtivo == 'ativos' && !isAtivo) return false;
       if (_filtroAtivo == 'arquivados' && isAtivo) return false;
 
-      // Filtro Status
       final status = (d['status'] ?? 'livre').toString();
       if (_filtroStatus != 'todos' && status != _filtroStatus) return false;
 
-      // Filtro Tipo
       final tipo = (d['tipo'] ?? 'Canteiro').toString();
       if (_filtroTipo == 'canteiro' && tipo == 'Vaso') return false;
       if (_filtroTipo == 'vaso' && tipo != 'Vaso') return false;
 
-      // Busca de Texto
       if (buscaTerm.isNotEmpty) {
         final nomeLower =
             (d['nome_lower'] ?? (d['nome'] ?? '')).toString().toLowerCase();
@@ -261,6 +256,10 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     areaM2 = comp * larg;
                   } else {
                     volumeL = _doubleFromController(volumeCtrl);
+                    // 🛡️ CORREÇÃO IMPORTANTE: Converte o Litro do Vaso em m² aproximado.
+                    // Se não tiver área, o gerador de plantio diz que não tem espaço!
+                    // Aproximadamente 1L de terra de cultivo equivale a 0.005 m² de superfície.
+                    areaM2 = volumeL * 0.005;
                   }
 
                   final payload = <String, dynamic>{
@@ -270,7 +269,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     'tipo': tipoLocal,
                     'comprimento_m': comp,
                     'largura_m': larg,
-                    'area_m2': areaM2,
+                    'area_m2': areaM2, // Agora o vaso também tem área útil!
                     'volume_l': volumeL,
                     'finalidade': finalidade,
                     'status': statusLocal,
@@ -324,13 +323,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           AppTextField(
                               controller: nomeCtrl,
                               labelText: 'Nome',
-                              hintText: 'Ex: Canteiro 01 / Vaso da varanda',
+                              hintText: 'Ex: Canteiro Principal / Vaso 40L',
                               prefixIcon: Icons.label_outline,
                               validator: (v) => (v?.trim().isEmpty ?? true)
                                   ? 'Informe um nome.'
                                   : null),
                           const SizedBox(height: AppTokens.lg),
-                          Text('Tipo',
+                          Text('Tipo de Espaço',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -354,7 +353,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                               borderRadius: BorderRadius.circular(
                                                   AppTokens.radiusMd)),
                                           alignment: Alignment.center,
-                                          child: Text('Canteiro / Solo',
+                                          child: Text('Canteiro de Solo',
                                               style: TextStyle(
                                                   color: tipoLocal == 'Canteiro'
                                                       ? cs.onPrimary
@@ -388,13 +387,26 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           ),
                           const SizedBox(height: AppTokens.lg),
                           if (tipoLocal == 'Canteiro') ...[
+                            // 🟢 Dica Agronômica
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text(
+                                  '💡 Dica: Canteiros suspensos devem ter máx. 1,30m de largura para facilitar o alcance.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade800)),
+                            ),
+                            const SizedBox(height: 12),
                             Row(
                               children: [
                                 Expanded(
                                     child: AppTextField(
                                         controller: compCtrl,
                                         labelText: 'Comprimento',
-                                        hintText: '0,00',
+                                        hintText: '5,00',
                                         keyboardType: const TextInputType
                                             .numberWithOptions(decimal: true),
                                         inputFormatters: [
@@ -411,7 +423,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                     child: AppTextField(
                                         controller: largCtrl,
                                         labelText: 'Largura',
-                                        hintText: '0,00',
+                                        hintText: '1,30',
                                         keyboardType: const TextInputType
                                             .numberWithOptions(decimal: true),
                                         inputFormatters: [
@@ -426,10 +438,23 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               ],
                             ),
                           ] else ...[
+                            // 🟢 Dica Agronômica para Vasos
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text(
+                                  '💡 Dica: Vasos de 40L são ideais para Mandioca, Batata, Abóbora e Chuchu.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade800)),
+                            ),
+                            const SizedBox(height: 12),
                             AppTextField(
                                 controller: volumeCtrl,
                                 labelText: 'Volume de terra',
-                                hintText: '0,0',
+                                hintText: 'Ex: 40',
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                         decimal: true),
@@ -438,14 +463,14 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                       RegExp(r'[0-9\.,]'))
                                 ],
                                 prefixIcon: Icons.local_drink,
-                                suffixText: 'L',
+                                suffixText: 'Litros',
                                 validator: (_) =>
                                     _doubleFromController(volumeCtrl) <= 0
                                         ? 'Obrigatório'
                                         : null),
                           ],
                           const SizedBox(height: AppTokens.lg),
-                          Text('Finalidade',
+                          Text('Finalidade de Produção',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -454,16 +479,18 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           SegmentedButton<String>(
                             segments: const [
                               ButtonSegment(
-                                  value: 'consumo', label: Text('Consumo')),
+                                  value: 'consumo',
+                                  label: Text('Consumo (Casa)')),
                               ButtonSegment(
-                                  value: 'comercio', label: Text('Venda'))
+                                  value: 'comercio',
+                                  label: Text('Venda (Lucro)'))
                             ],
                             selected: {finalidade},
                             onSelectionChanged: (set) =>
                                 setModalState(() => finalidade = set.first),
                           ),
                           const SizedBox(height: AppTokens.lg),
-                          Text('Status',
+                          Text('Status do Lote',
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -487,14 +514,15 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                           AppTextField(
                               controller: localCtrl,
                               labelText: 'Localização (opcional)',
-                              hintText: 'Ex: Fundos / Estufa / Varanda',
+                              hintText:
+                                  'Ex: Quintal / Estufa / Varanda da sala',
                               prefixIcon: Icons.place_outlined),
                           const SizedBox(height: AppTokens.md),
                           AppTextField(
                               controller: obsCtrl,
                               labelText: 'Observações (opcional)',
                               hintText:
-                                  'Ex: solo arenoso, recebe sol até 14h...',
+                                  'Ex: Irrigação feita por gotejamento...',
                               prefixIcon: Icons.notes_outlined,
                               minLines: 2,
                               maxLines: 4),
@@ -510,7 +538,9 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 : const Icon(Icons.save),
                             label: Text(salvando
                                 ? 'SALVANDO...'
-                                : (editando ? 'SALVAR' : 'CRIAR')),
+                                : (editando
+                                    ? 'SALVAR ALTERAÇÕES'
+                                    : 'CRIAR LOTE')),
                           ),
                         ],
                       ),
@@ -758,7 +788,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     );
   }
 
-  // 🚀 AQUI ESTÁ O CÓDIGO SUBSTITUÍDO (Usando SectionCard e sem degradê)
   Widget _buildCardResumo(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     final cs = Theme.of(context).colorScheme;
@@ -778,13 +807,13 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
       child: Row(
         children: [
           Expanded(
-              child: _miniKpi('Área Útil', '${totalArea.toStringAsFixed(1)} m²',
-                  Icons.crop_free, cs)),
+              child: _miniKpi('Área de Solo Útil',
+                  '${totalArea.toStringAsFixed(1)} m²', Icons.crop_free, cs)),
           Container(
               width: 1, height: 40, color: cs.outlineVariant.withOpacity(0.5)),
           Expanded(
-              child:
-                  _miniKpi('Lotes Ativos', '$ativos', Icons.eco_outlined, cs)),
+              child: _miniKpi(
+                  'Lotes/Vasos Ativos', '$ativos', Icons.eco_outlined, cs)),
         ],
       ),
     );
@@ -816,7 +845,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // 🛡️ O SCAFFOLD NATIVO SALVA A TELA DE SUMIR NO WINDOWS!
     return Scaffold(
       backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
@@ -846,7 +874,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                     child: _buildFiltros()),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    // 🛡️ MÁGICA: SEM FILTROS NO BANCO. Filtramos localmente para evitar Erro de Índice!
                     stream: _repo!.queryCanteiros().snapshots(),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting)
