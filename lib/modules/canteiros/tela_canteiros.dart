@@ -40,7 +40,6 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
     super.initState();
     _buscaCtrl.addListener(() {
       if (!mounted) return;
-      // Removido setState vazio para evitar rebuilds desnecessários. O debounce cuida disso.
     });
   }
 
@@ -494,7 +493,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 setModalState(() => finalidade = set.first),
                           ),
                           const SizedBox(height: AppTokens.lg),
-                          Text('Status do Lote',
+                          Text(
+                              'Status do Local', // ✅ Modificado de Lote para Local
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -544,7 +544,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                 ? 'SALVANDO...'
                                 : (editando
                                     ? 'SALVAR ALTERAÇÕES'
-                                    : 'CRIAR LOTE')),
+                                    : 'CRIAR LOCAL')), // ✅ Modificado
                           ),
                         ],
                       ),
@@ -724,7 +724,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 child: TextField(
                   controller: _buscaCtrl,
                   decoration: InputDecoration(
-                    hintText: 'Buscar lote ou vaso...',
+                    hintText: 'Buscar local ou vaso...', // ✅ Modificado
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _buscaCtrl.text.isEmpty
                         ? null
@@ -775,7 +775,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                 _chip(
                     cs: cs,
                     key: 'todos',
-                    label: 'Todos os Lotes',
+                    label: 'Todos os Locais', // ✅ Modificado
                     current: _filtroAtivo,
                     onSelect: (v) => setState(() => _filtroAtivo = v)),
                 Container(
@@ -936,7 +936,7 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
               backgroundColor: cs.primary,
               foregroundColor: cs.onPrimary,
               icon: const Icon(Icons.add),
-              label: const Text('NOVO LOTE',
+              label: const Text('NOVO LOCAL', // ✅ Modificado de LOTE para LOCAL
                   style: TextStyle(fontWeight: FontWeight.bold)),
             ),
       body: _repo == null
@@ -968,7 +968,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                               Icon(Icons.grid_off,
                                   size: 64, color: cs.outlineVariant),
                               const SizedBox(height: AppTokens.md),
-                              const Text('Nenhum lote encontrado.',
+                              const Text(
+                                  'Nenhum local encontrado.', // ✅ Modificado
                                   style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold)),
@@ -1130,7 +1131,8 @@ class _TelaCanteirosState extends State<TelaCanteiros> {
                                               Icon(Icons.edit,
                                                   size: 18, color: cs.primary),
                                               const SizedBox(width: 8),
-                                              const Text('Editar Lote')
+                                              const Text(
+                                                  'Editar') // ✅ Modificado para ficar neutro
                                             ])),
                                         PopupMenuItem(
                                             value: 'toggle_ativo',

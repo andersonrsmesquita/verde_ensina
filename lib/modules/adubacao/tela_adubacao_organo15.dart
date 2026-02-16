@@ -1,3 +1,4 @@
+// FILE: lib/modules/adubacao/tela_adubacao_organo15.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -32,7 +33,8 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
   bool _usarCanteiroCadastrado = true;
   String? _canteiroId;
   String _nomeCanteiro = '';
-  double _areaM2 = 0;
+  double _medidaLocal =
+      0.0; // Agora serve tanto para Área (m²) quanto para Volume (L)
 
   Map<String, double>? _resultado;
   bool _resultadoEhCanteiro = true;
@@ -50,6 +52,14 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     super.dispose();
   }
 
+  double _toDouble(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    if (v is String)
+      return double.tryParse(v.trim().replaceAll(',', '.')) ?? 0.0;
+    return 0.0;
+  }
+
   double? _toNum(String? v) {
     if (v == null) return null;
     final t = v.trim();
@@ -64,19 +74,21 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
 
   void _resetResultado() => setState(() => _resultado = null);
 
+  // ✅ BLINDAGEM: Zera a memória ao trocar de Canteiro para Vaso para não salvar no lugar errado
   void _resetTudoAoTrocarModo(_ModoReceita novo) {
     setState(() {
       _modo = novo;
       _resultado = null;
-      _usarCanteiroCadastrado = (novo == _ModoReceita.canteiro);
+      _usarCanteiroCadastrado = true; // Mantém a opção de vincular sempre ativa
       _canteiroId = null;
       _nomeCanteiro = '';
-      _areaM2 = 0;
+      _medidaLocal = 0.0;
       _inputController.clear();
       _isSoloArgiloso = false;
     });
   }
 
+  // ✅ LÓGICA INTELIGENTE: Lê m² se for Canteiro, Lê Litros se for Vaso
   Future<void> _carregarCanteiro(String id) async {
     final user = _user;
     if (user == null) return;
@@ -91,22 +103,36 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
       if (!doc.exists || !mounted) return;
 
       final data = doc.data() ?? {};
-      final nome = (data['nome'] ?? 'Canteiro').toString();
-      final area = data['area_m2'];
+      final nome = (data['nome'] ?? 'Local').toString();
 
-      double areaM2 = 0;
-      if (area is num) areaM2 = area.toDouble();
-      if (area is String) areaM2 = double.tryParse(area) ?? 0;
+      double medidaFinal = 0.0;
+
+      if (_modo == _ModoReceita.vaso) {
+        // Puxa o Volume em Litros
+        medidaFinal = _toDouble(data['volume_l']);
+        if (medidaFinal <= 0) {
+          // Fallback caso alguém tenha cadastrado vaso sem litro mas com área
+          medidaFinal = _toDouble(data['area_m2']) / 0.005;
+        }
+      } else {
+        // Puxa a Área em m²
+        medidaFinal = _toDouble(data['area_m2']);
+        if (medidaFinal <= 0) {
+          medidaFinal =
+              _toDouble(data['comprimento']) * _toDouble(data['largura']);
+        }
+      }
 
       setState(() {
         _canteiroId = id;
         _nomeCanteiro = nome;
-        _areaM2 = areaM2;
-        _inputController.text = areaM2 > 0 ? _fmt(areaM2, dec: 2) : '';
+        _medidaLocal = medidaFinal;
+        _inputController.text =
+            medidaFinal > 0 ? _fmt(medidaFinal, dec: 2) : '';
         _resultado = null;
       });
     } catch (e) {
-      AppMessenger.error('Erro ao carregar canteiro: $e');
+      AppMessenger.error('Erro ao carregar os dados do local.');
     }
   }
 
@@ -114,48 +140,65 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
     FocusScope.of(context).unfocus();
 
     final ok = _formKey.currentState?.validate() ?? false;
-    if (!ok) return;
-
-    final valor = _toNum(_inputController.text) ?? 0;
-    if (valor <= 0) {
-      AppMessenger.warn('Digite um valor maior que zero.');
+    if (!ok) {
+      AppMessenger.warn('Preencha os dados necessários.');
       return;
     }
 
-    if (_modo == _ModoReceita.canteiro) {
-      final res = BaseAgronomica.calcularAdubacaoCanteiro(
-        areaM2: valor,
-        isSoloArgiloso: _isSoloArgiloso,
-        tipoAduboOrganico: _tipoAdubo,
-      );
-
-      setState(() {
-        _resultado = res;
-        _resultadoEhCanteiro = true;
-      });
-    } else {
-      final res = BaseAgronomica.calcularMisturaVaso(
-        volumeVasoLitros: valor,
-        tipoAdubo: _tipoAdubo,
-      );
-
-      setState(() {
-        _resultado = res;
-        _resultadoEhCanteiro = false;
-      });
+    final valor = _toNum(_inputController.text) ?? 0.0;
+    if (valor <= 0) {
+      AppMessenger.error('O valor deve ser maior que zero.');
+      return;
     }
 
-    _mostrarResultado();
+    try {
+      if (_modo == _ModoReceita.canteiro) {
+        final res = BaseAgronomica.calcularAdubacaoCanteiro(
+          areaM2: valor,
+          isSoloArgiloso: _isSoloArgiloso,
+          tipoAduboOrganico: _tipoAdubo,
+        );
+
+        setState(() {
+          _resultado = res;
+          _resultadoEhCanteiro = true;
+        });
+      } else {
+        final res = BaseAgronomica.calcularMisturaVaso(
+          volumeVasoLitros: valor,
+          tipoAdubo: _tipoAdubo,
+        );
+
+        setState(() {
+          _resultado = res;
+          _resultadoEhCanteiro = false;
+        });
+      }
+
+      Future.delayed(const Duration(milliseconds: 150), () {
+        FocusManager.instance.primaryFocus?.unfocus();
+        _mostrarResultado();
+      });
+    } catch (e) {
+      AppMessenger.error('Erro na geração da receita.');
+    }
   }
 
+  // ✅ SALVAMENTO UNIVERSAL: Salva no diário tanto do Canteiro quanto do Vaso
   Future<void> _salvarNoCadernoDeCampo(BuildContext sheetContext) async {
     final user = _user;
     if (user == null) {
       AppMessenger.warn('Faça login para salvar.');
       return;
     }
-    if (_resultado == null || _salvando) return;
 
+    // Auto-calcula se o usuário clicou em registrar sem calcular
+    if (_resultado == null) {
+      _calcular();
+      if (_resultado == null) return;
+    }
+
+    if (_salvando) return;
     setState(() => _salvando = true);
 
     try {
@@ -166,51 +209,56 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
 
       if (appSession == null) throw Exception('Sem tenant selecionado');
 
-      final modo = _resultadoEhCanteiro ? 'canteiro' : 'vaso';
+      final modoTexto = _resultadoEhCanteiro ? 'canteiro' : 'vaso';
       final nomeAdubo = _nomeAdubo();
       final itens = <String, dynamic>{};
       String detalhes = '';
 
       if (_resultadoEhCanteiro) {
         itens.addAll({
-          'adubo_organico_g': (_resultado!['adubo_organico'] ?? 0).toDouble(),
-          'calcario_g': (_resultado!['calcario'] ?? 0).toDouble(),
-          'termofosfato_g': (_resultado!['termofosfato'] ?? 0).toDouble(),
-          'gesso_g': (_resultado!['gesso'] ?? 0).toDouble(),
+          'adubo_organico_g': (_resultado!['adubo_organico'] ?? 0.0).toDouble(),
+          'calcario_g': (_resultado!['calcario'] ?? 0.0).toDouble(),
+          'termofosfato_g': (_resultado!['termofosfato'] ?? 0.0).toDouble(),
+          'gesso_g': (_resultado!['gesso'] ?? 0.0).toDouble(),
           'solo_argiloso': _isSoloArgiloso,
           'tipo_adubo': _tipoAdubo,
           'area_m2': _toNum(_inputController.text) ?? 0.0,
         });
-        detalhes = 'Organo15 (Canteiro) | Adubo: $nomeAdubo';
+        detalhes = 'Adubação de Base (Organo15) | Fonte: $nomeAdubo';
       } else {
         itens.addAll({
-          'terra_litros': (_resultado!['terra_litros'] ?? 0).toDouble(),
-          'adubo_litros': (_resultado!['adubo_litros'] ?? 0).toDouble(),
-          'calcario_g': (_resultado!['calcario_gramas'] ?? 0).toDouble(),
+          'terra_litros': (_resultado!['terra_litros'] ?? 0.0).toDouble(),
+          'adubo_litros': (_resultado!['adubo_litros'] ?? 0.0).toDouble(),
+          'calcario_g': (_resultado!['calcario_gramas'] ?? 0.0).toDouble(),
           'termofosfato_g':
-              (_resultado!['termofosfato_gramas'] ?? 0).toDouble(),
+              (_resultado!['termofosfato_gramas'] ?? 0.0).toDouble(),
           'tipo_adubo': _tipoAdubo,
           'volume_vaso_l': _toNum(_inputController.text) ?? 0.0,
         });
-        detalhes = 'Mistura (Vaso) | Adubo: $nomeAdubo';
+        detalhes = 'Mistura de Substrato (Vaso) | Fonte: $nomeAdubo';
       }
 
       final histRef =
           FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
+
       final historicoPayload = {
         'uid_usuario': user.uid,
         'data': agora,
         'tipo_manejo':
-            _resultadoEhCanteiro ? 'Adubação Orgânica' : 'Mistura Vaso',
-        'produto': _resultadoEhCanteiro ? 'Organo15' : 'Mistura',
+            _resultadoEhCanteiro ? 'Adubação Orgânica' : 'Adubação (Vaso)',
+        'produto': _resultadoEhCanteiro ? 'Organo15' : 'Mistura Substrato',
         'detalhes': detalhes,
-        'modo': modo,
+        'observacao_extra':
+            'Aplicado: ${_fmt(itens['adubo_organico_g'] ?? itens['adubo_litros'])} ${_resultadoEhCanteiro ? 'g' : 'L'}',
+        'modo': modoTexto,
         'itens': itens,
         'concluido': true,
+        'status': 'concluido',
+        'estado': 'realizado',
         'createdAt': agora,
       };
 
-      if (_resultadoEhCanteiro && _canteiroId != null) {
+      if (_usarCanteiroCadastrado && _canteiroId != null) {
         historicoPayload['canteiro_id'] = _canteiroId!;
         if (_nomeCanteiro.isNotEmpty) {
           historicoPayload['nome_canteiro'] = _nomeCanteiro;
@@ -219,80 +267,98 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
 
       batch.set(histRef, _sanitizeMap(historicoPayload));
 
-      if (_resultadoEhCanteiro && _canteiroId != null) {
+      // Atualiza o Lote/Vaso pai
+      if (_usarCanteiroCadastrado && _canteiroId != null) {
         final canteiroRef =
             FirebasePaths.canteirosCol(appSession.tenantId).doc(_canteiroId);
-        final canteiroPayload = {
+        batch.update(canteiroRef, {
           'updatedAt': agora,
+          'data_atualizacao': agora,
           'totais_insumos.adubo_organico_g':
-              FieldValue.increment(itens['adubo_organico_g']),
+              FieldValue.increment(itens['adubo_organico_g'] ?? 0.0),
           'totais_insumos.calcario_g':
-              FieldValue.increment(itens['calcario_g']),
+              FieldValue.increment(itens['calcario_g'] ?? 0.0),
           'totais_insumos.termofosfato_g':
-              FieldValue.increment(itens['termofosfato_g']),
-          'totais_insumos.gesso_g': FieldValue.increment(itens['gesso_g']),
+              FieldValue.increment(itens['termofosfato_g'] ?? 0.0),
           'totais_insumos.aplicacoes_organo15': FieldValue.increment(1),
-          'ult_manejo': {
-            'tipo': 'Organo15',
-            'hist_id': histRef.id,
-            'resumo': detalhes,
-            'atualizadoEm': agora,
-          }
-        };
-        batch.set(canteiroRef, _sanitizeMap(canteiroPayload),
-            SetOptions(merge: true));
+          'ult_manejo.tipo': 'Adubação',
+          'ult_manejo.hist_id': histRef.id,
+          'ult_manejo.resumo': detalhes,
+          'ult_manejo.atualizadoEm': agora,
+        });
       }
 
       await batch.commit();
 
       if (!mounted) return;
-      Navigator.of(sheetContext).pop();
-      AppMessenger.success('Receita salva no Caderno de Campo!');
+      if (Navigator.canPop(sheetContext)) Navigator.of(sheetContext).pop();
+      AppMessenger.success('✅ Receita salva no histórico do Local!');
     } catch (e) {
-      AppMessenger.error('Erro ao salvar: $e');
+      AppMessenger.error('Falha de conexão ao salvar.');
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
   }
 
-  // ==========================================================================
-  // FUNÇÃO PARA CHAMAR O ASSISTENTE (CLÍNICA)
-  // ==========================================================================
   void _abrirClinicaDaPlanta() {
-    showModalBottomSheet(
+    AppMessenger.info('Módulo de clínica em construção!');
+  }
+
+  void _mostrarAjuda(String titulo, String mensagem) {
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const ClinicaDaPlantaSheet(),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.help, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(titulo,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16))),
+          ],
+        ),
+        content: Text(mensagem, style: const TextStyle(height: 1.4)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('ENTENDI'))
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final appSession = SessionScope.of(context).session;
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
-    if (appSession == null) {
+    if (appSession == null || _user == null) {
       return Scaffold(
         backgroundColor: cs.surfaceContainerLowest,
         body: Center(
-          child: Text('Selecione um espaço (tenant) para continuar.',
-              style: theme.textTheme.bodyLarge?.copyWith(color: cs.outline)),
-        ),
+            child: Text('Carregando sessão...',
+                style: TextStyle(color: cs.outline))),
       );
     }
+
+    final isVaso = _modo == _ModoReceita.vaso;
 
     return Scaffold(
       backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Calculadora Organo15'),
+        title: const Text('Calculadora Organo15',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
-        backgroundColor: cs.primary,
-        foregroundColor: cs.onPrimary,
+        backgroundColor: Colors.white,
+        foregroundColor: cs.primary,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Voltar',
+          onPressed: () => Navigator.maybePop(context),
+        ),
       ),
-      // BOTÃO FLUTUANTE DA CLÍNICA ADICIONADO AQUI!
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirClinicaDaPlanta,
         backgroundColor: Colors.red.shade700,
@@ -301,195 +367,255 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
         label: const Text('Diagnóstico Visual',
             style: TextStyle(fontWeight: FontWeight.bold)),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: 80), // Margem bottom pro FAB não tampar o botão gerar
-          children: [
-            if (_salvando) const LinearProgressIndicator(),
-            _buildModoSelecao(theme, cs),
-            const SizedBox(height: 16),
-            _buildParametros(theme, cs),
-            const SizedBox(height: 24),
-            AppButtons.elevatedIcon(
-              onPressed: _salvando ? null : _calcular,
-              label: const Text('GERAR RECEITA'),
-              icon: const Icon(Icons.auto_awesome),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModoSelecao(ThemeData theme, ColorScheme cs) {
-    return Card(
-      elevation: 0,
-      color: cs.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Modo de Aplicação',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            SegmentedButton<_ModoReceita>(
-              style: ButtonStyle(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: _ModoReceita.canteiro,
-                  label: Text('Canteiro (m²)'),
-                  icon: Icon(Icons.eco_outlined),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.only(
+                left: 16, right: 16, top: 16, bottom: 100),
+            children: [
+              // Banner Informativo
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
                 ),
-                ButtonSegment(
-                  value: _ModoReceita.vaso,
-                  label: Text('Vaso (L)'),
-                  icon: Icon(Icons.local_florist_outlined),
-                ),
-              ],
-              selected: {_modo},
-              onSelectionChanged:
-                  _salvando ? null : (set) => _resetTudoAoTrocarModo(set.first),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildParametros(ThemeData theme, ColorScheme cs) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: cs.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Parâmetros da Área',
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            if (_modo == _ModoReceita.canteiro) ...[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Usar canteiro cadastrado'),
-                subtitle: const Text('Puxa a área automaticamente.'),
-                value: _usarCanteiroCadastrado,
-                activeColor: cs.primary,
-                onChanged: _salvando
-                    ? null
-                    : (v) {
-                        setState(() {
-                          _usarCanteiroCadastrado = v;
-                          _canteiroId = null;
-                          _nomeCanteiro = '';
-                          _areaM2 = 0;
-                          _inputController.clear();
-                          _resultado = null;
-                        });
-                      },
-              ),
-              if (_usarCanteiroCadastrado) ...[
-                const SizedBox(height: 8),
-                _CanteiroPicker(
-                  selectedId: _canteiroId,
-                  onSelect: _carregarCanteiro,
-                ),
-                if (_canteiroId != null && _areaM2 > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text('Área carregada: ${_fmt(_areaM2)} m²',
+                child: Row(
+                  children: [
+                    Icon(Icons.spa, color: cs.primary),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'A nutrição de base prepara a "cama" da planta. Escolha a fonte orgânica e nós montamos a receita ideal.',
                         style: TextStyle(
-                            color: cs.primary, fontWeight: FontWeight.bold)),
-                  ),
-              ],
-              const Divider(height: 24),
-            ],
-            TextFormField(
-              controller: _inputController,
-              readOnly:
-                  _modo == _ModoReceita.canteiro && _usarCanteiroCadastrado,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
-                LengthLimitingTextInputFormatter(10),
-              ],
-              validator: (v) {
-                if (_modo == _ModoReceita.canteiro &&
-                    _usarCanteiroCadastrado &&
-                    _canteiroId == null) {
-                  return 'Selecione um canteiro';
-                }
-                if (_toNum(v) == null || _toNum(v)! <= 0) {
-                  return 'Inválido';
-                }
-                return null;
-              },
-              decoration: InputDecoration(
-                labelText: _modo == _ModoReceita.canteiro
-                    ? 'Área do canteiro'
-                    : 'Volume do vaso',
-                hintText:
-                    _modo == _ModoReceita.canteiro ? 'Ex: 5,50' : 'Ex: 20',
-                suffixText: _modo == _ModoReceita.canteiro ? 'm²' : 'L',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    )
+                  ],
                 ),
               ),
-              onChanged: (_) => _resetResultado(),
+              const SizedBox(height: 16),
+
+              SectionCard(
+                title: '1) Tipo de Plantio',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SegmentedButton<_ModoReceita>(
+                      style: ButtonStyle(
+                        shape: MaterialStateProperty.all(RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                      ),
+                      segments: const [
+                        ButtonSegment(
+                            value: _ModoReceita.canteiro,
+                            label: Text('Solo (Canteiro)'),
+                            icon: Icon(Icons.eco_outlined)),
+                        ButtonSegment(
+                            value: _ModoReceita.vaso,
+                            label: Text('Vaso/Saco'),
+                            icon: Icon(Icons.local_florist_outlined)),
+                      ],
+                      selected: {_modo},
+                      onSelectionChanged: _salvando
+                          ? null
+                          : (set) => _resetTudoAoTrocarModo(set.first),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              SectionCard(
+                title: '2) Dados do Local',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                          isVaso
+                              ? 'Vincular a um Vaso salvo'
+                              : 'Vincular a um Canteiro salvo',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
+                      subtitle: const Text(
+                          'Puxa a área/volume automaticamente.',
+                          style: TextStyle(fontSize: 12)),
+                      value: _usarCanteiroCadastrado,
+                      activeColor: cs.primary,
+                      onChanged: _salvando
+                          ? null
+                          : (v) {
+                              setState(() {
+                                _usarCanteiroCadastrado = v;
+                                _canteiroId = null;
+                                _nomeCanteiro = '';
+                                _medidaLocal = 0;
+                                _inputController.clear();
+                                _resultado = null;
+                              });
+                            },
+                    ),
+                    if (_usarCanteiroCadastrado) ...[
+                      const SizedBox(height: 8),
+                      // ✅ PASSANDO A VARIÁVEL MODO PARA FILTRAR O DROPDOWN
+                      _CanteiroPicker(
+                        selectedId: _canteiroId,
+                        tenantId: appSession.tenantId,
+                        modoVaso: isVaso,
+                        onSelect: _carregarCanteiro,
+                      ),
+                    ],
+                    const Divider(height: 24),
+                    TextFormField(
+                      controller: _inputController,
+                      readOnly: _usarCanteiroCadastrado,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]'))
+                      ],
+                      decoration: InputDecoration(
+                        labelText:
+                            isVaso ? 'Volume do Vaso' : 'Área útil do Canteiro',
+                        hintText: isVaso ? 'Ex: 20' : 'Ex: 5,50',
+                        suffixText: isVaso ? 'Litros' : 'm²',
+                        filled: true,
+                        fillColor: _usarCanteiroCadastrado
+                            ? Colors.grey.shade100
+                            : Colors.white,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        isDense: true,
+                      ),
+                      validator: (v) {
+                        if (_usarCanteiroCadastrado && _canteiroId == null) {
+                          return 'Selecione um local acima';
+                        }
+                        if (_toNum(v) == null || _toNum(v)! <= 0)
+                          return 'Obrigatório';
+                        return null;
+                      },
+                      onChanged: (_) => _resetResultado(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              SectionCard(
+                title: '3) Parâmetros Agronômicos',
+                child: Column(
+                  children: [
+                    if (!isVaso) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('O Solo é Argiloso?',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14)),
+                              subtitle: const Text(
+                                  "Ative se a terra formar liga (barro).",
+                                  style: TextStyle(fontSize: 12)),
+                              value: _isSoloArgiloso,
+                              activeColor: cs.primary,
+                              onChanged: _salvando
+                                  ? null
+                                  : (val) => setState(() {
+                                        _isSoloArgiloso = val;
+                                        _resultado = null;
+                                      }),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.help_outline, color: cs.primary),
+                            onPressed: () => _mostrarAjuda(
+                                'Solo Argiloso x Arenoso',
+                                'Solos argilosos (barro) são mais pesados e compactam fácil, por isso exigem Gesso Agrícola na receita para soltar a terra e ajudar a raiz a descer.'),
+                          )
+                        ],
+                      ),
+                      const Divider(height: 24),
+                    ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _tipoAdubo,
+                            decoration: InputDecoration(
+                              labelText: 'Fonte de Adubo Orgânico',
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              isDense: true,
+                            ),
+                            items: _opcoesAdubo.entries
+                                .map((e) => DropdownMenuItem(
+                                    value: e.key, child: Text(e.value)))
+                                .toList(),
+                            onChanged: _salvando
+                                ? null
+                                : (val) => setState(() {
+                                      _tipoAdubo = val ?? 'bovino';
+                                      _resultado = null;
+                                    }),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.help_outline, color: cs.primary),
+                          onPressed: () => _mostrarAjuda('Tipos de Adubo',
+                              'Esterco de Galinha e Bokashi são extremamente concentrados. Por isso, a calculadora exigirá uma quantidade menor deles em comparação ao Esterco Bovino para não queimar as raízes.'),
+                        )
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: Container(
+        color: Colors.white,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: AppButtons.outlinedIcon(
+                  onPressed: _salvando ? null : _calcular,
+                  icon: const Icon(Icons.calculate_outlined),
+                  label: const Text('CALCULAR'),
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            if (_modo == _ModoReceita.canteiro) ...[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Solo argiloso?'),
-                subtitle: const Text("Ative se a terra formar liga (barro)."),
-                value: _isSoloArgiloso,
-                activeColor: cs.primary,
-                onChanged: _salvando
-                    ? null
-                    : (val) => setState(() {
-                          _isSoloArgiloso = val;
-                          _resultado = null;
-                        }),
-              ),
-              const SizedBox(height: 8),
-            ],
-            DropdownButtonFormField<String>(
-              value: _tipoAdubo,
-              decoration: InputDecoration(
-                labelText: 'Adubo disponível',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: AppButtons.elevatedIcon(
+                  onPressed: _salvando
+                      ? null
+                      : () {
+                          // Proteção: Se não calculou, calcula. Se calculou, mostra o modal e lá dentro salva.
+                          if (_resultado == null) {
+                            _calcular();
+                          } else {
+                            _mostrarResultado();
+                          }
+                        },
+                  icon: Icon(_salvando ? Icons.hourglass_top : Icons.save_alt),
+                  label: Text(_salvando ? 'SALVANDO...' : 'REGISTRAR'),
                 ),
               ),
-              items: _opcoesAdubo.entries
-                  .map((e) =>
-                      DropdownMenuItem(value: e.key, child: Text(e.value)))
-                  .toList(),
-              onChanged: _salvando
-                  ? null
-                  : (val) => setState(() {
-                        _tipoAdubo = val ?? 'bovino';
-                        _resultado = null;
-                      }),
             ),
           ],
         ),
@@ -512,6 +638,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
           builder: (ctx, setSheetState) {
             final isCanteiro = _resultadoEhCanteiro;
             final theme = Theme.of(ctx);
+            final cs = theme.colorScheme;
 
             Future<void> onSave() async {
               if (savingLocal) return;
@@ -535,14 +662,18 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                 children: [
                   Row(
                     children: [
-                      Icon(isCanteiro ? Icons.eco : Icons.local_florist,
-                          color: theme.colorScheme.primary),
+                      CircleAvatar(
+                        backgroundColor: cs.primaryContainer,
+                        child: Icon(
+                            isCanteiro ? Icons.eco : Icons.local_florist,
+                            color: cs.primary),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           isCanteiro ? 'Receita Organo15' : 'Mistura para Vaso',
-                          style: theme.textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w900),
                         ),
                       ),
                       IconButton(
@@ -550,18 +681,17 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                           icon: const Icon(Icons.close)),
                     ],
                   ),
-                  if (isCanteiro && _nomeCanteiro.isNotEmpty)
+                  if (_nomeCanteiro.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text('Para: $_nomeCanteiro',
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
+                      child: Text('Aplicação para: $_nomeCanteiro',
                           style: TextStyle(
-                              color: theme.colorScheme.secondary,
-                              fontWeight: FontWeight.bold)),
+                              color: cs.primary, fontWeight: FontWeight.bold)),
                     ),
                   const Divider(),
                   const SizedBox(height: 12),
                   if (isCanteiro) ...[
-                    _ResultRow('Adubo Orgânico',
+                    _ResultRow('Adubo Orgânico (${_nomeAdubo()})',
                         '${((_resultado!['adubo_organico'] ?? 0) / 1000).toStringAsFixed(2)} kg'),
                     _ResultRow('Calcário',
                         '${(_resultado!['calcario'] ?? 0).toStringAsFixed(0)} g'),
@@ -571,7 +701,7 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         '${(_resultado!['gesso'] ?? 0).toStringAsFixed(0)} g',
                         isOptional: true),
                   ] else ...[
-                    _ResultRow('Terra/Substrato',
+                    _ResultRow('Terra Viva/Substrato',
                         '${(_resultado!['terra_litros'] ?? 0).toStringAsFixed(1)} L'),
                     _ResultRow('Adubo Orgânico',
                         '${(_resultado!['adubo_litros'] ?? 0).toStringAsFixed(1)} L'),
@@ -581,25 +711,25 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         '${(_resultado!['termofosfato_gramas'] ?? 0).toStringAsFixed(1)} g'),
                   ],
                   const SizedBox(height: 20),
-                  Card(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    elevation: 0,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              isCanteiro
-                                  ? 'Aplique o calcário ~30 dias antes se possível.'
-                                  : 'Misture tudo numa bacia antes de encher o vaso.',
-                              style: Theme.of(ctx).textTheme.bodySmall,
-                            ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: cs.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            isCanteiro
+                                ? 'Espalhe uniformemente sobre a terra, incorpore bem e irrigue. Aguarde o tempo de cura antes de plantar.'
+                                : 'Misture todos os ingredientes em uma bacia/lona antes de encher o vaso definitivo.',
+                            style: const TextStyle(fontSize: 12, height: 1.4),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -609,10 +739,11 @@ class _TelaAdubacaoOrgano15State extends State<TelaAdubacaoOrgano15> {
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2))
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.save_alt),
                     label:
-                        Text(savingLocal ? 'SALVANDO...' : 'SALVAR NO CADERNO'),
+                        Text(savingLocal ? 'SALVANDO...' : 'SALVAR NO DIÁRIO'),
                   ),
                 ],
               ),
@@ -650,68 +781,108 @@ class _ResultRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('$label${isOptional ? " (Opcional)" : ""}',
-              style: isOptional
-                  ? TextStyle(color: Theme.of(context).colorScheme.outline)
-                  : null),
-          Text(value,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Expanded(
+            child: Text(
+              '$label${isOptional ? " (Opcional)" : ""}',
+              style: TextStyle(
+                  color: isOptional
+                      ? Theme.of(context).colorScheme.outline
+                      : Colors.black87,
+                  fontSize: 14),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+          ),
         ],
       ),
     );
   }
 }
 
+// ✅ PICKER INTELIGENTE: Filtra a lista com base no tipo selecionado (Canteiro ou Vaso)
 class _CanteiroPicker extends StatelessWidget {
   final String? selectedId;
   final void Function(String id) onSelect;
+  final String tenantId;
+  final bool modoVaso; // Passado pela tela principal
 
-  const _CanteiroPicker({required this.onSelect, this.selectedId});
+  const _CanteiroPicker({
+    required this.onSelect,
+    this.selectedId,
+    required this.tenantId,
+    required this.modoVaso,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final appSession = SessionScope.of(context).session;
-    if (appSession == null) return const SizedBox.shrink();
-
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebasePaths.canteirosCol(appSession.tenantId)
+      stream: FirebasePaths.canteirosCol(tenantId)
           .where('ativo', isEqualTo: true)
           .snapshots(),
       builder: (context, snap) {
         if (!snap.hasData) return const LinearProgressIndicator();
-        final docs = snap.data!.docs;
+
+        // 🛡️ Filtro Inteligente: Separa Canteiros de Vasos para não misturar unidades
+        final docs = snap.data!.docs.where((d) {
+          final tipo = ((d.data() as Map)['tipo'] ?? '').toString();
+          if (modoVaso) {
+            return tipo == 'Vaso';
+          } else {
+            return tipo !=
+                'Vaso'; // Considera tudo que não for vaso como Canteiro
+          }
+        }).toList();
 
         if (docs.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text('Nenhum canteiro ativo encontrado.',
-                style: TextStyle(color: Colors.orange)),
+          return Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+                modoVaso
+                    ? 'Nenhum Vaso cadastrado no sistema.'
+                    : 'Nenhum Canteiro de solo cadastrado.',
+                style: const TextStyle(color: Colors.red)),
           );
         }
 
         return DropdownButtonFormField<String>(
-          value: selectedId,
+          value: docs.any((d) => d.id == selectedId) ? selectedId : null,
           isExpanded: true,
           decoration: InputDecoration(
-            labelText: 'Selecione o Canteiro',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            labelText: modoVaso ? 'Selecione o Vaso' : 'Selecione o Canteiro',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+            fillColor: Colors.white,
+            isDense: true,
           ),
           items: docs.map((d) {
             final data = d.data() as Map<String, dynamic>;
-            final area =
-                double.tryParse(data['area_m2']?.toString() ?? '0') ?? 0;
+
+            double valorExibido = 0.0;
+            if (modoVaso) {
+              valorExibido =
+                  double.tryParse(data['volume_l']?.toString() ?? '0') ?? 0.0;
+            } else {
+              valorExibido =
+                  double.tryParse(data['area_m2']?.toString() ?? '0') ?? 0.0;
+              if (valorExibido <= 0.0) {
+                valorExibido =
+                    (double.tryParse(data['comprimento']?.toString() ?? '0') ??
+                            0.0) *
+                        (double.tryParse(data['largura']?.toString() ?? '0') ??
+                            0.0);
+              }
+            }
+
             return DropdownMenuItem(
               value: d.id,
-              child: Text('${data['nome']} (${area.toStringAsFixed(2)} m²)'),
+              child: Text(
+                  '${data['nome']} (${valorExibido.toStringAsFixed(1)} ${modoVaso ? "L" : "m²"})'),
             );
           }).toList(),
           onChanged: (id) => id != null ? onSelect(id) : null,

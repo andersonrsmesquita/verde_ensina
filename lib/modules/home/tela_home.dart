@@ -1,3 +1,4 @@
+// FILE: lib/modules/home/tela_home.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,10 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // ✅ Core Imports (Garantindo que nada falte)
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
-import '../../core/session/app_session.dart';
 import '../../core/ui/app_ui.dart';
-
-import '../../core/repositories/user_profile_repository.dart';
 
 // ✅ Todos os Módulos Importados
 import '../canteiros/tela_canteiros.dart';
@@ -48,7 +46,7 @@ class _TelaHomeState extends State<TelaHome> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: cs.surfaceContainerLowest, // Fundo mais leve
       appBar: _buildAppBar(context),
       // IndexedStack preserva o estado das abas (não recarrega ao trocar)
       body: IndexedStack(
@@ -131,7 +129,8 @@ class _TelaHomeState extends State<TelaHome> {
 
     return AppBar(
       automaticallyImplyLeading: false,
-      backgroundColor: cs.surface,
+      backgroundColor:
+          cs.surfaceContainerLowest, // Combina com o fundo do Scaffold
       foregroundColor: cs.onSurface,
       elevation: 0,
       scrolledUnderElevation: 0, // Evita mudança de cor ao rolar
@@ -212,7 +211,6 @@ class _AbaInicioDashboard extends StatelessWidget {
                       color: cs.primary,
                       onTap: () => Navigator.push(
                           context,
-                          // ✅ Corrigido: Abre a Lista de Desejos (Planejamento de Consumo)
                           MaterialPageRoute(
                               builder: (_) => const TelaPlanejamentoConsumo())),
                     ),
@@ -232,8 +230,9 @@ class _AbaInicioDashboard extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _QuickActionBtn(
-                      label: 'Canteiros',
-                      icon: Icons.grid_view,
+                      label:
+                          'Locais', // ✅ Modificado de "Canteiros" para "Locais"
+                      icon: Icons.place_outlined, // ✅ Ícone mais abrangente
                       color: cs.tertiary,
                       onTap: () => Navigator.push(
                           context,
@@ -353,7 +352,7 @@ class _AbaInicioDashboard extends StatelessWidget {
 }
 
 // ============================================================================
-// WIDGETS AUXILIARES (Locais para evitar dependências externas quebradas)
+// WIDGETS AUXILIARES
 // ============================================================================
 
 class _DashboardHeader extends StatelessWidget {
@@ -391,12 +390,12 @@ class _DashboardHeader extends StatelessWidget {
                   Text('Olá, $userName',
                       style: txt.titleLarge
                           ?.copyWith(fontWeight: FontWeight.w800)),
-                  Text(tenantName ?? 'Sua Fazenda',
+                  Text(tenantName ?? 'Sua Produção',
                       style:
                           txt.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                 ],
               ),
-              // Contador de Canteiros
+              // ✅ Modificado: Contador agora diz "Locais"
               StreamBuilder<QuerySnapshot>(
                 stream: FirebasePaths.canteirosCol(tenantId)
                     .where('ativo', isEqualTo: true)
@@ -405,7 +404,7 @@ class _DashboardHeader extends StatelessWidget {
                   final count = snap.hasData ? snap.data!.docs.length : 0;
                   return Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                         color: cs.primaryContainer,
                         borderRadius: BorderRadius.circular(12)),
@@ -413,12 +412,14 @@ class _DashboardHeader extends StatelessWidget {
                       children: [
                         Text('$count',
                             style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
                                 color: cs.onPrimaryContainer)),
-                        Text('Canteiros',
+                        Text('Locais',
                             style: TextStyle(
-                                fontSize: 10, color: cs.onPrimaryContainer)),
+                                fontSize: 11,
+                                color: cs.onPrimaryContainer,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                   );
@@ -486,7 +487,7 @@ class _MiniModule extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          width: 85, // Largura fixa para uniformidade
+          width: 85,
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: cs.surface,
@@ -523,7 +524,6 @@ class _AbaJornadaTrilha extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // Timeline simples
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -535,28 +535,37 @@ class _AbaJornadaTrilha extends StatelessWidget {
             leading: Icon(Icons.alt_route, size: 40),
             title: Text('Sua Jornada',
                 style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('Passo a passo para o sucesso.'),
+            subtitle: Text('Passo a passo para o sucesso da colheita.'),
           ),
         ),
         const SizedBox(height: 20),
 
-        // Item 1: Planejamento
         AppModuleCard(
-          title: '1. Planejamento',
-          icon: Icons.calendar_today,
+          title: '1. O que vou plantar?',
+          icon: Icons.shopping_basket_outlined,
           onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  // ✅ Corrigido: Abre a tela de Canteiro, não a de Consumo
-                  builder: (_) => const TelaPlanejamentoCanteiro())),
+                  builder: (_) => const TelaPlanejamentoConsumo())),
         ),
 
+        // ✅ Modificado de "Preparo" e TelaCanteiros para uma descrição melhor
         AppModuleCard(
-            title: '2. Preparo',
-            icon: Icons.grid_on,
+            title: '2. Meus Locais (Onde vou plantar)',
+            subtitle: 'Cadastre seus canteiros de solo ou vasos.',
+            icon: Icons.place_outlined,
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const TelaCanteiros()))),
-        AppModuleCard(title: '3. Plantio', icon: Icons.grass),
+
+        AppModuleCard(
+          title: '3. Mapa do Plantio',
+          subtitle: 'Distribua as sementes/mudas no espaço.',
+          icon: Icons.grid_on,
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const TelaPlanejamentoCanteiro())),
+        ),
       ],
     );
   }
