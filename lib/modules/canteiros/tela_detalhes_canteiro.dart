@@ -10,6 +10,8 @@ import '../../core/session/session_scope.dart';
 import '../../core/repositories/detalhes_canteiro_repository.dart';
 import '../../core/firebase/firebase_paths.dart';
 
+import '../diario/tela_diario_manejo.dart';
+
 import '../solo/tela_diagnostico.dart';
 import '../calculadoras/tela_calagem.dart';
 import 'guia_culturas.dart';
@@ -77,6 +79,83 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
     final hh = d.hour.toString().padLeft(2, '0');
     final mi = d.minute.toString().padLeft(2, '0');
     return '$dd/$mm/$yyyy $hh:$mi';
+  }
+
+  Color _corTipoManejo(String tipo, ColorScheme cs) {
+    if (tipo == 'Plantio') return cs.primary;
+    if (tipo == 'Irrigação') return Colors.blue.shade700;
+    if (tipo == 'Colheita') return Colors.teal.shade700;
+    if (tipo == 'Perda') return cs.error;
+    if (tipo == 'Adubação') return Colors.brown.shade600;
+    if (tipo == 'Pulverização') return Colors.purple.shade600;
+    if (tipo == 'Tratos Culturais') return Colors.teal.shade700;
+    if (tipo == 'Manutenção') return Colors.orange.shade800;
+    return cs.outline;
+  }
+
+  Widget _buildHistoricoPreviewItem(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    ColorScheme cs,
+  ) {
+    final e = doc.data();
+    final tipo = (e['tipo_manejo'] ?? '').toString();
+    final produto = (e['produto'] ?? '').toString();
+    final detalhes = (e['detalhes'] ?? '').toString();
+    final ts = e['data'] is Timestamp ? e['data'] as Timestamp : null;
+    final obsExtra = (e['observacao_extra'] ?? '').toString();
+    final cor = _corTipoManejo(tipo, cs);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          backgroundColor: cor.withOpacity(0.1),
+          child: Icon(Icons.history, color: cor),
+        ),
+        title: Text(
+          produto.isEmpty ? tipo : produto,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tipo,
+              style: TextStyle(
+                color: cor,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              _fmtData(ts),
+              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+            ),
+            if (detalhes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  detalhes,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+        ),
+        trailing: IconButton(
+          tooltip: 'Editar observação',
+          icon: Icon(Icons.edit_outlined, color: cs.outline),
+          onPressed: () =>
+              _mostrarDialogoEditarTexto(doc.id, detalhes, obsExtra),
+        ),
+      ),
+    );
   }
 
   Color _getCorStatus(String status, ColorScheme cs) {
@@ -1908,77 +1987,63 @@ class _TelaDetalhesCanteiroState extends State<TelaDetalhesCanteiro> {
                   const SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(child: CircularProgressIndicator()))
-                else if (_docs.isEmpty)
-                  const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: Text('Sem histórico.')))
                 else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((ctx, i) {
-                      final e = _docs[i].data();
-                      final tipo = (e['tipo_manejo'] ?? '').toString();
-                      final produto = (e['produto'] ?? '').toString();
-                      final detalhes = (e['detalhes'] ?? '').toString();
-                      final ts = e['data'] is Timestamp
-                          ? e['data'] as Timestamp
-                          : null;
-
-                      Color cor() {
-                        if (tipo == 'Plantio') return cs.primary;
-                        if (tipo == 'Irrigação') return Colors.blue.shade700;
-                        if (tipo == 'Colheita') return Colors.teal.shade700;
-                        if (tipo == 'Perda') return cs.error;
-                        if (tipo == 'Adubação') return Colors.brown.shade600;
-                        if (tipo == 'Pulverização')
-                          return Colors.purple.shade600;
-                        if (tipo == 'Tratos Culturais')
-                          return Colors.teal.shade700;
-                        if (tipo == 'Manutenção') return Colors.orange.shade800;
-                        return cs.outline;
-                      }
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                            side: BorderSide(color: cs.outlineVariant),
-                            borderRadius: BorderRadius.circular(12)),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                              backgroundColor: cor().withOpacity(0.1),
-                              child: Icon(Icons.history, color: cor())),
-                          title: Text(produto.isEmpty ? tipo : produto,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(tipo,
-                                  style: TextStyle(
-                                      color: cor(),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12)),
-                              Text(_fmtData(ts),
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: cs.onSurfaceVariant)),
-                              if (detalhes.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: SectionCard(
+                        title: 'Diário do Lote',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Aqui eu deixo só um resumão pra não virar carnaval de informação. O histórico completo fica no Diário.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_docs.isEmpty)
+                              Text(
+                                'Sem registros de manejo ainda.',
+                                style: TextStyle(color: cs.onSurfaceVariant),
+                              )
+                            else ...[
+                              ..._docs.take(3).map(
+                                    (d) => _buildHistoricoPreviewItem(d, cs),
+                                  ),
+                              if (_docs.length > 3)
                                 Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(detalhes)),
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    'Mostrando as 3 últimas de ${_docs.length}.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                             ],
-                          ),
-                          trailing: IconButton(
-                            icon: Icon(Icons.edit_outlined, color: cs.outline),
-                            onPressed: () => _mostrarDialogoEditarTexto(
-                                _docs[i].id,
-                                detalhes,
-                                (e['observacao_extra'] ?? '').toString()),
-                          ),
+                            const SizedBox(height: 8),
+                            AppButtons.outlinedIcon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => TelaDiarioManejo(
+                                      initialCanteiroId: widget.canteiroId,
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.menu_book_outlined),
+                              label: const Text('ABRIR DIÁRIO COMPLETO'),
+                            ),
+                          ],
                         ),
-                      );
-                    }, childCount: _docs.length),
+                      ),
+                    ),
                   ),
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],

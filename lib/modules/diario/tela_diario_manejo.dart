@@ -12,7 +12,10 @@ import '../../core/session/session_scope.dart';
 import '../../core/ui/app_ui.dart';
 
 class TelaDiarioManejo extends StatefulWidget {
-  const TelaDiarioManejo({super.key});
+  /// Se informado, o diário já abre filtrado para esse lote/canteiro.
+  final String? initialCanteiroId;
+
+  const TelaDiarioManejo({super.key, this.initialCanteiroId});
 
   @override
   State<TelaDiarioManejo> createState() => _TelaDiarioManejoState();
@@ -31,6 +34,8 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
   final TextEditingController _buscaCtrl = TextEditingController();
   Timer? _debounce;
 
+  bool _appliedInitialFilter = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +51,11 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
     final session = SessionScope.of(context).session;
     if (_repo == null && session != null) {
       _repo = DiarioRepository(session.tenantId);
+    }
+
+    if (!_appliedInitialFilter && widget.initialCanteiroId != null) {
+      _canteiroFiltro = widget.initialCanteiroId;
+      _appliedInitialFilter = true;
     }
   }
 
@@ -114,6 +124,26 @@ class _TelaDiarioManejoState extends State<TelaDiarioManejo> {
       }
 
       return true;
+    }).toList();
+
+    // Dedupe: se por algum motivo o mesmo evento foi gravado duas vezes
+    // (ex: clique duplo / latência), a UI não fica mostrando “duplicado”.
+    // A chave é “estável o suficiente” (lote + tipo + produto + detalhes + minuto).
+    final seen = <String>{};
+    list = list.where((doc) {
+      final d = doc.data();
+      final ts = d['data'] is Timestamp
+          ? d['data'] as Timestamp
+          : Timestamp.fromMillisecondsSinceEpoch(0);
+      final minute = (ts.seconds ~/ 60); // agrupa por minuto
+      final key = [
+        (d['canteiro_id'] ?? '').toString(),
+        (d['tipo_manejo'] ?? '').toString(),
+        (d['produto'] ?? '').toString(),
+        (d['detalhes'] ?? '').toString(),
+        minute.toString(),
+      ].join('|');
+      return seen.add(key);
     }).toList();
 
     Timestamp tsOf(Map<String, dynamic> d) => d['data'] is Timestamp
