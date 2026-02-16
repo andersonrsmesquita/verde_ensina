@@ -1,3 +1,4 @@
+// FILE: lib/core/ui/page_container.dart
 import 'package:flutter/material.dart';
 import '../app_tokens.dart';
 import '../app_responsive.dart';
@@ -142,7 +143,9 @@ class PageContainer extends StatelessWidget {
                     horizontal: AppTokens.md,
                     vertical: AppTokens.sm,
                   ),
+                  // ✅ CORREÇÃO AQUI: heightFactor garante que o Center pegue a altura mínima e não a tela toda!
                   child: Center(
+                    heightFactor: 1.0,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxWidth: effectiveMaxWidth),
                       child: effectiveBottom,

@@ -1,48 +1,30 @@
+// FILE: lib/core/ui/app_colors.dart
 import 'package:flutter/material.dart';
 
-/// Define a paleta de cores central do aplicativo (Design System).
-/// Garante consistência visual e suporte integrado ao Material Design 3.
 class AppColors {
-  // Construtor privado para evitar instanciação acidental da classe.
   AppColors._();
 
-  // ==========================================
-  // 1. CORES DE MARCA (BRAND COLORS)
-  // ==========================================
-  
-  /// Cor Primária (Ex: Verde Agronômico, cor principal da marca)
-  static const Color primary = Color(0xFF2E7D32); // Verde folha escuro
-  
-  /// Cor Secundária (Ex: Tons terrosos para elementos de apoio)
-  static const Color secondary = Color(0xFF795548); // Marrom terra
-  
-  /// Cor Terciária (Ex: Destaques vibrantes como sol/colheita)
-  static const Color tertiary = Color(0xFFF57F17); // Laranja/Amarelo sol
+  // Brand
+  static const Color primary = Color(0xFF2E7D32);
+  static const Color secondary = Color(0xFF795548);
+  static const Color tertiary = Color(0xFFF57F17);
 
-  // ==========================================
-  // 2. CORES SEMÂNTICAS (FEEDBACK)
-  // ==========================================
-  
-  static const Color success = Color(0xFF388E3C); // Verde sucesso
-  static const Color warning = Color(0xFFFBC02D); // Amarelo atenção
-  static const Color error = Color(0xFFD32F2F);   // Vermelho erro
-  static const Color info = Color(0xFF1976D2);    // Azul informação
+  // Semantic
+  static const Color success = Color(0xFF388E3C);
+  static const Color warning = Color(0xFFFBC02D);
+  static const Color error = Color(0xFFD32F2F);
+  static const Color info = Color(0xFF1976D2);
 
-  // ==========================================
-  // 3. CORES NEUTRAS E FUNDOS (BACKGROUND)
-  // ==========================================
-  
-  static const Color backgroundLight = Color(0xFFF5F7FA); // Fundo cinza bem claro (usado no app)
-  static const Color surfaceLight = Colors.white;         // Fundo de cards e modais
-  
-  static const Color backgroundDark = Color(0xFF121212);  // Fundo escuro (Dark Mode)
-  static const Color surfaceDark = Color(0xFF1E1E1E);     // Cards no Dark Mode
+  // Shadow
+  static const Color shadow = Color(0x14000000);
 
-  // ==========================================
-  // 4. GERAÇÃO DE COLOR SCHEME (MATERIAL 3)
-  // ==========================================
-  
-  /// Tema Claro
+  // Backgrounds
+  static const Color backgroundLight = Color(0xFFF5F7FA);
+  static const Color surfaceLight = Colors.white;
+
+  static const Color backgroundDark = Color(0xFF121212);
+  static const Color surfaceDark = Color(0xFF1E1E1E);
+
   static ColorScheme lightScheme() => ColorScheme.fromSeed(
         seedColor: primary,
         primary: primary,
@@ -54,7 +36,6 @@ class AppColors {
         brightness: Brightness.light,
       );
 
-  /// Tema Escuro
   static ColorScheme darkScheme() => ColorScheme.fromSeed(
         seedColor: primary,
         primary: primary,

@@ -1,3 +1,4 @@
+// FILE: lib/modules/planejamento/tela_planejamento_consumo.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -42,10 +43,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     super.dispose();
   }
 
-  // =======================================================================
-  // UX Helpers
-  // =======================================================================
-
   void _toast(String msg, {bool isError = false}) {
     if (!mounted) return;
     if (isError) {
@@ -68,12 +65,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return double.tryParse(v.trim().replaceAll(',', '.')) ?? 0.0;
   }
 
-  // =======================================================================
-  // CRUD local da lista
-  // =======================================================================
-
   void _salvarItem() {
-    // Nome
     String nomeFinal;
     if (_modoPersonalizado) {
       if (_customNameController.text.trim().isEmpty) {
@@ -89,7 +81,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       nomeFinal = _culturaSelecionada!;
     }
 
-    // Quantidade
     if (_qtdController.text.trim().isEmpty) {
       _toast('Informe a quantidade.', isError: true);
       return;
@@ -162,10 +153,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     });
   }
 
-  // =======================================================================
-  // Processamento + Persistência
-  // =======================================================================
-
   Future<void> _gerarESalvarEIrParaGerador(AppSession session) async {
     if (_listaDesejos.isEmpty) {
       _toast('Adicione pelo menos um item para planejar.', isError: true);
@@ -207,7 +194,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         final cicloDias = (info['cicloDias'] as int?) ?? 60;
 
         final mudasCalc = meta / yieldVal;
-        final mudasReais = (mudasCalc * 1.1).ceil(); // +10% margem
+        final mudasReais = (mudasCalc * 1.1).ceil();
         final areaNecessaria = mudasReais * espacoVal;
 
         int cicloSemanas = (cicloDias / 7).ceil();
@@ -318,10 +305,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return planejamentoRef.id;
   }
 
-  // =======================================================================
-  // UI
-  // =======================================================================
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -338,7 +321,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
     final listaCulturasOrdenada = GuiaCulturas.dados.keys.toList()..sort();
 
-    // KPIs em tempo real
     double areaTotal = 0;
     double horasSemanaisTotal = 0;
 
@@ -376,7 +358,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return PageContainer(
       title: 'Plano de Consumo',
       subtitle: 'Defina o que você quer colher',
-      scroll: false,
+      scroll: true,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -409,23 +391,24 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             ),
           ),
           const SizedBox(height: AppTokens.md),
-          Expanded(
-            child: SectionCard(
-              title: '3) Itens do plano',
-              child: _listaDesejos.isEmpty
-                  ? _buildEmptyState(cs)
-                  : ListView(
-                      padding: const EdgeInsets.only(bottom: 80),
-                      children: [
-                        _buildKpisTop(cs, areaTotal, horasSemanaisTotal),
-                        const SizedBox(height: AppTokens.md),
-                        ...itensCards,
-                        const SizedBox(height: AppTokens.md),
-                        _buildResumoTotal(cs, areaTotal, horasSemanaisTotal),
-                      ],
-                    ),
-            ),
+          SectionCard(
+            title: '3) Itens do plano',
+            child: _listaDesejos.isEmpty
+                ? _buildEmptyState(cs)
+                : Column(
+                    children: [
+                      _buildKpisTop(cs, areaTotal, horasSemanaisTotal),
+                      const SizedBox(height: AppTokens.md),
+                      ...itensCards,
+                    ],
+                  ),
           ),
+          const SizedBox(height: AppTokens.md),
+          if (_listaDesejos.isNotEmpty)
+            SectionCard(
+              title: 'Estimativa total',
+              child: _buildResumoTotal(cs, areaTotal, horasSemanaisTotal),
+            ),
         ],
       ),
       bottomBar: SizedBox(
@@ -435,11 +418,13 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           onPressed:
               _salvando ? null : () => _gerarESalvarEIrParaGerador(session),
           icon: _salvando
-              ? const SizedBox(
+              ? SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2),
+                    color: cs.onPrimary,
+                    strokeWidth: 2,
+                  ),
                 )
               : const Icon(Icons.auto_awesome),
           label: Text(_salvando ? 'PROCESSANDO...' : 'GERAR PLANO INTELIGENTE'),
@@ -447,10 +432,6 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       ),
     );
   }
-
-  // =======================================================================
-  // Widgets auxiliares (premium)
-  // =======================================================================
 
   Widget _buildKpisTop(
       ColorScheme cs, double areaTotal, double horasSemanaisTotal) {
@@ -552,10 +533,9 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                       ),
                       items: listaCulturas
                           .map((k) => DropdownMenuItem(
-                                value: k,
-                                child: Text(k,
-                                    style: const TextStyle(fontSize: 14)),
-                              ))
+                              value: k,
+                              child: Text(k,
+                                  style: const TextStyle(fontSize: 14))))
                           .toList(),
                       onChanged: (v) => setState(() => _culturaSelecionada = v),
                     ),
@@ -609,10 +589,9 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           child: Text(
             '${plantasReais}x',
             style: TextStyle(
-              color: cs.onPrimaryContainer,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-            ),
+                color: cs.onPrimaryContainer,
+                fontWeight: FontWeight.w900,
+                fontSize: 12),
           ),
         ),
         title: Text(nome, style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -637,9 +616,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Editar')),
             PopupMenuItem(
-              value: 'delete',
-              child: Text('Remover', style: TextStyle(color: cs.error)),
-            ),
+                value: 'delete',
+                child: Text('Remover', style: TextStyle(color: cs.error))),
           ],
           onSelected: (value) {
             if (value == 'edit') _iniciarEdicao(idx);
@@ -657,16 +635,14 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         children: [
           Icon(Icons.eco_outlined, size: 64, color: cs.outlineVariant),
           const SizedBox(height: AppTokens.md),
-          Text(
-            'Sua lista está vazia.',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w900, color: cs.onSurface),
-          ),
+          Text('Sua lista está vazia.',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: cs.onSurface)),
           const SizedBox(height: 6),
-          Text(
-            'Adicione culturas acima pra gerar o plano.',
-            style: TextStyle(color: cs.onSurfaceVariant),
-          ),
+          Text('Adicione culturas acima pra gerar o plano.',
+              style: TextStyle(color: cs.onSurfaceVariant)),
         ],
       ),
     );
@@ -674,33 +650,26 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
   Widget _buildResumoTotal(
       ColorScheme cs, double areaTotal, double horasSemanaisTotal) {
-    return SectionCard(
-      title: 'Estimativa total',
-      child: Column(
-        children: [
-          AppKeyValueRow(
+    return Column(
+      children: [
+        AppKeyValueRow(
             label: 'Área útil ocupada',
             value: '${areaTotal.toStringAsFixed(1)} m²',
-            color: cs.primary,
-          ),
-          AppKeyValueRow(
+            color: cs.primary),
+        AppKeyValueRow(
             label: 'Água necessária',
             value: '${(areaTotal * 5.0).toStringAsFixed(0)} L/dia',
-            color: Colors.blue.shade700,
-          ),
-          AppKeyValueRow(
+            color: Colors.blue.shade700),
+        AppKeyValueRow(
             label: 'Adubo base',
             value: '${(areaTotal * 3.0).toStringAsFixed(1)} kg',
-            color: Colors.brown.shade700,
-          ),
-          const Divider(),
-          AppKeyValueRow(
+            color: Colors.brown.shade700),
+        const Divider(),
+        AppKeyValueRow(
             label: 'Mão de obra',
             value: '${horasSemanaisTotal.toStringAsFixed(1)} h/sem',
-            isBold: true,
-          ),
-        ],
-      ),
+            isBold: true),
+      ],
     );
   }
 }
