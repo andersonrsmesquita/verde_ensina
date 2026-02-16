@@ -114,8 +114,9 @@ class _TelaIrrigacaoState extends State<TelaIrrigacao> {
       stream: _repo!.watchHistorico(),
       builder: (context, snap) {
         if (snap.hasError) return Center(child: Text('Erro: ${snap.error}'));
-        if (!snap.hasData)
+        if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
 
         final docs = snap.data!.docs;
         if (docs.isEmpty) return const _EmptyState();
@@ -323,8 +324,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.opacity,
-              size: 64, color: Colors.grey.shade300), // Ícone seguro corrigido
+          Icon(Icons.opacity, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: AppTokens.md),
           Text(
             "Sem registros de rega.",
@@ -339,6 +339,10 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+// =======================================================================
+// BOTTOM SHEET COM O PROBLEMA CORRIGIDO
+// E SEM CONFLITO DE CITAÇÕES
+// =======================================================================
 class _SheetNovaRega extends StatefulWidget {
   final IrrigacaoRepository repo;
   final double custoAguaM3;
@@ -350,18 +354,24 @@ class _SheetNovaRega extends StatefulWidget {
 
 class _SheetNovaRegaState extends State<_SheetNovaRega> {
   final List<Map<String, dynamic>> _selecionados = [];
-  String _metodo = 'Gotejamento';
-  int _tempo = 30;
+  String _metodo = 'Aspersão';
+  int _tempo = 4;
   bool _salvando = false;
   final _obsCtrl = TextEditingController();
 
   double get _areaTotalSelecionada =>
       _selecionados.fold(0.0, (sum, c) => sum + (c['area'] as double));
 
+  // A meta diária recomendada
+  double get _metaDiariaLitros => _areaTotalSelecionada * 5.0;
+
+  // O volume real que está saindo da mangueira/sistema baseado apenas no tempo e método
   double get _volumeEstimadoLitros {
-    if (_areaTotalSelecionada > 0) return _areaTotalSelecionada * 5.0;
-    double vazao = _metodo.contains('Manual') ? 15.0 : 2.0;
-    return _tempo * vazao;
+    double vazaoLPM = 2.0;
+    if (_metodo == 'Aspersão') vazaoLPM = 10.0;
+    if (_metodo == 'Manual (Mangueira)') vazaoLPM = 15.0;
+    if (_metodo == 'Regador') vazaoLPM = 5.0;
+    return _tempo * vazaoLPM;
   }
 
   double get _custoEstimado =>
@@ -474,175 +484,218 @@ class _SheetNovaRegaState extends State<_SheetNovaRega> {
       ),
       padding: EdgeInsets.fromLTRB(
           24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.water_drop, color: Colors.blue.shade700),
-              const SizedBox(width: 8),
-              Text('Nova Rega',
-                  style: theme.textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 24),
-          StreamBuilder<QuerySnapshot>(
-            stream: widget.repo.watchCanteiros(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const LinearProgressIndicator();
-              final docs = snap.data!.docs;
-
-              if (docs.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(AppTokens.md),
-                  decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(AppTokens.radiusSm)),
-                  // Sintaxe 100% corrigida aqui!
-                  child: const Row(
-                    children: [
-                      Icon(Icons.warning, color: Colors.deepOrange),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Nenhum canteiro ativo encontrado.',
-                          style: TextStyle(color: Colors.deepOrange),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return InkWell(
-                onTap: () => _abrirSelecao(docs),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.grey.shade50,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.grid_on_rounded, color: Colors.grey),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _selecionados.isEmpty
-                              ? 'Selecione os Locais'
-                              : '${_selecionados.length} locais selecionados',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: _selecionados.isEmpty
-                                  ? Colors.grey.shade600
-                                  : Colors.black87),
-                        ),
-                      ),
-                      const Icon(Icons.arrow_drop_down, color: Colors.blue),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          if (_selecionados.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              children: _selecionados
-                  .map((c) => Chip(
-                        label: Text(c['nome'],
-                            style: const TextStyle(fontSize: 11)),
-                        backgroundColor: Colors.blue.shade50,
-                        side: BorderSide.none,
-                        onDeleted: () =>
-                            setState(() => _selecionados.remove(c)),
-                      ))
-                  .toList(),
-            ),
-          ],
-          const SizedBox(height: 20),
-          Row(children: [
-            Expanded(
-              flex: 2,
-              child: DropdownButtonFormField<String>(
-                value: _metodo,
-                decoration: const InputDecoration(
-                    labelText: 'Método', border: OutlineInputBorder()),
-                items: [
-                  'Gotejamento',
-                  'Aspersão',
-                  'Manual (Mangueira)',
-                  'Regador'
-                ]
-                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                    .toList(),
-                onChanged: (v) => setState(() => _metodo = v!),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 1,
-              child: TextFormField(
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                decoration: const InputDecoration(
-                    labelText: 'Tempo',
-                    suffixText: 'min',
-                    border: OutlineInputBorder()),
-                initialValue: _tempo.toString(),
-                onChanged: (v) => setState(() => _tempo = int.tryParse(v) ?? 0),
-              ),
-            )
-          ]),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.blue.shade100)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                _buildInfoItem(
-                    'VOLUME ESTIMADO',
-                    '${_volumeEstimadoLitros.toStringAsFixed(0)} L',
-                    Colors.blue.shade900),
-                Container(width: 1, height: 40, color: Colors.blue.shade200),
-                _buildInfoItem(
-                    'CUSTO',
-                    'R\$ ${_custoEstimado.toStringAsFixed(2)}',
-                    Colors.green.shade800),
+                Icon(Icons.water_drop, color: Colors.blue.shade700),
+                const SizedBox(width: 8),
+                Text('Nova Rega',
+                    style: theme.textTheme.headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
               ],
             ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 55,
-            child: ElevatedButton(
-              onPressed: _salvando ? null : _salvar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _salvando
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
-                  : const Text('CONFIRMAR REGISTRO',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            StreamBuilder<QuerySnapshot>(
+              stream: widget.repo.watchCanteiros(),
+              builder: (context, snap) {
+                if (!snap.hasData) return const LinearProgressIndicator();
+                final docs = snap.data!.docs;
+
+                if (docs.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(AppTokens.md),
+                    decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius:
+                            BorderRadius.circular(AppTokens.radiusSm)),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning, color: Colors.deepOrange),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Nenhum canteiro ativo encontrado.',
+                            style: TextStyle(color: Colors.deepOrange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return InkWell(
+                  onTap: () => _abrirSelecao(docs),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.grey.shade50,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.grid_on_rounded, color: Colors.grey),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _selecionados.isEmpty
+                                ? 'Selecione os Locais'
+                                : '${_selecionados.length} locais selecionados',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _selecionados.isEmpty
+                                    ? Colors.grey.shade600
+                                    : Colors.black87),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down, color: Colors.blue),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-        ],
+            if (_selecionados.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                children: _selecionados
+                    .map((c) => Chip(
+                          label: Text(c['nome'],
+                              style: const TextStyle(fontSize: 11)),
+                          backgroundColor: Colors.blue.shade50,
+                          side: BorderSide.none,
+                          onDeleted: () =>
+                              setState(() => _selecionados.remove(c)),
+                        ))
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
+                  value: _metodo,
+                  decoration: const InputDecoration(
+                      labelText: 'Método', border: OutlineInputBorder()),
+                  items: [
+                    'Gotejamento',
+                    'Aspersão',
+                    'Manual (Mangueira)',
+                    'Regador'
+                  ]
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _metodo = v!),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 1,
+                child: TextFormField(
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                      labelText: 'Tempo',
+                      suffixText: 'min',
+                      border: OutlineInputBorder()),
+                  initialValue: _tempo.toString(),
+                  onChanged: (v) =>
+                      setState(() => _tempo = int.tryParse(v) ?? 0),
+                ),
+              )
+            ]),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.blue.shade100)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildInfoItem(
+                      'VOLUME APLICADO',
+                      '${_volumeEstimadoLitros.toStringAsFixed(0)} L',
+                      Colors.blue.shade900),
+                  Container(width: 1, height: 40, color: Colors.blue.shade200),
+                  _buildInfoItem(
+                      'CUSTO',
+                      'R\$ ${_custoEstimado.toStringAsFixed(2)}',
+                      Colors.green.shade800),
+                ],
+              ),
+            ),
+            if (_areaTotalSelecionada > 0) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.eco, color: Colors.green.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Dicas Agronômicas',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                        '• Meta diária recomendada: ${_metaDiariaLitros.toStringAsFixed(0)}L totais para a área selecionada.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.green.shade900)),
+                    const SizedBox(height: 4),
+                    Text(
+                        '• Solos arenosos secam rápido, prefira dividir a rega.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.green.shade900)),
+                    const SizedBox(height: 4),
+                    Text('• Use sempre água de boa procedência.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.green.shade900)),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 55,
+              child: ElevatedButton(
+                onPressed: _salvando ? null : _salvar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _salvando
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5))
+                    : const Text('CONFIRMAR REGISTRO',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

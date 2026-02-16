@@ -9,7 +9,7 @@ import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/app_session.dart';
 import '../../core/session/session_scope.dart';
 
-import '../canteiros/guia_culturas.dart';
+import '../canteiros/guia_culturas.dart'; // ✅ Trazendo as novas funções e inteligência do guia
 import '../planejamento/tela_gerador_canteiros.dart';
 import '../canteiros/widgets/canteiro_picker_dropdown.dart';
 
@@ -28,6 +28,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
 
   String? _canteiroId;
   String? _culturaSelecionada;
+
+  // ✅ Variável para a Região (Puxaria do perfil do usuário idealmente)
+  String _regiaoSelecionada = 'Sudeste';
+  final List<String> _regioes = [
+    'Norte',
+    'Nordeste',
+    'Centro-Oeste',
+    'Sudeste',
+    'Sul'
+  ];
 
   final _qtdController = TextEditingController();
   final _customNameController = TextEditingController();
@@ -65,7 +75,89 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return double.tryParse(v.trim().replaceAll(',', '.')) ?? 0.0;
   }
 
-  void _salvarItem() {
+  // ✅ Função auxiliar para pegar o mês atual em português
+  String _obterMesAtual() {
+    const meses = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro'
+    ];
+    return meses[DateTime.now().month - 1];
+  }
+
+  // ✅ Alerta de Conflito (Consórcio Inimigo)
+  Future<bool?> _mostrarAlertaConflito(
+      String novaPlanta, List<String> conflitos) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Atenção ao Consórcio!'),
+          ],
+        ),
+        content: Text(
+            'A cultura "$novaPlanta" não se dá bem quando plantada no mesmo canteiro que: ${conflitos.join(", ")}.\n\n'
+            'Isso pode gerar competição por nutrientes ou atrair pragas em comum. '
+            'Você pode adicionar esta planta em outro Lote/Canteiro.\n\nDeseja adicionar mesmo assim?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('ADICIONAR ASSIM MESMO'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ Alerta de Sazonalidade (Fora de Época)
+  Future<bool?> _mostrarAlertaEpoca(String planta, String mes, String regiao) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.thermostat, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Fora de Época'),
+          ],
+        ),
+        content: Text(
+            'O mês de $mes não é a época ideal para plantar "$planta" na região $regiao.\n\n'
+            'A planta pode ter dificuldade de se desenvolver, exigir mais água e cuidados, ou pendoar precocemente.\n\nDeseja continuar?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('PLANTAR MESMO ASSIM'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ _salvarItem agora é async para aguardar a decisão do usuário nos alertas
+  Future<void> _salvarItem() async {
     String nomeFinal;
     if (_modoPersonalizado) {
       if (_customNameController.text.trim().isEmpty) {
@@ -90,6 +182,49 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       _toast('Quantidade inválida.', isError: true);
       return;
     }
+
+    // 🔥 MOTOR DE REGRAS AGRONÔMICAS 🔥
+    if (!_modoPersonalizado && _culturaSelecionada != null) {
+      final infoNova = GuiaCulturas.dados[nomeFinal] ?? {};
+      final evitarNova = (infoNova['evitar'] as List?)?.cast<String>() ?? [];
+
+      // 1. Checar Conflitos (Alelopatia)
+      List<String> conflitosEncontrados = [];
+      for (var item in _listaDesejos) {
+        String plantaNaLista = item['planta'];
+
+        // Verifica se a nova não gosta da que já está na lista
+        if (evitarNova.contains(plantaNaLista)) {
+          conflitosEncontrados.add(plantaNaLista);
+        } else {
+          // Verifica se a que já está na lista não gosta da nova
+          final infoExistente = GuiaCulturas.dados[plantaNaLista] ?? {};
+          final evitarExistente =
+              (infoExistente['evitar'] as List?)?.cast<String>() ?? [];
+          if (evitarExistente.contains(nomeFinal)) {
+            conflitosEncontrados.add(plantaNaLista);
+          }
+        }
+      }
+
+      if (conflitosEncontrados.isNotEmpty) {
+        bool? confirmar = await _mostrarAlertaConflito(
+            nomeFinal, conflitosEncontrados.toSet().toList());
+        if (confirmar != true) return; // O usuário desistiu
+      }
+
+      // 2. Checar Época de Plantio
+      String mesAtual = _obterMesAtual();
+      List<String> recomendadas =
+          culturasPorRegiaoMes(_regiaoSelecionada, mesAtual);
+      if (!recomendadas.contains(nomeFinal)) {
+        bool? confirmarEpoca =
+            await _mostrarAlertaEpoca(nomeFinal, mesAtual, _regiaoSelecionada);
+        if (confirmarEpoca != true) return; // O usuário desistiu
+      }
+    }
+
+    if (!mounted) return;
 
     setState(() {
       final novoItem = {
@@ -187,6 +322,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
               'evitar': [],
               'par': [],
               'cat': 'Geral',
+              'icone': '🌱',
             };
 
         final yieldVal = (info['yield'] as num).toDouble();
@@ -215,6 +351,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           'evitar': info['evitar'] ?? [],
           'par': info['par'] ?? [],
           'cat': info['cat'] ?? 'Geral',
+          'icone': info['icone'] ?? '🌱',
         };
       }).toList();
 
@@ -231,6 +368,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         aguaTotal: aguaTotal,
         aduboTotal: aduboTotal,
         maoDeObraTotalSemanal: horasMaoDeObraSemanal,
+        regiao: _regiaoSelecionada, // Salvando a região também
       );
 
       if (!mounted) return;
@@ -260,6 +398,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     required double aguaTotal,
     required double aduboTotal,
     required double maoDeObraTotalSemanal,
+    required String regiao,
   }) async {
     final canteiroRef = FirebasePaths.canteiroRef(session.tenantId, canteiroId);
 
@@ -275,6 +414,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       'mao_de_obra_h_sem': maoDeObraTotalSemanal,
       'updatedAt': FieldValue.serverTimestamp(),
       'planejamentoId': planejamentoRef.id,
+      'regiao': regiao,
     };
 
     final batch = FirebaseFirestore.instance.batch();
@@ -305,6 +445,30 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
     return planejamentoRef.id;
   }
 
+  // ✅ Função para gerar dicas dinâmicas com base no que já está na lista
+  List<String> _gerarDicasDeConsorcio() {
+    if (_listaDesejos.isEmpty) return [];
+
+    Set<String> sugestoes = {};
+    List<String> plantasAtuais =
+        _listaDesejos.map((e) => e['planta'] as String).toList();
+
+    for (var planta in plantasAtuais) {
+      final info = GuiaCulturas.dados[planta];
+      if (info != null && info['par'] != null) {
+        List amigas = info['par'];
+        for (String amiga in amigas) {
+          if (!plantasAtuais.contains(amiga)) {
+            sugestoes.add(amiga);
+          }
+        }
+      }
+    }
+    return sugestoes
+        .take(4)
+        .toList(); // Retorna até 4 sugestões para não poluir
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -333,7 +497,13 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
       final meta = (item['meta'] as num).toDouble();
 
       final info = GuiaCulturas.dados[nome] ??
-          {'yield': 1.0, 'unit': 'kg', 'espaco': 0.5, 'cicloDias': 60};
+          {
+            'yield': 1.0,
+            'unit': 'kg',
+            'espaco': 0.5,
+            'cicloDias': 60,
+            'icone': '🌱'
+          };
 
       final yieldVal = (info['yield'] as num).toDouble();
       final espacoVal = (info['espaco'] as num).toDouble();
@@ -355,6 +525,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           _buildItemCard(idx, nome, meta, info, plantasReais, areaItem, cs));
     }
 
+    List<String> dicas = _gerarDicasDeConsorcio();
+
     return PageContainer(
       title: 'Plano de Consumo',
       subtitle: 'Defina o que você quer colher',
@@ -363,11 +535,31 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SectionCard(
-            title: '1) Lote do plantio',
-            child: CanteiroPickerDropdown(
-              tenantId: session.tenantId,
-              selectedId: _canteiroId,
-              onSelect: (id) => setState(() => _canteiroId = id),
+            title: '1) Configurações Locais',
+            child: Column(
+              children: [
+                CanteiroPickerDropdown(
+                  tenantId: session.tenantId,
+                  selectedId: _canteiroId,
+                  onSelect: (id) => setState(() => _canteiroId = id),
+                ),
+                const SizedBox(height: AppTokens.md),
+                // ✅ Dropdown de Região
+                DropdownButtonFormField<String>(
+                  value: _regiaoSelecionada,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Sua Região',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    prefixIcon: Icon(Icons.map_outlined),
+                  ),
+                  items: _regioes
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _regiaoSelecionada = v!),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AppTokens.md),
@@ -396,10 +588,47 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
             child: _listaDesejos.isEmpty
                 ? _buildEmptyState(cs)
                 : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildKpisTop(cs, areaTotal, horasSemanaisTotal),
                       const SizedBox(height: AppTokens.md),
                       ...itensCards,
+
+                      // ✅ Dicas Dinâmicas de Consórcio
+                      if (dicas.isNotEmpty) ...[
+                        const SizedBox(height: AppTokens.sm),
+                        Container(
+                          padding: const EdgeInsets.all(AppTokens.sm),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius:
+                                BorderRadius.circular(AppTokens.radiusSm),
+                            border: Border.all(color: Colors.green.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.lightbulb_outline,
+                                      color: Colors.green, size: 18),
+                                  const SizedBox(width: 4),
+                                  Text('Dicas de Consórcio',
+                                      style: TextStyle(
+                                          color: Colors.green.shade800,
+                                          fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Considerando sua lista, estas plantas são ótimas companheiras: ${dicas.join(", ")}.',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.green.shade900),
+                              )
+                            ],
+                          ),
+                        ),
+                      ]
                     ],
                   ),
           ),
@@ -531,12 +760,16 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
-                      items: listaCulturas
-                          .map((k) => DropdownMenuItem(
-                              value: k,
-                              child: Text(k,
-                                  style: const TextStyle(fontSize: 14))))
-                          .toList(),
+                      items: listaCulturas.map((k) {
+                        // ✅ Trazendo o ícone para o Dropdown
+                        final icone = (GuiaCulturas.dados[k]?['icone'] ?? '🌱')
+                            .toString();
+                        return DropdownMenuItem(
+                          value: k,
+                          child: Text('$icone $k',
+                              style: const TextStyle(fontSize: 14)),
+                        );
+                      }).toList(),
                       onChanged: (v) => setState(() => _culturaSelecionada = v),
                     ),
             ),
@@ -574,6 +807,7 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
   Widget _buildItemCard(int idx, String nome, double meta, Map info,
       int plantasReais, double areaItem, ColorScheme cs) {
     final unit = (info['unit'] ?? 'un').toString();
+    final icone = (info['icone'] ?? '🌱').toString(); // ✅ Lendo o ícone do mapa
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppTokens.sm),
@@ -586,12 +820,10 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
         contentPadding: const EdgeInsets.all(AppTokens.md),
         leading: CircleAvatar(
           backgroundColor: cs.primaryContainer,
+          // ✅ Mostrando o Ícone (Emoji) em vez de apenas o número
           child: Text(
-            '${plantasReais}x',
-            style: TextStyle(
-                color: cs.onPrimaryContainer,
-                fontWeight: FontWeight.w900,
-                fontSize: 12),
+            icone,
+            style: const TextStyle(fontSize: 20),
           ),
         ),
         title: Text(nome, style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -600,7 +832,8 @@ class _TelaPlanejamentoConsumoState extends State<TelaPlanejamentoConsumo> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${meta.toStringAsFixed(1)} $unit desejados',
+              Text(
+                  '${meta.toStringAsFixed(1)} $unit desejados (${plantasReais}x plantas)',
                   style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
               const SizedBox(height: 4),
               Text('Ocupa aprox: ${areaItem.toStringAsFixed(2)} m²',

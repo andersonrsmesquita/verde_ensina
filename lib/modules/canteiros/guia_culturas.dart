@@ -1,23 +1,9 @@
 // FILE: lib/modules/canteiros/guia_culturas.dart
-//
-// Guia “completo” pra:
-// - TelaGuiaCulturas (listarCategorias, buscarCulturas, getCulturaInfo)
-// - TelaDetalhesCanteiro (guiaCompleto: Map com todos os detalhes)
-// - TelaPlanejamentoConsumo / Planejamento (GuiaCulturas.dados: adapter compat)
-//
-// ✅ Importante:
-// Este arquivo agora expõe:
-// - class CulturaInfo (com getter areaPorPlantaM2)
-// - guiaCompleto (map “rico”)
-// - calendarioRegional + helpers
-// - listarCategorias()
-// - buscarCulturas(query, {categoria})
-// - getCulturaInfo(nome)
-// - class GuiaCulturas { static dados }  <-- compat com telas antigas
 
 class CulturaInfo {
   final String nome;
   final String categoria;
+  final String icone; // ✅ Novo campo para o ícone visual
   final int cicloDias;
 
   /// Distância entre linhas (m)
@@ -34,13 +20,14 @@ class CulturaInfo {
   final String? pragas;
   final String? observacoes;
 
-  // ✅ Consórcio / alelopatia
+  // Consórcio / alelopatia
   final List<String> companheiras;
   final List<String> evitar;
 
   const CulturaInfo({
     required this.nome,
     required this.categoria,
+    required this.icone, // ✅ Inserido no construtor
     required this.cicloDias,
     required this.espacamentoLinhaM,
     required this.espacamentoPlantaM,
@@ -54,10 +41,8 @@ class CulturaInfo {
     this.evitar = const [],
   });
 
-  /// ✅ usado na TelaGuiaCulturas
   double get areaPorPlantaM2 => espacamentoLinhaM * espacamentoPlantaM;
 
-  /// Estimativa simples: área / (espacamentoLinha * espacamentoPlanta)
   int estimarQtdPlantasPorArea(double areaM2) {
     if (areaM2 <= 0) return 0;
     final areaPorPlanta = espacamentoLinhaM * espacamentoPlantaM;
@@ -93,6 +78,7 @@ class CulturaInfo {
     return CulturaInfo(
       nome: nome,
       categoria: (m['categoria'] ?? 'Hortaliça').toString(),
+      icone: (m['icone'] ?? '🌱').toString(), // ✅ Lendo o ícone do Map
       cicloDias: _i(m['ciclo_dias'], 60),
       espacamentoLinhaM: _d(m['espacamento_linha_m'], 0.30),
       espacamentoPlantaM: _d(m['espacamento_planta_m'], 0.30),
@@ -113,6 +99,7 @@ class CulturaInfo {
 final Map<String, Map<String, dynamic>> guiaCompleto = {
   'Alface': {
     'categoria': 'Folhosa',
+    'icone': '🥬',
     'ciclo_dias': 45,
     'espacamento_linha_m': 0.30,
     'espacamento_planta_m': 0.25,
@@ -132,13 +119,10 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
       'Rabanete'
     ],
     'evitar': ['Beterraba', 'Couve', 'Nabo'],
-
-    // opcionais pro planejamento (se não tiver, o adapter dá default)
-    // 'yield': 1.0,
-    // 'unit': 'un',
   },
   'Rúcula': {
     'categoria': 'Folhosa',
+    'icone': '🌿',
     'ciclo_dias': 35,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.15,
@@ -153,6 +137,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Couve': {
     'categoria': 'Folhosa',
+    'icone': '🥬',
     'ciclo_dias': 90,
     'espacamento_linha_m': 0.70,
     'espacamento_planta_m': 0.50,
@@ -167,6 +152,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Espinafre': {
     'categoria': 'Folhosa',
+    'icone': '🍃',
     'ciclo_dias': 45,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.15,
@@ -188,6 +174,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Repolho': {
     'categoria': 'Brássica',
+    'icone': '🥬',
     'ciclo_dias': 110,
     'espacamento_linha_m': 0.60,
     'espacamento_planta_m': 0.50,
@@ -202,6 +189,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Brócolis': {
     'categoria': 'Brássica',
+    'icone': '🥦',
     'ciclo_dias': 90,
     'espacamento_linha_m': 0.70,
     'espacamento_planta_m': 0.50,
@@ -216,6 +204,8 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Couve-flor': {
     'categoria': 'Brássica',
+    'icone':
+        '🥦', // Couve-flor não tem emoji nativo exato, brócolis atende visualmente
     'ciclo_dias': 110,
     'espacamento_linha_m': 0.70,
     'espacamento_planta_m': 0.60,
@@ -230,6 +220,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Cebolinha': {
     'categoria': 'Temperos',
+    'icone': '🧅', // Representação mais próxima para a família das cebolas
     'ciclo_dias': 80,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.10,
@@ -251,6 +242,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Salsinha': {
     'categoria': 'Temperos',
+    'icone': '🌿',
     'ciclo_dias': 90,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.15,
@@ -265,6 +257,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Coentro': {
     'categoria': 'Temperos',
+    'icone': '🌿',
     'ciclo_dias': 40,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.10,
@@ -279,6 +272,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Manjericão': {
     'categoria': 'Temperos',
+    'icone': '🪴',
     'ciclo_dias': 70,
     'espacamento_linha_m': 0.40,
     'espacamento_planta_m': 0.35,
@@ -293,6 +287,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Hortelã': {
     'categoria': 'Temperos',
+    'icone': '🍃',
     'ciclo_dias': 60,
     'espacamento_linha_m': 0.40,
     'espacamento_planta_m': 0.30,
@@ -307,6 +302,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Tomate': {
     'categoria': 'Frutífera',
+    'icone': '🍅',
     'ciclo_dias': 110,
     'espacamento_linha_m': 1.00,
     'espacamento_planta_m': 0.60,
@@ -328,6 +324,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Pimentão': {
     'categoria': 'Frutífera',
+    'icone': '🫑',
     'ciclo_dias': 120,
     'espacamento_linha_m': 0.80,
     'espacamento_planta_m': 0.50,
@@ -349,6 +346,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Berinjela': {
     'categoria': 'Frutífera',
+    'icone': '🍆',
     'ciclo_dias': 120,
     'espacamento_linha_m': 1.00,
     'espacamento_planta_m': 0.70,
@@ -363,6 +361,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Pepino': {
     'categoria': 'Cucurbitácea',
+    'icone': '🥒',
     'ciclo_dias': 70,
     'espacamento_linha_m': 1.20,
     'espacamento_planta_m': 0.50,
@@ -377,6 +376,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Abobrinha': {
     'categoria': 'Cucurbitácea',
+    'icone': '🥒',
     'ciclo_dias': 80,
     'espacamento_linha_m': 1.50,
     'espacamento_planta_m': 1.00,
@@ -398,6 +398,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Cenoura': {
     'categoria': 'Raiz',
+    'icone': '🥕',
     'ciclo_dias': 90,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.07,
@@ -412,6 +413,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Beterraba': {
     'categoria': 'Raiz',
+    'icone': '🧅', // Usando cebola roxa como representação visual
     'ciclo_dias': 75,
     'espacamento_linha_m': 0.30,
     'espacamento_planta_m': 0.10,
@@ -426,6 +428,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Quiabo': {
     'categoria': 'Frutífera',
+    'icone': '🌶️',
     'ciclo_dias': 110,
     'espacamento_linha_m': 1.00,
     'espacamento_planta_m': 0.50,
@@ -440,6 +443,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Milho verde': {
     'categoria': 'Grão',
+    'icone': '🌽',
     'ciclo_dias': 100,
     'espacamento_linha_m': 0.80,
     'espacamento_planta_m': 0.25,
@@ -454,6 +458,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Feijão vagem': {
     'categoria': 'Leguminosa',
+    'icone': '🫘',
     'ciclo_dias': 70,
     'espacamento_linha_m': 0.50,
     'espacamento_planta_m': 0.15,
@@ -469,7 +474,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
 };
 
 // ======================================================================
-// Calendário regional (mantido)
+// Calendário regional
 // ======================================================================
 final Map<String, Map<String, List<String>>> calendarioRegional = {
   'Norte': {
@@ -560,7 +565,6 @@ List<String> culturasPorRegiaoMes(String regiao, String mes) {
 // Funções usadas pela TelaGuiaCulturas
 // ======================================================================
 
-/// ✅ TelaGuiaCulturas chama isso
 List<String> listarCategorias() {
   final set = <String>{};
   for (final e in guiaCompleto.entries) {
@@ -571,7 +575,6 @@ List<String> listarCategorias() {
   return out;
 }
 
-/// ✅ Agora suporta categoria opcional (como sua tela pede)
 List<String> buscarCulturas(String query, {String? categoria}) {
   final q = _norm(query);
 
@@ -613,16 +616,6 @@ CulturaInfo? getCulturaInfo(String nome) {
 // ======================================================================
 
 class GuiaCulturas {
-  /// Estrutura esperada por telas antigas:
-  /// dados[nome] = {
-  ///   'yield': double,
-  ///   'unit': String,
-  ///   'espaco': double,
-  ///   'cicloDias': int,
-  ///   'evitar': <String>[],
-  ///   'par': <String>[],
-  ///   'cat': String,
-  /// }
   static final Map<String, Map<String, dynamic>> dados = _buildDados();
 
   static Map<String, Map<String, dynamic>> _buildDados() {
@@ -633,6 +626,8 @@ class GuiaCulturas {
       final m = entry.value;
 
       final categoria = (m['categoria'] ?? 'Geral').toString();
+      final icone =
+          (m['icone'] ?? '🌱').toString(); // ✅ Exportando ícone no Adapter
       final ciclo = _asInt(m['ciclo_dias'], 60);
 
       final espLinha = _asDouble(m['espacamento_linha_m'], 0.30);
@@ -640,7 +635,6 @@ class GuiaCulturas {
       final espaco =
           (espLinha > 0 && espPlanta > 0) ? (espLinha * espPlanta) : 0.5;
 
-      // Se algum dia você quiser colocar yield/unit no guiaCompleto, beleza.
       final yieldVal = _asDouble(m['yield'], 1.0);
       final unit = (m['unit'] ?? _defaultUnit(categoria)).toString();
 
@@ -655,6 +649,7 @@ class GuiaCulturas {
         'evitar': evitar,
         'par': par,
         'cat': categoria,
+        'icone': icone, // ✅ Disponível para a TelaPlanejamento usar
       };
     }
 

@@ -1,3 +1,4 @@
+// FILE: lib/modules/planejamento/tela_gerador_canteiros.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -33,13 +34,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   // ===========================================================================
   double _asDouble(dynamic v) {
     if (v == null) return 0.0;
-
     if (v is num) {
       final d = v.toDouble();
       if (d.isNaN || d.isInfinite) return 0.0;
       return d;
     }
-
     final s = v.toString().replaceAll(',', '.').trim();
     final d = double.tryParse(s) ?? 0.0;
     if (d.isNaN || d.isInfinite) return 0.0;
@@ -48,14 +47,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
   int _asInt(dynamic v) {
     if (v == null) return 0;
-
     if (v is int) return v;
-
     if (v is double) {
       if (v.isNaN || v.isInfinite) return 0;
       return v.round();
     }
-
     if (v is num) return v.round();
     return int.tryParse(v.toString().trim()) ?? 0;
   }
@@ -89,9 +85,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
   dynamic _sanitize(dynamic value, String path) {
     if (value == null) return null;
-
     if (value is String || value is bool || value is int) return value;
-
     if (value is double) {
       if (value.isNaN || value.isInfinite) {
         throw ArgumentError(
@@ -99,7 +93,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       }
       return value;
     }
-
     if (value is num) {
       final d = value.toDouble();
       if (d.isNaN || d.isInfinite) {
@@ -107,23 +100,19 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       }
       return d;
     }
-
     if (value is Timestamp ||
         value is GeoPoint ||
         value is FieldValue ||
         value is DocumentReference) {
       return value;
     }
-
     if (value is DateTime) return Timestamp.fromDate(value);
     if (value is Enum) return value.name;
-
     if (value is List) {
       return value.asMap().entries.map((e) {
         return _sanitize(e.value, '$path[${e.key}]');
       }).toList();
     }
-
     if (value is Map) {
       final out = <String, dynamic>{};
       for (final entry in value.entries) {
@@ -137,7 +126,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       }
       return out;
     }
-
     throw UnsupportedError(
       'Firestore: tipo NÃO suportado em $path -> ${value.runtimeType}. '
       'Converta antes de salvar.',
@@ -169,11 +157,9 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
   int _scorePreferencia(
       Map<String, dynamic> canteiro, Map<String, dynamic> candidata) {
     final nomeCandidata = _nomePlanta(candidata);
-
     final parDoCanteiro =
         List<String>.from(canteiro['par'] as List? ?? const []);
     final parDaCandidata = _listaString(candidata['par']);
-
     int score = 0;
 
     if (parDoCanteiro.contains(nomeCandidata)) score += 2;
@@ -218,7 +204,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
   void _processarInteligencia() {
     final fila = List<Map<String, dynamic>>.from(widget.itensPlanejados);
-
     fila.sort((a, b) => _asDouble(b['area']).compareTo(_asDouble(a['area'])));
 
     final canteiros = <Map<String, dynamic>>[];
@@ -327,14 +312,13 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
       ),
     );
 
-    if (novo == null) return;
-    if (novo.trim().isEmpty) return;
+    if (novo == null || novo.trim().isEmpty) return;
 
     setState(() => _canteirosSugeridos[index]['nome'] = novo.trim());
   }
 
   // ===========================================================================
-  // Firestore Save (batch + sanitize + AppMessenger)
+  // Firestore Save (Plano de Manejo Integrado) 🔥
   // ===========================================================================
   Future<void> _criarTodosCanteiros() async {
     final appSession = SessionScope.of(context).session;
@@ -352,10 +336,12 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
     final fs = FirebaseFirestore.instance;
     final batch = fs.batch();
+    final hoje = DateTime.now();
 
     try {
       for (final sugestao in _canteirosSugeridos) {
-        final canteiroRef = FirebasePaths.canteirosCol(appSession.tenantId).doc();
+        final canteiroRef =
+            FirebasePaths.canteirosCol(appSession.tenantId).doc();
 
         final area = _asDouble(sugestao['areaTotal']);
         const largura = 1.0;
@@ -367,6 +353,16 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
         final culturas = plantas.map((p) => _nomePlanta(p)).toList();
         final mudasTotais =
             plantas.fold<int>(0, (acc, p) => acc + _asInt(p['mudas']));
+
+        // 🔥 Calcula o maior ciclo do canteiro para o manejo
+        int maiorCicloDias = 0;
+        for (final p in plantas) {
+          // Assumindo que a Tela Planejamento passou a propriedade cicloDias ou pegamos um valor default 60
+          int ciclo = _asInt(p['ciclo_dias']);
+          if (ciclo == 0) ciclo = 60; // fallback se não encontrou o dado
+          if (ciclo > maiorCicloDias) maiorCicloDias = ciclo;
+        }
+        int totalSemanas = (maiorCicloDias / 7).ceil();
 
         final canteiroPayload = <String, dynamic>{
           'uid_usuario': appSession.uid,
@@ -393,43 +389,75 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
 
         batch.set(canteiroRef, _sanitizeMap(canteiroPayload));
 
-        final histRef = FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
+        // -------------------------------------------------------------------
+        // 🔥 INÍCIO DO PLANO DE MANEJO (Fase 1, Fase 2 e Fase 3)
+        // -------------------------------------------------------------------
 
-        final nomes = <String>[];
-        var detalhes = 'Plantio Automático (Planejamento):\n';
+        // Função auxiliar para criar tarefa no Batch
+        void agendarTarefa(
+            String tipoManejo, String detalhe, int diasAcrescentar) {
+          final histRef =
+              FirebasePaths.historicoManejoCol(appSession.tenantId).doc();
+          final dataPrevista = hoje.add(Duration(days: diasAcrescentar));
+
+          final historicoPayload = <String, dynamic>{
+            'canteiro_id': canteiroRef.id,
+            'uid_usuario': appSession.uid,
+            'tipo_manejo': tipoManejo,
+            'produto': culturas.join(' + '),
+            'detalhes': detalhe,
+            'origem': 'planejamento',
+            'data_prevista': Timestamp.fromDate(
+                dataPrevista), // Usamos data_prevista para agenda futura
+            'data': null, // Fica nulo até o usuário concluir a tarefa real
+            'concluido': false,
+          };
+          batch.set(histRef, _sanitizeMap(historicoPayload));
+        }
+
+        // --- FASE 1: PREPARO E PLANTIO (Início imediato: Dia 0) ---
+        var detalhesPlantio = 'Plano de Plantio:\n';
         for (final p in plantas) {
           final nome = _nomePlanta(p);
           final mudas = _asInt(p['mudas']);
-          nomes.add(nome);
-          detalhes += '- $nome: $mudas mudas\n';
+          detalhesPlantio += '- $nome: $mudas mudas\n';
+        }
+        agendarTarefa('Plantio', detalhesPlantio, 0);
+        agendarTarefa('Adubação', 'Adubação de plantio (base orgânica)', 0);
+        agendarTarefa(
+            'Manejo', 'Cobertura com palhada', 0); // Opcional mas recomendado
+
+        // --- FASE 2: CONDUÇÃO (Irrigação, Capina, Pulverização) ---
+        // Vamos agendar tarefas semanais até o fim do maior ciclo do canteiro
+        for (int semana = 1; semana <= totalSemanas; semana++) {
+          int dias = semana * 7;
+          agendarTarefa('Irrigação', 'Irrigação Semanal', dias);
+          agendarTarefa('Manejo', 'Capina / Limpeza', dias);
+
+          // A pulverização pode ser mais espaçada (ex: a cada 15 dias)
+          if (semana % 2 == 0) {
+            agendarTarefa('Pulverização',
+                'Pulverização preventiva de biofertilizante', dias);
+          }
         }
 
-        final historicoPayload = <String, dynamic>{
-          'canteiro_id': canteiroRef.id,
-          'uid_usuario': appSession.uid,
-          'tipo_manejo': 'Plantio',
-          'produto': nomes.join(' + '),
-          'detalhes': detalhes,
-          'origem': 'planejamento',
-          'data': FieldValue.serverTimestamp(),
-          'quantidade_g': 0,
-          'concluido': false,
-          'data_colheita_prevista': Timestamp.fromDate(
-            DateTime.now().add(const Duration(days: 90)),
-          ),
-        };
-
-        batch.set(histRef, _sanitizeMap(historicoPayload));
+        // --- FASE 3: COLHEITA (Fim do Ciclo) ---
+        // Aqui seria ideal gerar uma tarefa de colheita específica para cada planta de acordo com o seu próprio ciclo
+        for (final p in plantas) {
+          final nome = _nomePlanta(p);
+          int ciclo = _asInt(p['ciclo_dias']);
+          if (ciclo == 0) ciclo = 60; // fallback
+          agendarTarefa('Colheita', 'Colheita prevista de: $nome', ciclo);
+        }
       }
 
       await batch.commit();
 
       if (!mounted) return;
-
       Navigator.of(context).popUntil((route) => route.isFirst);
-
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        AppMessenger.success('✅ Canteiros criados e plantados!');
+        AppMessenger.success(
+            '✅ Canteiros e Plano de Manejo criados com sucesso!');
       });
     } catch (e) {
       AppMessenger.error('Erro ao salvar: $e');
@@ -446,7 +474,8 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
     final appSession = SessionScope.of(context).session;
     if (appSession == null) {
       return const Scaffold(
-        body: Center(child: Text('Selecione um espaço (tenant) para continuar.')),
+        body:
+            Center(child: Text('Selecione um espaço (tenant) para continuar.')),
       );
     }
 
@@ -481,7 +510,6 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                       final c = _canteirosSugeridos[i];
                       final nome = _asString(c['nome'], fallback: 'Canteiro');
                       final area = _asDouble(c['areaTotal']);
-
                       const largura = 1.0;
                       final comprimento = area > 0 ? (area / largura) : 1.0;
 
@@ -512,7 +540,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                         title: const Text('Antes de salvar'),
                         subtitle: const Text(
                           'Dica: toque em “renomear” se quiser ajustar os nomes. '
-                          'Depois é só aprovar e o app já cria os canteiros e registra o plantio.',
+                          'Depois é só aprovar e o app irá gerar a agenda de plantio e manutenção das Fases 1, 2 e 3 para você.',
                         ),
                       ),
                     ),
@@ -529,13 +557,11 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                     ? null
                     : _criarTodosCanteiros,
                 icon: const Icon(Icons.check_circle_outline),
-                label: const Text('APROVAR E PLANTAR AGORA'),
+                label: const Text('APROVAR E GERAR PLANO DE MANEJO'),
               ),
             ),
           ),
         ),
-
-        // overlay de bloqueio (sem inventar estilo; só Theme)
         if (_salvando) ...[
           const ModalBarrier(dismissible: false, color: Colors.black26),
           Center(
@@ -551,7 +577,7 @@ class _TelaGeradorCanteirosState extends State<TelaGeradorCanteiros> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     SizedBox(width: 12),
-                    Text('Salvando planejamento...'),
+                    Text('Agendando tarefas de manejo...'),
                   ],
                 ),
               ),
@@ -747,8 +773,10 @@ class _CanteiroCard extends StatelessWidget {
             children: plantas.map((p) {
               final planta = (p['planta'] ?? 'Planta').toString();
               final mudas = (p['mudas'] ?? 0).toString();
+              // Inserir o emoji caso tenha vindo da tela de planejamento
+              final icone = (p['icone'] ?? '🌱').toString();
               return Chip(
-                label: Text('$planta ($mudas x)'),
+                label: Text('$icone $planta ($mudas x)'),
               );
             }).toList(),
           ),
