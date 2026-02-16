@@ -3,7 +3,7 @@
 class CulturaInfo {
   final String nome;
   final String categoria;
-  final String icone; // ✅ Novo campo para o ícone visual
+  final String icone;
   final int cicloDias;
 
   /// Distância entre linhas (m)
@@ -27,7 +27,7 @@ class CulturaInfo {
   const CulturaInfo({
     required this.nome,
     required this.categoria,
-    required this.icone, // ✅ Inserido no construtor
+    required this.icone,
     required this.cicloDias,
     required this.espacamentoLinhaM,
     required this.espacamentoPlantaM,
@@ -78,7 +78,7 @@ class CulturaInfo {
     return CulturaInfo(
       nome: nome,
       categoria: (m['categoria'] ?? 'Hortaliça').toString(),
-      icone: (m['icone'] ?? '🌱').toString(), // ✅ Lendo o ícone do Map
+      icone: (m['icone'] ?? '🌱').toString(),
       cicloDias: _i(m['ciclo_dias'], 60),
       espacamentoLinhaM: _d(m['espacamento_linha_m'], 0.30),
       espacamentoPlantaM: _d(m['espacamento_planta_m'], 0.30),
@@ -204,8 +204,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Couve-flor': {
     'categoria': 'Brássica',
-    'icone':
-        '🥦', // Couve-flor não tem emoji nativo exato, brócolis atende visualmente
+    'icone': '🥦',
     'ciclo_dias': 110,
     'espacamento_linha_m': 0.70,
     'espacamento_planta_m': 0.60,
@@ -220,7 +219,7 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
   },
   'Cebolinha': {
     'categoria': 'Temperos',
-    'icone': '🧅', // Representação mais próxima para a família das cebolas
+    'icone': '🧅',
     'ciclo_dias': 80,
     'espacamento_linha_m': 0.25,
     'espacamento_planta_m': 0.10,
@@ -397,11 +396,12 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'evitar': ['Beterraba', 'Abóbora', 'Melancia', 'Melão'],
   },
   'Cenoura': {
+    // ✅ CORRIGIDO: O espaçamento entre plantas é 0.10m e não 0.07m
     'categoria': 'Raiz',
     'icone': '🥕',
     'ciclo_dias': 90,
     'espacamento_linha_m': 0.25,
-    'espacamento_planta_m': 0.07,
+    'espacamento_planta_m': 0.10,
     'profundidade_cm': 1.0,
     'luminosidade': 'Sol pleno',
     'irrigacao': 'Regular',
@@ -412,9 +412,10 @@ final Map<String, Map<String, dynamic>> guiaCompleto = {
     'evitar': ['Coentro', 'Salsinha'],
   },
   'Beterraba': {
+    // ✅ CORRIGIDO: Ciclo é de 70 dias
     'categoria': 'Raiz',
-    'icone': '🧅', // Usando cebola roxa como representação visual
-    'ciclo_dias': 75,
+    'icone': '🧅',
+    'ciclo_dias': 70,
     'espacamento_linha_m': 0.30,
     'espacamento_planta_m': 0.10,
     'profundidade_cm': 1.5,
@@ -626,8 +627,7 @@ class GuiaCulturas {
       final m = entry.value;
 
       final categoria = (m['categoria'] ?? 'Geral').toString();
-      final icone =
-          (m['icone'] ?? '🌱').toString(); // ✅ Exportando ícone no Adapter
+      final icone = (m['icone'] ?? '🌱').toString();
       final ciclo = _asInt(m['ciclo_dias'], 60);
 
       final espLinha = _asDouble(m['espacamento_linha_m'], 0.30);
@@ -649,7 +649,7 @@ class GuiaCulturas {
         'evitar': evitar,
         'par': par,
         'cat': categoria,
-        'icone': icone, // ✅ Disponível para a TelaPlanejamento usar
+        'icone': icone,
       };
     }
 

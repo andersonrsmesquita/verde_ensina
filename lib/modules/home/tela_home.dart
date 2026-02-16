@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // ✅ Core Imports (Garantindo que nada falte)
 import '../../core/firebase/firebase_paths.dart';
 import '../../core/session/session_scope.dart';
+import '../../core/session/module_access.dart';
 import '../../core/ui/app_ui.dart';
 
 // ✅ Todos os Módulos Importados
@@ -158,6 +159,10 @@ class _AbaInicioDashboard extends StatelessWidget {
     final session = sessionScope?.session;
     final user = FirebaseAuth.instance.currentUser;
 
+    // Flags de módulos (SaaS) — default permissivo para não quebrar ambientes antigos
+    final financeiroEnabled = session?.isModuleActive('financeiro') ?? true;
+    final mercadoEnabled = session?.isModuleActive('mercado') ?? true;
+
     // Caso de usuário não logado ou erro de sessão
     if (user == null) {
       return Center(
@@ -234,10 +239,19 @@ class _AbaInicioDashboard extends StatelessWidget {
                           'Locais', // ✅ Modificado de "Canteiros" para "Locais"
                       icon: Icons.place_outlined, // ✅ Ícone mais abrangente
                       color: cs.tertiary,
-                      onTap: () => Navigator.push(
+                      onTap: () => ModuleAccess.openOrNotify(
+                        context: context,
+                        moduleKey: 'canteiros',
+                        requiredAnyScopes: const [
+                          'canteiros:view',
+                          'canteiros:edit'
+                        ],
+                        open: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const TelaCanteiros())),
+                              builder: (_) => const TelaCanteiros()),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -260,11 +274,19 @@ class _AbaInicioDashboard extends StatelessWidget {
                   _MiniModule(
                       label: 'Diagnóstico',
                       icon: Icons.science,
-                      onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const TelaDiagnostico(
-                                  canteiroIdOrigem: '')))),
+                      onTap: () => ModuleAccess.openOrNotify(
+                            context: context,
+                            moduleKey: 'solo',
+                            // se você ainda não criou scopes pra solo, tudo bem: tenant:admin passa.
+                            requiredAnyScopes: const ['solo:view', 'solo:edit'],
+                            open: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const TelaDiagnostico(canteiroIdOrigem: ''),
+                              ),
+                            ),
+                          )),
                   _MiniModule(
                       label: 'Calagem',
                       icon: Icons.landscape,
@@ -283,17 +305,35 @@ class _AbaInicioDashboard extends StatelessWidget {
                   _MiniModule(
                       label: 'Irrigação',
                       icon: Icons.water_drop,
-                      onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const TelaIrrigacao()))),
+                      onTap: () => ModuleAccess.openOrNotify(
+                            context: context,
+                            moduleKey: 'irrigacao',
+                            requiredAnyScopes: const [
+                              'irrigacao:view',
+                              'irrigacao:edit'
+                            ],
+                            open: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const TelaIrrigacao()),
+                            ),
+                          )),
                   _MiniModule(
                       label: 'Pragas',
                       icon: Icons.bug_report,
-                      onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const TelaPragas()))),
+                      onTap: () => ModuleAccess.openOrNotify(
+                            context: context,
+                            moduleKey: 'pragas',
+                            requiredAnyScopes: const [
+                              'pragas:view',
+                              'pragas:edit'
+                            ],
+                            open: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const TelaPragas()),
+                            ),
+                          )),
                 ],
               ),
             ),
@@ -304,21 +344,39 @@ class _AbaInicioDashboard extends StatelessWidget {
             Text('Negócio & Mercado',
                 style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
-
             AppModuleCard(
               title: 'Gestão Financeira',
               subtitle: 'Fluxo de caixa, custos e lucros.',
               icon: Icons.attach_money,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const TelaFinanceiro())),
+              locked: !financeiroEnabled,
+              badge: financeiroEnabled ? null : 'PRO',
+              onTap: () => ModuleAccess.openOrNotify(
+                context: context,
+                moduleKey: 'financeiro',
+                requiredAnyScopes: const ['financeiro:view', 'financeiro:edit'],
+                open: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TelaFinanceiro()),
+                ),
+                proLabel: 'PRO',
+              ),
             ),
-
             AppModuleCard(
               title: 'Mercado & Vendas',
               subtitle: 'Cotações, clientes e escoamento.',
               icon: Icons.storefront,
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const TelaMercado())),
+              locked: !mercadoEnabled,
+              badge: mercadoEnabled ? null : 'PRO',
+              onTap: () => ModuleAccess.openOrNotify(
+                context: context,
+                moduleKey: 'mercado',
+                requiredAnyScopes: const ['mercado:view', 'mercado:edit'],
+                open: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TelaMercado()),
+                ),
+                proLabel: 'PRO',
+              ),
             ),
 
             const SizedBox(height: 24),
@@ -475,12 +533,27 @@ class _MiniModule extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _MiniModule(
-      {required this.label, required this.icon, required this.onTap});
+  /// Visual-only: quando true, mostra cadeado/estilo "bloqueado".
+  final bool locked;
+
+  /// Texto curto (ex: "PRO", "EM BREVE") para destacar status.
+  final String? badge;
+
+  const _MiniModule({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.locked = false,
+    this.badge,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
+    final fg = locked ? cs.onSurfaceVariant : cs.primary;
+    final bg = locked ? cs.surfaceContainerHighest : cs.surface;
+
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: InkWell(
@@ -490,23 +563,70 @@ class _MiniModule extends StatelessWidget {
           width: 85,
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: cs.surface,
+            color: bg,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              Icon(icon, color: cs.primary, size: 26),
-              const SizedBox(height: 8),
-              Text(label,
-                  style: TextStyle(
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: fg, size: 26),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
                       fontSize: 11,
-                      color: cs.onSurface,
-                      fontWeight: FontWeight.w600),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+                      color: locked ? cs.onSurfaceVariant : cs.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (badge != null)
+                Positioned(
+                  top: -10,
+                  right: -10,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: cs.primary.withOpacity(0.25)),
+                    ),
+                    child: Text(
+                      badge!,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                        color: cs.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              if (locked)
+                Positioned(
+                  bottom: -8,
+                  right: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(999),
+                      border:
+                          Border.all(color: cs.outlineVariant.withOpacity(0.4)),
+                    ),
+                    child: Icon(Icons.lock_outline,
+                        size: 14, color: cs.onSurfaceVariant),
+                  ),
+                ),
             ],
           ),
         ),
