@@ -1,6 +1,7 @@
+// FILE: lib/modules/tenancy/tenant_picker_page.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/session/session_scope.dart';
 import '../../core/ui/app_ui.dart';
@@ -15,6 +16,15 @@ class TenantPickerPage extends StatefulWidget {
 
 class _TenantPickerPageState extends State<TenantPickerPage> {
   bool _busy = false;
+
+  // Helper para mostrar mensagens (substitui AppMessenger se não houver)
+  void _showSnack(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: isError ? Colors.red : Colors.green,
+    ));
+  }
 
   Future<void> _criarTenant() async {
     final session = SessionScope.of(context);
@@ -31,6 +41,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
             hintText: 'Ex: Horta da casa / Sítio 01 / Estufa',
             border: OutlineInputBorder(),
           ),
+          textCapitalization: TextCapitalization.sentences,
         ),
         actions: [
           TextButton(
@@ -49,12 +60,19 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
 
     setState(() => _busy = true);
     try {
-      final tenantId = await session.createTenant(name: name);
-      AppMessenger.show('✅ Espaço criado: $name');
+      // ✅ CORREÇÃO AQUI: Passamos 'name' diretamente, sem 'name:'
+      final tenantId = await session.createTenant(name);
+
+      _showSnack('✅ Espaço criado: $name');
+
+      // Seleciona e navega
       await session.selectTenant(tenantId);
-      if (mounted) context.go('/home');
+
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed('/home');
+      }
     } catch (e) {
-      AppMessenger.show('❌ Falha ao criar: $e');
+      _showSnack('❌ Falha ao criar: $e', isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -65,9 +83,11 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
     setState(() => _busy = true);
     try {
       await session.selectTenant(tenantId);
-      if (mounted) context.go('/home');
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed('/home');
+      }
     } catch (e) {
-      AppMessenger.show('❌ Falha ao selecionar: $e');
+      _showSnack('❌ Falha ao selecionar: $e', isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -76,7 +96,8 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
   @override
   Widget build(BuildContext context) {
     final session = SessionScope.of(context);
-    final uid = session.uid;
+    // Usa o uid da sessão ou do auth direto se a sessão ainda não carregou
+    final uid = session.session?.uid ?? FirebaseAuth.instance.currentUser?.uid;
 
     if (uid == null) {
       return const Scaffold(
@@ -89,6 +110,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Escolha o espaço'),
+        centerTitle: true,
         actions: [
           IconButton(
             tooltip: 'Sair',
@@ -117,6 +139,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
               final tenantIdsRaw = (data['tenantIds'] is List)
                   ? data['tenantIds'] as List
                   : <dynamic>[];
+
               final tenantIds = tenantIdsRaw
                   .map((e) => e.toString())
                   .where((e) => e.isNotEmpty)
@@ -129,7 +152,8 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.apartment, size: 48),
+                        const Icon(Icons.apartment,
+                            size: 48, color: Colors.grey),
                         const SizedBox(height: 10),
                         const Text(
                           'Você ainda não tem um espaço.',
@@ -158,6 +182,8 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                   return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     future: FirebasePaths.tenantsCol().doc(tid).get(),
                     builder: (context, tsnap) {
+                      if (!tsnap.hasData) return const SizedBox.shrink();
+
                       final tdata = tsnap.data?.data() ?? {};
                       final name = (tdata['name'] ?? 'Espaço').toString();
                       final status = (tdata['status'] ?? 'active').toString();
@@ -165,9 +191,20 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
                           (tdata['subscriptionStatus'] ?? 'trial').toString();
 
                       return Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            side: BorderSide(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant),
+                            borderRadius: BorderRadius.circular(12)),
                         child: ListTile(
-                          leading:
-                              const CircleAvatar(child: Icon(Icons.apartment)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          leading: CircleAvatar(
+                            child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : 'T'),
+                          ),
                           title: Text(name,
                               style:
                                   const TextStyle(fontWeight: FontWeight.w700)),
@@ -184,7 +221,7 @@ class _TenantPickerPageState extends State<TenantPickerPage> {
           ),
           if (_busy)
             Container(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withOpacity(0.3),
               child: const Center(child: CircularProgressIndicator()),
             ),
         ],

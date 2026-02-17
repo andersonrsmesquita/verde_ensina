@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../session/session_controller.dart';
+import '../session/session_scope.dart';
 import '../../modules/home/tela_home.dart';
 import '../../modules/auth/tela_login.dart';
 import '../../modules/tenancy/tenant_picker_page.dart';

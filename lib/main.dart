@@ -6,7 +6,6 @@ import 'firebase_options.dart';
 import 'core/routing/app_router.dart';
 import 'core/ui/app_ui.dart';
 
-import 'core/session/session_controller.dart';
 import 'core/session/session_scope.dart';
 
 Future<void> main() async {

@@ -25,6 +25,7 @@ import '../alertas/tela_alertas.dart';
 import '../pragas/tela_pragas.dart';
 import '../irrigacao/tela_irrigacao.dart';
 import '../financeiro/tela_pdv_venda.dart';
+import '../configuracoes/tela_perfil.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -723,29 +724,70 @@ class _AbaJornadaTrilha extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// ABA 3: PERFIL
+// ============================================================================
 class AbaPerfilPage extends StatelessWidget {
   const AbaPerfilPage({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Center(child: Text("Não logado"));
+    // Tenta pegar o usuário da sessão (que atualiza em tempo real) ou do Firebase
+    final sessionUser = SessionScope.of(context).session?.user;
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+
+    // Prioriza os dados da sessão para refletir a edição imediatamente
+    final displayName =
+        sessionUser?.displayName ?? firebaseUser?.displayName ?? 'Usuário';
+    final email = sessionUser?.email ?? firebaseUser?.email ?? '';
+
+    // Garante que não quebra se o nome estiver vazio
+    final inicial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+
+    if (firebaseUser == null) return const Center(child: Text("Não logado"));
 
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        // ✅ PERFIL CLICÁVEL
         ListTile(
-          leading: CircleAvatar(child: Text(user.displayName?[0] ?? 'U')),
-          title: Text(user.displayName ?? 'Usuário',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(user.email ?? ''),
+          contentPadding: EdgeInsets.zero,
+          leading: CircleAvatar(
+            radius: 28,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            child: Text(inicial,
+                style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer)),
+          ),
+          title: Text(displayName,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          subtitle: const Text("Toque para editar dados ✎",
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            // Navega para a tela de edição
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TelaPerfil()),
+            );
+          },
         ),
+
+        const SizedBox(height: 20),
         const Divider(),
+        const SizedBox(height: 10),
+
         AppModuleCard(
             title: 'Configurações',
-            icon: Icons.settings,
+            icon: Icons.settings_outlined,
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const TelaConfiguracoes()))),
+
         const SizedBox(height: 20),
+
         AppButtons.outlinedIcon(
           label: const Text('Sair da Conta'),
           icon: const Icon(Icons.logout),

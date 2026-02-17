@@ -1,4 +1,6 @@
-import 'package:flutter/foundation.dart'; // Necessário para listEquals e mapEquals se não usares o pacote Equatable
+// FILE: lib/core/session/app_session.dart
+import 'package:flutter/foundation.dart'; // Necessário para listEquals e mapEquals
+import '../models/app_user_model.dart'; // ✅ Importante: Certifique-se de importar o modelo do usuário
 
 class AppSession {
   final String uid;
@@ -11,6 +13,9 @@ class AppSession {
   final DateTime? trialEndsAt;
   final Map<String, dynamic>? modulesEnabled;
 
+  // ✅ NOVO CAMPO: Objeto do usuário para exibir no perfil (Nome, Foto, Email)
+  final AppUser? user;
+
   const AppSession({
     required this.uid,
     required this.tenantId,
@@ -19,6 +24,7 @@ class AppSession {
     this.subscriptionStatus,
     this.trialEndsAt,
     this.modulesEnabled,
+    this.user, // Adicionado ao construtor
   });
 
   // ✅ Método auxiliar para verificar permissões facilmente
@@ -39,6 +45,10 @@ class AppSession {
     return v == true;
   }
 
+  // ✅ Helper para verificar se é PRO (baseado no subscriptionStatus que já existia no seu código)
+  bool get isPro =>
+      subscriptionStatus == 'active' || subscriptionStatus == 'trialing';
+
   AppSession copyWith({
     String? uid,
     String? tenantId,
@@ -47,6 +57,7 @@ class AppSession {
     String? subscriptionStatus,
     DateTime? trialEndsAt,
     Map<String, dynamic>? modulesEnabled,
+    AppUser? user, // Adicionado ao copyWith
   }) {
     return AppSession(
       uid: uid ?? this.uid,
@@ -56,11 +67,12 @@ class AppSession {
       subscriptionStatus: subscriptionStatus ?? this.subscriptionStatus,
       trialEndsAt: trialEndsAt ?? this.trialEndsAt,
       modulesEnabled: modulesEnabled ?? this.modulesEnabled,
+      user: user ??
+          this.user, // Mantém o usuário atual se não for passado um novo
     );
   }
 
-  // ✅ Implementação de igualdade.
-  // Sem isso, o Flutter pensa que dois objetos com os mesmos dados são diferentes.
+  // ✅ Implementação de igualdade atualizada
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -68,12 +80,12 @@ class AppSession {
     return other is AppSession &&
         other.uid == uid &&
         other.tenantId == tenantId &&
-        setEquals(other.scopes, scopes) && // Requer importar flutter/foundation
+        setEquals(other.scopes, scopes) &&
         other.tenantName == tenantName &&
         other.subscriptionStatus == subscriptionStatus &&
         other.trialEndsAt == trialEndsAt &&
-        mapEquals(other.modulesEnabled,
-            modulesEnabled); // Requer importar flutter/foundation
+        mapEquals(other.modulesEnabled, modulesEnabled) &&
+        other.user == user; // Verifica também se o usuário mudou
   }
 
   @override
@@ -84,6 +96,7 @@ class AppSession {
         tenantName.hashCode ^
         subscriptionStatus.hashCode ^
         trialEndsAt.hashCode ^
-        modulesEnabled.hashCode;
+        modulesEnabled.hashCode ^
+        user.hashCode; // Inclui o usuário no hash
   }
 }

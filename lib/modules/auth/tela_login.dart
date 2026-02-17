@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../core/repositories/user_profile_repository.dart';
+import '../../core/repositories/user_repository.dart';
 import '../../core/ui/app_ui.dart';
+import '../../core/session/session_scope.dart';
 
 /// ✅ Mantém compatibilidade com o GoRouter (antes apontava pra LoginPage)
 /// Agora o wrapper mora no MESMO arquivo do TelaLogin.
@@ -29,7 +30,7 @@ class _TelaLoginState extends State<TelaLogin> {
   bool _loading = false;
   bool _verSenha = false;
 
-  final _profileRepo = UserProfileRepository();
+  final _profileRepo = UserRepository();
 
   @override
   void dispose() {
@@ -66,7 +67,7 @@ class _TelaLoginState extends State<TelaLogin> {
 
       final user = cred.user;
       if (user != null) {
-        await _profileRepo.ensureFromAuthUser(user);
+        await UserRepository.ensureUserDoc(user);
       }
 
       // ✅ NÃO navega aqui.

@@ -1,62 +1,64 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+// FILE: lib/core/models/app_user_model.dart
 
-class AppUserModel {
+class AppUser {
   final String uid;
-  final String? email;
+  final String email;
   final String displayName;
-  final String plan; // free | pro | ...
-  final String role; // produtor | admin
-  final bool ativo;
-  final Timestamp? createdAt;
-  final Timestamp? updatedAt;
+  final String? photoUrl;
+  final String? currentTenantId;
+  final Map<String, String> tenants; // Map<TenantId, Role>
 
-  const AppUserModel({
+  AppUser({
     required this.uid,
     required this.email,
     required this.displayName,
-    required this.plan,
-    required this.role,
-    required this.ativo,
-    this.createdAt,
-    this.updatedAt,
+    this.photoUrl,
+    this.currentTenantId,
+    this.tenants = const {},
   });
 
-  factory AppUserModel.fromAuth(User user) {
-    return AppUserModel(
-      uid: user.uid,
-      email: user.email,
-      displayName: (user.displayName ?? '').trim(),
-      plan: 'free',
-      role: 'produtor',
-      ativo: true,
-      createdAt: null,
-      updatedAt: null,
-    );
-  }
-
-  factory AppUserModel.fromMap(String uid, Map<String, dynamic> map) {
-    return AppUserModel(
+  // ✅ BLINDAGEM: Converte tipos dinâmicos do Firebase com segurança
+  factory AppUser.fromMap(Map<String, dynamic> map, String uid) {
+    return AppUser(
       uid: uid,
-      email: (map['email'] as String?),
-      displayName: (map['displayName'] ?? '').toString(),
-      plan: (map['plan'] ?? 'free').toString(),
-      role: (map['role'] ?? 'produtor').toString(),
-      ativo: (map['ativo'] ?? true) == true,
-      createdAt: map['createdAt'] as Timestamp?,
-      updatedAt: map['updatedAt'] as Timestamp?,
+      email: map['email'] ?? '',
+      displayName: map['displayName'] ??
+          map['nome'] ??
+          'Usuário', // Tenta 'nome' se 'displayName' falhar
+      photoUrl: map['photoUrl'],
+      currentTenantId: map['currentTenantId'],
+      // Converte Map<dynamic, dynamic> para Map<String, String> seguramente
+      tenants: (map['tenants'] as Map<String, dynamic>?)?.map(
+            (key, value) => MapEntry(key, value.toString()),
+          ) ??
+          {},
     );
   }
 
-  Map<String, dynamic> toCreateMap() {
+  Map<String, dynamic> toMap() {
     return {
+      'uid': uid,
       'email': email,
       'displayName': displayName,
-      'plan': plan,
-      'role': role,
-      'ativo': ativo,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'photoUrl': photoUrl,
+      'currentTenantId': currentTenantId,
+      'tenants': tenants,
     };
+  }
+
+  AppUser copyWith({
+    String? displayName,
+    String? photoUrl,
+    String? currentTenantId,
+    Map<String, String>? tenants,
+  }) {
+    return AppUser(
+      uid: uid,
+      email: email,
+      displayName: displayName ?? this.displayName,
+      photoUrl: photoUrl ?? this.photoUrl,
+      currentTenantId: currentTenantId ?? this.currentTenantId,
+      tenants: tenants ?? this.tenants,
+    );
   }
 }
