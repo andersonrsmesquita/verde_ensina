@@ -22,10 +22,10 @@ import '../mercado/tela_mercado.dart';
 import '../conteudo/tela_conteudo.dart';
 import '../configuracoes/tela_configuracoes.dart';
 import '../alertas/tela_alertas.dart';
-import '../pragas/tela_pragas.dart';
 import '../irrigacao/tela_irrigacao.dart';
 import '../financeiro/tela_pdv_venda.dart';
 import '../configuracoes/tela_perfil.dart';
+import '../pragas/tela_lista_pragas.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -333,10 +333,23 @@ class _AbaInicioDashboard extends StatelessWidget {
                             open: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) => const TelaPragas()),
+                                  builder: (_) => const TelaListaPragas()),
                             ),
                           )),
                 ],
+              ),
+            ),
+
+            // ✅ Card de Pragas Corrigido
+            const SizedBox(height: 12),
+            AppModuleCard(
+              title: 'Pragas e Doenças',
+              subtitle: 'Monitoramento e controle.',
+              icon: Icons.bug_report,
+              // iconColor: Colors.redAccent,  <-- REMOVIDO para evitar erro GC6690633
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TelaListaPragas()),
               ),
             ),
 
