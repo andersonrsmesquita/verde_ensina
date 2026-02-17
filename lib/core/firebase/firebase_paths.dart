@@ -79,7 +79,7 @@ class FirebasePaths {
   ) =>
       tenantRef(tenantId).collection('analises_solo');
 
-  // (Preparado) Irrigação, Pragas, Finanças, etc.
+  // Módulos Técnicos
   static CollectionReference<Map<String, dynamic>> irrigacaoCol(
     String tenantId,
   ) =>
@@ -90,6 +90,35 @@ class FirebasePaths {
   ) =>
       tenantRef(tenantId).collection('pragas');
 
+  // =========================
+  // Módulos ERP / Negócio
+  // =========================
+
+  // ESTOQUE DE INSUMOS (Sementes, Adubos, Defensivos)
+  static CollectionReference<Map<String, dynamic>> estoqueInsumosCol(
+    String tenantId,
+  ) =>
+      tenantRef(tenantId).collection('estoque_insumos');
+
+  // ESTOQUE DE PRODUTOS COLHIDOS (O que está pronto para venda)
+  static CollectionReference<Map<String, dynamic>> estoqueProdutosCol(
+    String tenantId,
+  ) =>
+      tenantRef(tenantId).collection('estoque_produtos');
+
+  // VENDAS / PEDIDOS
+  static CollectionReference<Map<String, dynamic>> vendasCol(
+    String tenantId,
+  ) =>
+      tenantRef(tenantId).collection('vendas');
+
+  // CLIENTES (CRM)
+  static CollectionReference<Map<String, dynamic>> clientesCol(
+    String tenantId,
+  ) =>
+      tenantRef(tenantId).collection('clientes');
+
+  // FINANCEIRO (Centraliza Contas a Pagar e Receber)
   static CollectionReference<Map<String, dynamic>> financeiroCol(
     String tenantId,
   ) =>

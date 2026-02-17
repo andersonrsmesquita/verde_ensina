@@ -24,6 +24,7 @@ import '../configuracoes/tela_configuracoes.dart';
 import '../alertas/tela_alertas.dart';
 import '../pragas/tela_pragas.dart';
 import '../irrigacao/tela_irrigacao.dart';
+import '../financeiro/tela_pdv_venda.dart';
 
 class TelaHome extends StatefulWidget {
   const TelaHome({super.key});
@@ -344,6 +345,8 @@ class _AbaInicioDashboard extends StatelessWidget {
             Text('Negócio & Mercado',
                 style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
+
+            // CARD 1: FINANCEIRO (DASHBOARD)
             AppModuleCard(
               title: 'Gestão Financeira',
               subtitle: 'Fluxo de caixa, custos e lucros.',
@@ -361,6 +364,8 @@ class _AbaInicioDashboard extends StatelessWidget {
                 proLabel: 'PRO',
               ),
             ),
+
+            // CARD 2: MERCADO (COTAÇÕES)
             AppModuleCard(
               title: 'Mercado & Vendas',
               subtitle: 'Cotações, clientes e escoamento.',
@@ -378,6 +383,28 @@ class _AbaInicioDashboard extends StatelessWidget {
                 proLabel: 'PRO',
               ),
             ),
+
+            // 👇👇👇 NOVO CARD: PDV (PONTO DE VENDA) 👇👇👇
+            AppModuleCard(
+              title: 'PDV / Caixa',
+              subtitle: 'Venda rápida e baixa de estoque.',
+              icon: Icons.point_of_sale, // Ícone de caixa registradora
+              // Usa a mesma permissão do financeiro, pois gera receita
+              locked: !financeiroEnabled,
+              badge: financeiroEnabled ? null : 'PRO',
+              onTap: () => ModuleAccess.openOrNotify(
+                context: context,
+                moduleKey: 'financeiro',
+                requiredAnyScopes: const ['financeiro:edit'],
+                open: () => Navigator.push(
+                  context,
+                  // Certifique-se de ter importado '../financeiro/tela_pdv_venda.dart' lá em cima
+                  MaterialPageRoute(builder: (_) => const TelaPdvVenda()),
+                ),
+                proLabel: 'PRO',
+              ),
+            ),
+            // 👆👆👆 FIM DO NOVO CÓDIGO 👆👆👆
 
             const SizedBox(height: 24),
 
